@@ -1,0 +1,1 @@
+- [Founders Office Design System](project_founders_office_design_system.md) -- Olive+Gold palette, EB Garamond/Inter fonts, shadcn/ui, institutional visual language
