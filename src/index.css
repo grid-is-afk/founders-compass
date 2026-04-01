@@ -96,6 +96,38 @@
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
   }
+
+  /* Minimal scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.35);
+  }
+
+  /* Dark sidebar scrollbar */
+  .bg-sidebar ::-webkit-scrollbar-thumb,
+  [class*="bg-sidebar"] ::-webkit-scrollbar-thumb {
+    background: hsl(var(--sidebar-foreground) / 0.15);
+  }
+  .bg-sidebar ::-webkit-scrollbar-thumb:hover,
+  [class*="bg-sidebar"] ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--sidebar-foreground) / 0.25);
+  }
+
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
+  }
 }
 
 @layer components {
