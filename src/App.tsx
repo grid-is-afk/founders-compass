@@ -20,6 +20,7 @@ import CustomerCapital from "./pages/advisor/CustomerCapital";
 import CapitalArchitecture from "./pages/advisor/CapitalArchitecture";
 import PerformanceEngine from "./pages/advisor/PerformanceEngine";
 import AdvisorAssessmentsPage from "./pages/advisor/AdvisorAssessmentsPage";
+import CopilotPage from "./pages/advisor/CopilotPage";
 import {
   AdvisorUploads,
   AdvisorDataRoom,
@@ -77,7 +78,7 @@ const App = () => (
             <Route path="assessments" element={<AdvisorAssessmentsPage />} />
             <Route path="uploads" element={<AdvisorUploads />} />
             <Route path="data-room" element={<AdvisorDataRoom />} />
-            <Route path="copilot" element={<Navigate to="/advisor" replace />} />
+            <Route path="copilot" element={<CopilotPage />} />
             <Route path="sprints" element={<AdvisorSprints />} />
             <Route path="reports" element={<AdvisorReports />} />
             <Route path="publish" element={<AdvisorPublish />} />

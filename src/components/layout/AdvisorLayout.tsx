@@ -3,8 +3,6 @@ import { Outlet } from "react-router-dom";
 import AdvisorSidebar from "./AdvisorSidebar";
 import TopBar from "./TopBar";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
-import CopilotPanel from "@/components/copilot/CopilotPanel";
-import CopilotTrigger from "@/components/copilot/CopilotTrigger";
 import { ClientProvider } from "@/hooks/useClientContext";
 import { clients } from "@/lib/mockData";
 
@@ -29,8 +27,6 @@ const AdvisorLayout = () => {
             </main>
           </div>
         </div>
-        <CopilotTrigger />
-        <CopilotPanel />
       </ClientProvider>
     </CopilotProvider>
   );

@@ -14,6 +14,7 @@ import {
   Target,
   Upload,
   Share2,
+  Sparkles,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -62,6 +63,7 @@ const navGroups = [
   {
     label: "Tools",
     items: [
+      { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
       { to: "/advisor/uploads", icon: Upload, label: "Uploads" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
     ],
