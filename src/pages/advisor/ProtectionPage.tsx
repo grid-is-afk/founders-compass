@@ -2,8 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
-import { clientProtection } from "@/lib/clientMockData";
-import { insuranceOpportunities } from "@/lib/mockData";
+import { useClientProtection } from "@/hooks/useProtectionApi";
 import type { ProtectionItem } from "@/lib/types/journey";
 import StatCard from "@/components/dashboard/StatCard";
 import { Badge } from "@/components/ui/badge";
@@ -243,20 +242,29 @@ const ProtectionDetailDialog = ({
 // ---------------------------------------------------------------------------
 const ProtectionPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const protection = clientProtection[selectedClientId] ?? clientProtection["1"];
+  const { data: rawProtection = [] } = useClientProtection(selectedClientId);
+  // Map DB rows to ProtectionItem shape
+  const protection: ProtectionItem[] = (rawProtection as any[]).map((p) => ({
+    id: p.id,
+    clientId: p.client_id,
+    category: (p.category ?? "asset_matrix") as ProtectionItem["category"],
+    label: p.label,
+    status: (p.status ?? "not_documented") as ProtectionItem["status"],
+    risk: (p.risk ?? "medium") as ProtectionItem["risk"],
+    recommendation: p.recommendation ?? null,
+  }));
   const [selectedItem, setSelectedItem] = useState<ProtectionItem | null>(null);
 
   const assetItems = protection.filter((i) => i.category === "asset_matrix");
   const insuranceItems = protection.filter((i) => i.category === "insurance");
   const ipItems = protection.filter((i) => i.category === "ip_protection");
 
-  // Compute simple scores
   const inPlaceCount = protection.filter((i) => i.status === "in_place").length;
   const totalItems = protection.length;
-  const assetScore = Math.round((inPlaceCount / totalItems) * 100);
+  const assetScore = totalItems > 0 ? Math.round((inPlaceCount / totalItems) * 100) : 0;
   const highRiskCount = protection.filter((i) => i.risk === "high").length;
 
-  const clientInsurance = insuranceOpportunities.filter((i) => i.client === selectedClient.name);
+  const clientInsurance: any[] = [];
 
   return (
     <div className="space-y-6">

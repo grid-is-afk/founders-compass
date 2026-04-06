@@ -26,8 +26,12 @@ import {
   Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sprintTasks, dataRoomDocuments, copilotDeliverables } from "@/lib/mockData";
-import { meridianAssessments } from "@/lib/assessmentMockData";
+import { useClients } from "@/hooks/useClients";
+import { useClientTasks } from "@/hooks/useTasks";
+import { useClientDocuments } from "@/hooks/useDocuments";
+import { useClientDeliverables } from "@/hooks/useDeliverables";
+import { useClientAssessments } from "@/hooks/useAssessmentsApi";
+import { adaptAssessments } from "@/lib/assessmentAdapter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -67,8 +71,11 @@ const docIcon = {
 // ─── 1. CLIENT QUESTIONNAIRES ─────────────────────────────────────────────────
 
 export const ClientQuestionnaires = () => {
-  const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } =
-    meridianAssessments;
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
+  const { data: rawAssessments = [] } = useClientAssessments(clientId);
+  const adapted = adaptAssessments(rawAssessments, clientId);
+  const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = adapted;
 
   const assessments = [
     {
@@ -296,7 +303,19 @@ const requiredDocs = [
 ];
 
 export const ClientUploads = () => {
-  const clientDocs = dataRoomDocuments.filter((d) => clientDocIds.includes(d.id));
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
+  const { data: rawDocs = [] } = useClientDocuments(clientId);
+  const clientDocs = (rawDocs as any[]).map((d) => ({
+    id: d.id,
+    name: d.name,
+    category: d.category ?? "Uploads",
+    date: d.uploaded_at
+      ? new Date(d.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—",
+    size: d.size ?? "—",
+    type: (d.type ?? "document") as "pdf" | "spreadsheet" | "document",
+  }));
 
   return (
     <div className="space-y-8">
@@ -421,14 +440,31 @@ export const ClientTasks = () => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const clientTasks = sprintTasks.filter((t) => t.assignee === "Client");
-  const advisorTasks = sprintTasks.filter((t) => t.assignee === "Advisor");
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
+  const { data: rawTasks = [] } = useClientTasks(clientId);
 
-  const totalSubs = sprintTasks.reduce((a, t) => a + t.subtasks.length, 0);
-  const doneSubs = sprintTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.done).length, 0);
+  const allTasks = (rawTasks as any[]).map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: (t.status ?? "todo") as "done" | "in_progress" | "todo",
+    assignee: t.assignee ?? "Client",
+    dueDate: t.due_date
+      ? new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      : "—",
+    priority: (t.priority ?? "medium") as "high" | "medium" | "low",
+    subtasks: (t.subtasks ?? []) as Array<{ id: string; title: string; done: boolean }>,
+    linkedDocs: [] as Array<{ name: string; type: "pdf" | "spreadsheet" | "document" }>,
+  }));
+
+  const clientTasks = allTasks.filter((t) => t.assignee === "Client" || t.assignee?.toLowerCase() === "client");
+  const advisorTasks = allTasks.filter((t) => t.assignee !== "Client" && t.assignee?.toLowerCase() !== "client");
+
+  const totalSubs = allTasks.reduce((a, t) => a + t.subtasks.length, 0);
+  const doneSubs = allTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.done).length, 0);
   const sprintPct = totalSubs > 0 ? Math.round((doneSubs / totalSubs) * 100) : 0;
 
-  const renderTask = (task: (typeof sprintTasks)[number], muted = false) => {
+  const renderTask = (task: typeof allTasks[number], muted = false) => {
     const isOpen = expanded[task.id];
     const subtasksDone = task.subtasks.filter((s) => s.done).length;
     return (
@@ -611,12 +647,19 @@ const reportRequestTypes = [
 ];
 
 export const ClientReports = () => {
-  const publishedReports = copilotDeliverables.filter(
-    (d) => d.client === "Meridian Industries" && d.status === "ready"
-  );
-  const draftReports = copilotDeliverables.filter(
-    (d) => d.client === "Meridian Industries" && d.status !== "ready"
-  );
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
+  const { data: rawDeliverables = [] } = useClientDeliverables(clientId);
+
+  const allDeliverables = (rawDeliverables as any[]).map((d) => ({
+    id: d.id,
+    title: d.title,
+    status: d.status ?? "pending",
+    engine: d.engine ?? "Performance",
+  }));
+
+  const publishedReports = allDeliverables.filter((d) => d.status === "ready");
+  const draftReports = allDeliverables.filter((d) => d.status !== "ready");
   const [requested, setRequested] = useState<string | null>(null);
 
   return (

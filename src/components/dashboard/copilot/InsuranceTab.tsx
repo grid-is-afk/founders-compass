@@ -11,8 +11,65 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { insuranceOpportunities, insuranceReferralLog } from "@/lib/mockData";
 import { severityIcon, severityStyle } from "@/lib/copilotStyles";
+
+const insuranceOpportunities = [
+  {
+    id: "ins1",
+    type: "Key Person Insurance",
+    severity: "critical" as const,
+    reason: "Founder dependency risk identified and no continuity funding mechanism documented.",
+    benefit: "Provides liquidity and stability in the event of founder loss and strengthens investor confidence.",
+    action: "Refer to insurance specialist to evaluate appropriate coverage.",
+    client: "Vanguard Tech Solutions",
+    engine: "Capital Architecture",
+  },
+  {
+    id: "ins2",
+    type: "Buy-Sell Funding Insurance",
+    severity: "warning" as const,
+    reason: "Multi-owner entity with no funded buy-sell agreement. Ownership transfer risk in the event of partner departure or death.",
+    benefit: "Ensures orderly ownership transition and protects remaining partners from capital strain.",
+    action: "Schedule buy-sell funding analysis with insurance partner.",
+    client: "Atlas Manufacturing",
+    engine: "Capital Architecture",
+  },
+  {
+    id: "ins3",
+    type: "Estate Planning — Life Insurance",
+    severity: "warning" as const,
+    reason: "Founder estate tax exposure estimated at $3.2M with no documented insurance strategy.",
+    benefit: "Offsets estate tax liability and preserves business continuity for heirs.",
+    action: "Engage estate planning specialist to model ILIT structure.",
+    client: "Meridian Industries",
+    engine: "Capital Architecture",
+  },
+  {
+    id: "ins4",
+    type: "Executive Benefit Structure",
+    severity: "info" as const,
+    reason: "Key executives lack retention incentives beyond standard compensation. Turnover risk identified.",
+    benefit: "Deferred compensation and split-dollar arrangements improve retention and reduce successor risk.",
+    action: "Evaluate executive benefit design with compensation specialist.",
+    client: "Pinnacle Services Group",
+    engine: "Performance & Execution",
+  },
+  {
+    id: "ins5",
+    type: "Business Continuity Insurance",
+    severity: "warning" as const,
+    reason: "Revenue concentration exceeds 30% in top 3 customers with no business interruption strategy documented.",
+    benefit: "Protects cash flow in the event of key customer loss or market disruption.",
+    action: "Review business continuity insurance options with carrier.",
+    client: "Atlas Manufacturing",
+    engine: "Customer Capital Defense",
+  },
+];
+
+const insuranceReferralLog = [
+  { id: "ref1", client: "Vanguard Tech Solutions", type: "Key Person Insurance", partner: "Meridian Risk Advisors", date: "Feb 28, 2026", status: "pending" as const },
+  { id: "ref2", client: "Meridian Industries", type: "Estate Planning — Life Insurance", partner: "Legacy Planning Group", date: "Mar 1, 2026", status: "in_progress" as const },
+];
 
 const InsuranceTab = () => {
   return (

@@ -1,23 +1,26 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { clients, recentActivity } from "@/lib/mockData";
-import { allClientAssessments } from "@/lib/assessmentMockData";
 import ClientRow from "@/components/dashboard/ClientRow";
 import StatCard from "@/components/dashboard/StatCard";
 import CommandBar from "@/components/dashboard/CommandBar";
 import AssessmentPulse from "@/components/dashboard/AssessmentPulse";
-import { TrendingUp, Shield, Target, Zap, Sparkles } from "lucide-react";
+import { TrendingUp, Shield, Target, Zap, Sparkles, Activity } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useAssessmentScores } from "@/hooks/useAssessmentScores";
 import { useClientContext } from "@/hooks/useClientContext";
+import { useClients } from "@/hooks/useClients";
+import { useActivity } from "@/hooks/useActivity";
 
 const AdvisorDashboard = () => {
   const [copilotEnabled, setCopilotEnabled] = useState(true);
   const navigate = useNavigate();
   const { selectedClientId } = useClientContext();
-  const clientAssessments = allClientAssessments[selectedClientId] || allClientAssessments["1"];
-  const { baScore, brScore, prScore, vfScore } = useAssessmentScores(clientAssessments);
+  const { data: clients = [], isLoading: clientsLoading } = useClients();
+  const { data: activity = [], isLoading: activityLoading } = useActivity();
+
+  // Scores from context (all zeros until assessments are wired)
+  const { baScore, brScore, prScore, vfScore } = useAssessmentScores();
 
   return (
     <div className="space-y-6">
@@ -100,22 +103,32 @@ const AdvisorDashboard = () => {
         <div className="col-span-2">
           <h2 className="text-lg font-display font-semibold text-foreground mb-4">Client Portfolio</h2>
           <div className="bg-card rounded-lg border border-border overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted/50">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Client</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Stage</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Readiness</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Revenue</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Activity</th>
-                </tr>
-              </thead>
-              <tbody>
-                {clients.map((client) => (
-                  <ClientRow key={client.id} client={client} />
-                ))}
-              </tbody>
-            </table>
+            {clientsLoading ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">Loading clients...</div>
+            ) : clients.length === 0 ? (
+              <div className="p-12 text-center">
+                <TrendingUp className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+                <h3 className="font-display font-semibold text-foreground mb-1">No clients yet</h3>
+                <p className="text-sm text-muted-foreground">Add your first client to get started.</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50">
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Client</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Stage</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Readiness</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Revenue</th>
+                    <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map((client: any) => (
+                    <ClientRow key={client.id} client={client} />
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
@@ -123,15 +136,29 @@ const AdvisorDashboard = () => {
         <div>
           <h2 className="text-lg font-display font-semibold text-foreground mb-4">Recent Activity</h2>
           <div className="bg-card rounded-lg border border-border p-4 space-y-4">
-            {recentActivity.map((item, i) => (
-              <div key={i} className="flex gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2 flex-shrink-0" />
-                <div>
-                  <p className="text-sm text-foreground leading-snug">{item.text}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{item.time}</p>
-                </div>
+            {activityLoading ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Loading...</p>
+            ) : activity.length === 0 ? (
+              <div className="text-center py-6">
+                <Activity className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">No recent activity</p>
               </div>
-            ))}
+            ) : (
+              activity.map((item: any, i: number) => (
+                <div key={item.id ?? i} className="flex gap-3">
+                  <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm text-foreground leading-snug">
+                      {item.action}
+                      {item.client_name ? ` — ${item.client_name}` : ""}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils";
 import { getScoreColor, getScoreTextColor } from "@/lib/assessmentUtils";
 import { useAssessmentScores } from "@/hooks/useAssessmentScores";
 import { useClientContext } from "@/hooks/useClientContext";
-import { allClientAssessments } from "@/lib/assessmentMockData";
+import { useClientAssessments } from "@/hooks/useAssessmentsApi";
+import { adaptAssessments } from "@/lib/assessmentAdapter";
+import { useMemo } from "react";
 
 interface PulseSegmentProps {
   icon: React.ElementType;
@@ -57,14 +59,15 @@ const PulseSegment = ({ icon: Icon, label, percentage, isComplete, isLast }: Pul
 
 const AssessmentPulse = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const clientAssessments = allClientAssessments[selectedClientId] ?? allClientAssessments["1"];
+  const { data: rawAssessments = [] } = useClientAssessments(selectedClientId);
+
+  const clientAssessments = useMemo(
+    () => adaptAssessments(rawAssessments, selectedClientId),
+    [rawAssessments, selectedClientId]
+  );
+
   const { assessments, baScore, brScore, prScore, vfScore } = useAssessmentScores(clientAssessments);
   const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = assessments;
-
-  const displayBa = baScore;
-  const displayBr = brScore;
-  const displayPr = prScore;
-  const displayVf = vfScore;
 
   return (
     <div className="bg-card rounded-lg border border-border shadow-card">
@@ -77,25 +80,25 @@ const AssessmentPulse = () => {
         <PulseSegment
           icon={TrendingUp}
           label="Business Attractiveness"
-          percentage={displayBa}
+          percentage={baScore}
           isComplete={!!businessAttractiveness?.completedDate}
         />
         <PulseSegment
           icon={Shield}
           label="Business Readiness"
-          percentage={displayBr}
+          percentage={brScore}
           isComplete={!!businessReadiness?.completedDate}
         />
         <PulseSegment
           icon={User}
           label="Personal Readiness"
-          percentage={displayPr}
+          percentage={prScore}
           isComplete={!!personalReadiness?.completedDate}
         />
         <PulseSegment
           icon={LayoutGrid}
           label="54 Value Factors"
-          percentage={displayVf}
+          percentage={vfScore}
           isComplete={!!valueFactors?.completedDate}
           isLast
         />

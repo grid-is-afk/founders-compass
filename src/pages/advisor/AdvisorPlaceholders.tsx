@@ -18,7 +18,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { dataRoomDocuments, sprintTasks, copilotDeliverables } from "@/lib/mockData";
+import { useClientDocuments } from "@/hooks/useDocuments";
+import { useClientTasks } from "@/hooks/useTasks";
+import { useClientDeliverables } from "@/hooks/useDeliverables";
 import ShareInvestorPortal from "@/components/ShareInvestorPortal";
 import { useClientContext } from "@/hooks/useClientContext";
 
@@ -47,6 +49,7 @@ const requiredDocs = [
 
 export const AdvisorUploads = () => {
   const { selectedClient } = useClientContext();
+  const { data: apiDocs = [] } = useClientDocuments(selectedClient.id);
   const [dragging, setDragging] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
     id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document";
@@ -82,7 +85,17 @@ export const AdvisorUploads = () => {
     });
   };
 
-  const allDocs = [...uploadedFiles, ...dataRoomDocuments.slice(0, 6)];
+  const apiDocsMapped = (apiDocs as any[]).map((d) => ({
+    id: d.id,
+    name: d.name,
+    category: d.category ?? "Uploads",
+    date: d.uploaded_at
+      ? new Date(d.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—",
+    size: d.size ?? "—",
+    type: (d.type ?? "document") as "pdf" | "spreadsheet" | "document",
+  }));
+  const allDocs = [...uploadedFiles, ...apiDocsMapped];
   const uploadedCount = requiredDocs.filter((d) => d.uploaded).length;
 
   return (
@@ -222,6 +235,7 @@ const categories = ["All", "Reports", "Financials", "Customer Capital", "Legal &
 
 export const AdvisorDataRoom = () => {
   const { selectedClient } = useClientContext();
+  const { data: apiDocs = [] } = useClientDocuments(selectedClient.id);
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
@@ -259,7 +273,17 @@ export const AdvisorDataRoom = () => {
     });
   };
 
-  const allDocs = [...uploadedFiles, ...dataRoomDocuments];
+  const apiDocsMapped2 = (apiDocs as any[]).map((d) => ({
+    id: d.id,
+    name: d.name,
+    category: d.category ?? "Uploads",
+    date: d.uploaded_at
+      ? new Date(d.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—",
+    size: d.size ?? "—",
+    type: (d.type ?? "document") as "pdf" | "spreadsheet" | "document",
+  }));
+  const allDocs = [...uploadedFiles, ...apiDocsMapped2];
 
   const filtered = allDocs.filter((doc) => {
     const matchesCategory = activeCategory === "All" || doc.category === activeCategory;
@@ -480,7 +504,19 @@ const priorityConfig: Record<string, string> = {
   low: "bg-muted text-muted-foreground border-border",
 };
 
-const SprintTaskCard = ({ task }: { task: typeof sprintTasks[number] }) => {
+interface SprintTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  assignee: string | null;
+  due_date?: string | null;
+  dueDate?: string;
+  priority: string;
+  subtasks: Array<{ id: string; title: string; done: boolean }>;
+  linkedDocs?: Array<{ name: string; type: "pdf" | "spreadsheet" | "document" }>;
+}
+
+const SprintTaskCard = ({ task }: { task: SprintTask }) => {
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[task.status];
 
@@ -559,17 +595,46 @@ const SprintTaskCard = ({ task }: { task: typeof sprintTasks[number] }) => {
 
 export const AdvisorSprints = () => {
   const { selectedClient } = useClientContext();
+  const { data: rawTasks = [], isLoading: tasksLoading } = useClientTasks(selectedClient.id);
+
+  const sprintTasks: SprintTask[] = (rawTasks as any[]).map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: (t.status ?? "todo") as TaskStatus,
+    assignee: t.assignee ?? null,
+    due_date: t.due_date ?? null,
+    dueDate: t.due_date
+      ? new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      : "—",
+    priority: t.priority ?? "medium",
+    subtasks: (t.subtasks ?? []).map((s: any) => ({ id: s.id, title: s.title, done: s.done ?? false })),
+    linkedDocs: [],
+  }));
+
   const total = sprintTasks.length;
   const done = sprintTasks.filter((t) => t.status === "done").length;
   const inProgress = sprintTasks.filter((t) => t.status === "in_progress").length;
   const todo = sprintTasks.filter((t) => t.status === "todo").length;
-  const progressPct = Math.round((done / total) * 100);
+  const progressPct = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  const grouped: Record<TaskStatus, typeof sprintTasks> = {
+  const grouped: Record<TaskStatus, SprintTask[]> = {
     done: sprintTasks.filter((t) => t.status === "done"),
     in_progress: sprintTasks.filter((t) => t.status === "in_progress"),
     todo: sprintTasks.filter((t) => t.status === "todo"),
   };
+
+  if (tasksLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">90-Day Sprint Planning</h1>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center text-sm text-muted-foreground">
+          Loading tasks...
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -580,6 +645,16 @@ export const AdvisorSprints = () => {
         </p>
       </div>
 
+      {total === 0 && (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <CheckCircle2 className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No sprint tasks yet</h3>
+          <p className="text-sm text-muted-foreground">Tasks created for this client will appear here.</p>
+        </div>
+      )}
+
+      {total > 0 && (
+      <>
       {/* Progress + stats */}
       <div className="bg-card rounded-lg border border-border p-5 space-y-4">
         <div className="flex items-center justify-between">
@@ -630,6 +705,8 @@ export const AdvisorSprints = () => {
           );
         })}
       </div>
+      </>
+      )}
     </div>
   );
 };
@@ -638,10 +715,11 @@ export const AdvisorSprints = () => {
 // AdvisorReports — Reports & Deliverables
 // ---------------------------------------------------------------------------
 
-const deliverableStatusConfig = {
+const deliverableStatusConfig: Record<string, { label: string; color: string }> = {
   ready: { label: "Ready to Generate", color: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20" },
   draft: { label: "Draft", color: "bg-accent/10 text-accent border-accent/20" },
   needs_data: { label: "Needs Data", color: "bg-red-500/10 text-red-600 border-red-500/20" },
+  pending: { label: "Pending", color: "bg-muted text-muted-foreground border-border" },
 };
 
 const missingData: Record<string, string> = {
@@ -734,6 +812,16 @@ interface EditDialogState {
 
 export const AdvisorReports = () => {
   const { selectedClient } = useClientContext();
+  const { data: rawDeliverables = [] } = useClientDeliverables(selectedClient.id);
+
+  const copilotDeliverables = (rawDeliverables as any[]).map((d) => ({
+    id: d.id,
+    title: d.title,
+    client: selectedClient.name,
+    status: (d.status ?? "pending") as "ready" | "draft" | "needs_data" | "pending",
+    engine: d.engine ?? "Performance",
+  }));
+
   const [generateDialog, setGenerateDialog] = useState<GenerateDialogState>({
     open: false,
     title: "",
@@ -794,6 +882,13 @@ This draft requires sign-off from Sarah Chen before publication. Please confirm 
       {/* Deliverable cards */}
       <div>
         <h2 className="text-base font-display font-semibold text-foreground mb-3">Deliverables Queue</h2>
+        {copilotDeliverables.length === 0 ? (
+          <div className="bg-card rounded-lg border border-border p-12 text-center">
+            <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+            <h3 className="font-display font-semibold text-foreground mb-1">No deliverables yet</h3>
+            <p className="text-sm text-muted-foreground">Deliverables for this client will appear here.</p>
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-4">
           {copilotDeliverables.map((del) => {
             const config = deliverableStatusConfig[del.status];
@@ -858,6 +953,7 @@ This draft requires sign-off from Sarah Chen before publication. Please confirm 
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Published reports */}

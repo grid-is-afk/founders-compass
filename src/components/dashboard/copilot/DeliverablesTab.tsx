@@ -1,14 +1,42 @@
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { copilotDeliverables } from "@/lib/mockData";
+import { useClientContext } from "@/hooks/useClientContext";
+import { useClientDeliverables } from "@/hooks/useDeliverables";
 import { deliverableStatusLabel } from "@/lib/copilotStyles";
 
 const DeliverablesTab = () => {
+  const { selectedClientId, selectedClient } = useClientContext();
+  const { data: rawDeliverables = [] } = useClientDeliverables(selectedClientId);
+
+  interface DbDeliverable {
+    id: string;
+    title: string;
+    status: string;
+    engine?: string | null;
+  }
+
+  const deliverables = (rawDeliverables as DbDeliverable[]).map((d) => ({
+    id: d.id,
+    title: d.title,
+    client: selectedClient.name,
+    status: d.status ?? "needs_data",
+    engine: d.engine ?? "",
+  }));
+
+  if (deliverables.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground text-center py-6">
+        No deliverables for this client.
+      </p>
+    );
+  }
+
   return (
     <div className="space-y-2">
-      {copilotDeliverables.map((del) => {
-        const st = deliverableStatusLabel[del.status];
+      {deliverables.map((del) => {
+        const st = (deliverableStatusLabel as Record<string, { label: string; style: string }>)[del.status]
+          ?? { label: del.status, style: "bg-muted text-muted-foreground" };
         return (
           <div
             key={del.id}

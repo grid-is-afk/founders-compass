@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./systemPrompt.js";
 import { tools, executeTool } from "./tools.js";
+import { query } from "./db.js";
 import dotenv from "dotenv";
 
 import { authMiddleware } from "./middleware/auth.js";
@@ -35,8 +36,6 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const systemPrompt = buildSystemPrompt();
-
 // ============================================================
 // Public routes
 // ============================================================
@@ -64,7 +63,7 @@ app.use("/api/activity", authMiddleware, activityRoutes);
 // Copilot chat — protected
 // ============================================================
 app.post("/api/chat", authMiddleware, async (req, res) => {
-  const { messages } = req.body;
+  const { messages, clientId } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: "messages array required" });
@@ -75,6 +74,9 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   try {
+    // Build a fresh system prompt with real DB data for this advisor
+    const systemPrompt = await buildSystemPrompt(req.user!.id);
+
     let currentMessages: Anthropic.MessageParam[] = messages.map(
       (m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
@@ -114,9 +116,11 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       // Execute each tool and send action events to the frontend
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const toolBlock of toolUseBlocks) {
-        const result = executeTool(
+        const result = await executeTool(
           toolBlock.name,
-          toolBlock.input as Record<string, unknown>
+          toolBlock.input as Record<string, unknown>,
+          req.user!.id,
+          clientId as string | undefined
         );
 
         // Notify frontend so it can show an action badge / toast

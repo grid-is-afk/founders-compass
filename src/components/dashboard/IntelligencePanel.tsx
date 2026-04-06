@@ -1,14 +1,26 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { copilotPriorityActions, copilotDataGaps, copilotRiskAlerts, insuranceOpportunities } from "@/lib/mockData";
+import { useClientContext } from "@/hooks/useClientContext";
+import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
+import { useClientDeliverables } from "@/hooks/useDeliverables";
 import PriorityActionsTab from "./copilot/PriorityActionsTab";
 import RiskAlertsTab from "./copilot/RiskAlertsTab";
 import DataGapsTab from "./copilot/DataGapsTab";
 import DeliverablesTab from "./copilot/DeliverablesTab";
 import InsuranceTab from "./copilot/InsuranceTab";
 
+// Static advisor-wide counts — no DB tables yet for these
+const PRIORITY_ACTIONS_COUNT = 5;
+const DATA_GAPS_COUNT = 4;
+const INSURANCE_COUNT = 5;
+
 const IntelligencePanel = () => {
-  const criticalCount = copilotRiskAlerts.filter((r) => r.severity === "critical").length;
+  const { selectedClientId } = useClientContext();
+  const { data: rawAlerts = [] } = useClientRiskAlerts(selectedClientId);
+  const { data: rawDeliverables = [] } = useClientDeliverables(selectedClientId);
+
+  const criticalCount = (rawAlerts as Array<{ severity: string }>).filter((r) => r.severity === "critical").length;
+  const deliverablesCount = (rawDeliverables as unknown[]).length;
 
   return (
     <div className="bg-card rounded-lg border border-border p-5">
@@ -17,7 +29,7 @@ const IntelligencePanel = () => {
           <TabsTrigger value="actions" className="flex items-center gap-1.5">
             Priority Actions
             <Badge variant="secondary" className="text-[10px] ml-1">
-              {copilotPriorityActions.length}
+              {PRIORITY_ACTIONS_COUNT}
             </Badge>
           </TabsTrigger>
           <TabsTrigger value="risks" className="flex items-center gap-1.5">
@@ -31,14 +43,21 @@ const IntelligencePanel = () => {
           <TabsTrigger value="gaps" className="flex items-center gap-1.5">
             Data Gaps
             <Badge variant="secondary" className="text-[10px] ml-1">
-              {copilotDataGaps.length}
+              {DATA_GAPS_COUNT}
             </Badge>
           </TabsTrigger>
-          <TabsTrigger value="deliverables">Deliverables</TabsTrigger>
+          <TabsTrigger value="deliverables" className="flex items-center gap-1.5">
+            Deliverables
+            {deliverablesCount > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {deliverablesCount}
+              </Badge>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="insurance" className="flex items-center gap-1.5">
             Insurance
             <Badge variant="secondary" className="text-[10px] ml-1">
-              {insuranceOpportunities.length}
+              {INSURANCE_COUNT}
             </Badge>
           </TabsTrigger>
         </TabsList>

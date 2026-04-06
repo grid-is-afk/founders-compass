@@ -1,9 +1,10 @@
-import { sprintTasks } from "@/lib/mockData";
+import { useClientContext } from "@/hooks/useClientContext";
+import { useClientTasks } from "@/hooks/useTasks";
 import StatCard from "@/components/dashboard/StatCard";
 import { Target, CheckCircle2, Clock, Circle, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const statusIcon = {
+const statusIcon: Record<string, React.ReactNode> = {
   done: <CheckCircle2 className="w-4 h-4 text-primary" />,
   in_progress: <Clock className="w-4 h-4 text-accent" />,
   todo: <Circle className="w-4 h-4 text-muted-foreground" />,
@@ -17,6 +18,28 @@ const kpis = [
 ];
 
 const PerformanceEngine = () => {
+  const { selectedClientId } = useClientContext();
+  const { data: rawTasks = [] } = useClientTasks(selectedClientId);
+
+  interface DbTask {
+    id: string;
+    title: string;
+    status: string;
+    assignee: string | null;
+    due_date: string | null;
+  }
+
+  const tasks = (rawTasks as DbTask[]).map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status ?? "todo",
+    assignee: t.assignee ?? "Advisor",
+    dueDate: t.due_date ?? "",
+  }));
+
+  const doneCount = tasks.filter((t) => t.status === "done").length;
+  const totalCount = tasks.length;
+
   return (
     <div className="space-y-8">
       <div>
@@ -25,8 +48,13 @@ const PerformanceEngine = () => {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <StatCard icon={Target} label="Sprint Progress" value="64" suffix="%" />
-        <StatCard icon={CheckCircle2} label="Tasks Complete" value="12" suffix="/20" />
+        <StatCard
+          icon={Target}
+          label="Sprint Progress"
+          value={totalCount > 0 ? String(Math.round((doneCount / totalCount) * 100)) : "0"}
+          suffix="%"
+        />
+        <StatCard icon={CheckCircle2} label="Tasks Complete" value={String(doneCount)} suffix={`/${totalCount}`} />
         <StatCard icon={BarChart3} label="KPIs On Track" value="3" suffix="/4" />
         <StatCard icon={Clock} label="Days Remaining" value="47" />
       </div>
@@ -53,14 +81,22 @@ const PerformanceEngine = () => {
       <div>
         <h2 className="text-lg font-display font-semibold text-foreground mb-4">Sprint Tasks</h2>
         <div className="bg-card rounded-lg border border-border divide-y divide-border">
-          {sprintTasks.map((task) => (
-            <div key={task.id} className="flex items-center gap-4 px-5 py-4">
-              {statusIcon[task.status]}
-              <p className={cn("text-sm flex-1", task.status === "done" && "text-muted-foreground line-through")}>{task.title}</p>
-              <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">{task.assignee}</span>
-              <span className="text-xs text-muted-foreground">{task.dueDate}</span>
+          {tasks.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+              No tasks found for this client.
             </div>
-          ))}
+          ) : (
+            tasks.map((task) => (
+              <div key={task.id} className="flex items-center gap-4 px-5 py-4">
+                {statusIcon[task.status] ?? <Circle className="w-4 h-4 text-muted-foreground" />}
+                <p className={cn("text-sm flex-1", task.status === "done" && "text-muted-foreground line-through")}>
+                  {task.title}
+                </p>
+                <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">{task.assignee}</span>
+                <span className="text-xs text-muted-foreground">{task.dueDate}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

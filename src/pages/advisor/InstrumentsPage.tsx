@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
-import { clientInstruments } from "@/lib/clientMockData";
+import { useClientInstruments } from "@/hooks/useInstrumentsApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -210,7 +210,16 @@ const InstrumentDialog = ({
 // ---------------------------------------------------------------------------
 const InstrumentsPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const instruments = clientInstruments[selectedClientId] ?? clientInstruments["1"];
+  const { data: rawInstruments = [] } = useClientInstruments(selectedClientId);
+  // Map DB rows to the InstrumentRef shape the cards expect
+  const instruments: InstrumentRef[] = (rawInstruments as any[]).map((inst) => ({
+    id: inst.id,
+    type: (inst.type ?? "founder_business_index") as InstrumentType,
+    name: inst.name,
+    status: (inst.status ?? "pending") as "complete" | "in_progress" | "not_started",
+    completedDate: inst.completed_date ?? null,
+    linkedPhase: inst.linked_phase ?? "diagnose",
+  }));
   const [selectedInst, setSelectedInst] = useState<InstrumentRef | null>(null);
 
   return (

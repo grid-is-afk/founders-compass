@@ -4,16 +4,12 @@ import AdvisorSidebar from "./AdvisorSidebar";
 import TopBar from "./TopBar";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
 import { ClientProvider } from "@/hooks/useClientContext";
-import { clients } from "@/lib/mockData";
 
 const AdvisorLayout = () => {
-  // Mirror the selectedClientId here so CopilotProvider (outer) can receive the client name.
-  // The source of truth remains inside ClientProvider/useClientContext for all pages.
-  const [selectedClientId, setSelectedClientId] = useState("1");
-  const selectedClient = clients.find((c) => c.id === selectedClientId) ?? clients[0];
+  const [selectedClientId, setSelectedClientId] = useState("");
 
   return (
-    <CopilotProvider clientContext={selectedClient.name}>
+    <CopilotProvider clientContext="">
       <ClientProvider
         initialClientId={selectedClientId}
         onClientChange={setSelectedClientId}

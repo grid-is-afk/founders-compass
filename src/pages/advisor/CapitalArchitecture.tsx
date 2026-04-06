@@ -3,21 +3,45 @@ import { Shield, FileText, Landmark, GitBranch, Umbrella, ExternalLink, CircleAl
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { insuranceOpportunities } from "@/lib/mockData";
 
-const severityIcon = {
+const severityIcon: Record<string, React.ReactNode> = {
   critical: <CircleAlert className="w-3.5 h-3.5 text-destructive" />,
   warning: <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />,
   info: <Info className="w-3.5 h-3.5 text-primary" />,
 };
 
-const severityBorder = {
+const severityBorder: Record<string, string> = {
   critical: "border-destructive/30",
   warning: "border-amber-500/30",
   info: "border-primary/30",
 };
 
-const capitalArchInsurance = insuranceOpportunities.filter(o => o.engine === "Capital Architecture");
+const capitalArchInsurance = [
+  {
+    id: "ins1",
+    type: "Key Person Insurance",
+    severity: "critical" as const,
+    reason: "Founder dependency risk identified and no continuity funding mechanism documented.",
+    benefit: "Provides liquidity and stability in the event of founder loss and strengthens investor confidence.",
+    client: "Vanguard Tech Solutions",
+  },
+  {
+    id: "ins2",
+    type: "Buy-Sell Funding Insurance",
+    severity: "warning" as const,
+    reason: "Multi-owner entity with no funded buy-sell agreement. Ownership transfer risk in the event of partner departure or death.",
+    benefit: "Ensures orderly ownership transition and protects remaining partners from capital strain.",
+    client: "Atlas Manufacturing",
+  },
+  {
+    id: "ins3",
+    type: "Estate Planning — Life Insurance",
+    severity: "warning" as const,
+    reason: "Founder estate tax exposure estimated at $3.2M with no documented insurance strategy.",
+    benefit: "Offsets estate tax liability and preserves business continuity for heirs.",
+    client: "Meridian Industries",
+  },
+];
 
 const CapitalArchitecture = () => {
   return (

@@ -1,8 +1,28 @@
 import { Shield, FileText, Lock, Download, Search, FolderOpen, FileSpreadsheet, File, TrendingUp, Target, Users, BarChart3, CheckCircle2, AlertTriangle, Landmark, Umbrella } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { dataRoomDocuments, investorRiskProtection } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
+
+const dataRoomDocuments = [
+  { id: "dr1", name: "Capital Readiness Memo", category: "Reports", date: "Mar 5, 2026", size: "2.4 MB", type: "pdf" as const },
+  { id: "dr2", name: "Institutional Performance Brief", category: "Reports", date: "Feb 28, 2026", size: "1.8 MB", type: "pdf" as const },
+  { id: "dr3", name: "3-Year Adjusted P&L", category: "Financials", date: "Feb 20, 2026", size: "540 KB", type: "spreadsheet" as const },
+  { id: "dr4", name: "Balance Sheet — Normalized", category: "Financials", date: "Feb 20, 2026", size: "480 KB", type: "spreadsheet" as const },
+  { id: "dr5", name: "Customer Concentration Analysis", category: "Customer Capital", date: "Mar 1, 2026", size: "1.1 MB", type: "pdf" as const },
+  { id: "dr6", name: "Revenue by Segment Breakdown", category: "Customer Capital", date: "Feb 25, 2026", size: "320 KB", type: "spreadsheet" as const },
+  { id: "dr7", name: "Entity Structure Diagram", category: "Legal & Structure", date: "Feb 15, 2026", size: "890 KB", type: "pdf" as const },
+  { id: "dr8", name: "Operating Agreement Summary", category: "Legal & Structure", date: "Jan 30, 2026", size: "1.5 MB", type: "document" as const },
+  { id: "dr9", name: "Management Team Overview", category: "Governance", date: "Feb 10, 2026", size: "720 KB", type: "pdf" as const },
+  { id: "dr10", name: "Six Keys Scorecard Export", category: "Reports", date: "Mar 3, 2026", size: "280 KB", type: "pdf" as const },
+];
+
+const investorRiskProtection = [
+  { category: "Key Person Coverage", status: "Not Documented" as const, risk: "high" as const, recommendation: "Recommend key person policy with coverage equal to 3–5x EBITDA." },
+  { category: "Buy-Sell Funding", status: "Unfunded" as const, risk: "high" as const, recommendation: "Cross-purchase or entity-purchase agreement should be insurance-funded." },
+  { category: "Business Continuity", status: "Partial" as const, risk: "medium" as const, recommendation: "Current coverage does not address key customer concentration scenario." },
+  { category: "Estate & Succession", status: "Under Review" as const, risk: "medium" as const, recommendation: "ILIT structure recommended to offset projected estate tax exposure." },
+  { category: "Executive Retention", status: "Not in Place" as const, risk: "low" as const, recommendation: "Consider deferred compensation or split-dollar arrangement for key managers." },
+];
 
 /* ── Founders Office Analysis ── */
 const foAnalysis = {

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { TrendingUp, Shield, User, LayoutGrid, CheckCircle2, AlertTriangle, Star, Calendar } from "lucide-react";
+import { TrendingUp, Shield, User, LayoutGrid, CheckCircle2, AlertTriangle, Star, Calendar, ClipboardCheck } from "lucide-react";
 import { motion } from "framer-motion";
 import { getCategoryLabel } from "@/lib/assessmentUtils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -9,7 +9,9 @@ import { CategorySegment } from "@/components/assessments/CategoryBreakdownBar";
 import { BACategory, BRCategory, VFCategory } from "@/lib/types/assessments";
 import { useAssessmentScores } from "@/hooks/useAssessmentScores";
 import { useClientContext } from "@/hooks/useClientContext";
-import { allClientAssessments } from "@/lib/assessmentMockData";
+import { useClientAssessments } from "@/hooks/useAssessmentsApi";
+import { adaptAssessments } from "@/lib/assessmentAdapter";
+import { Button } from "@/components/ui/button";
 
 // ─── Display factor adapters ─────────────────────────────────────────────────
 
@@ -39,7 +41,13 @@ const fadeIn = {
 
 const AdvisorAssessmentsPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const clientAssessments = allClientAssessments[selectedClientId] ?? allClientAssessments["1"];
+  const { data: rawAssessments = [], isLoading } = useClientAssessments(selectedClientId);
+
+  const clientAssessments = useMemo(
+    () => adaptAssessments(rawAssessments, selectedClientId),
+    [rawAssessments, selectedClientId]
+  );
+
   const { assessments, baScore, brScore, prScore, vfSummary, lastAssessmentDate } = useAssessmentScores(clientAssessments);
   const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = assessments;
 
@@ -122,6 +130,12 @@ const AdvisorAssessmentsPage = () => {
     return { totalFactors, needsImprovement, topStrengths };
   }, [businessAttractiveness, businessReadiness, personalReadiness, valueFactors]);
 
+  const hasNoAssessments =
+    !businessAttractiveness &&
+    !businessReadiness &&
+    !personalReadiness &&
+    !valueFactors;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -136,197 +150,203 @@ const AdvisorAssessmentsPage = () => {
         </div>
       </div>
 
-      {/* Overview Grid — responsive 2×2 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[
-          {
-            icon: TrendingUp,
-            title: "Business Attractiveness",
-            scorePercentage: displayBa,
-            completedDate: businessAttractiveness?.completedDate ?? null,
-            factorCount: businessAttractiveness?.factors.length ?? 0,
-            lastModified: businessAttractiveness?.lastModified ?? "—",
-            categories: baCategories,
-            maxLabel: `${businessAttractiveness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(businessAttractiveness?.factors.length ?? 0) * 6} points`,
-          },
-          {
-            icon: Shield,
-            title: "Business Readiness",
-            scorePercentage: displayBr,
-            completedDate: businessReadiness?.completedDate ?? null,
-            factorCount: businessReadiness?.factors.length ?? 0,
-            lastModified: businessReadiness?.lastModified ?? "—",
-            categories: brCategories,
-            maxLabel: `${businessReadiness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(businessReadiness?.factors.length ?? 0) * 6} points`,
-          },
-          {
-            icon: User,
-            title: "Personal Readiness",
-            scorePercentage: displayPr,
-            completedDate: personalReadiness?.completedDate ?? null,
-            factorCount: personalReadiness?.factors.length ?? 0,
-            lastModified: personalReadiness?.lastModified ?? "—",
-            categories: [],
-            maxLabel: `${personalReadiness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(personalReadiness?.factors.length ?? 0) * 6} points`,
-          },
-          {
-            icon: LayoutGrid,
-            title: "54 Value Factors",
-            scorePercentage: displayVf,
-            completedDate: valueFactors?.completedDate ?? null,
-            factorCount: valueFactors?.factors.length ?? 0,
-            lastModified: valueFactors?.lastModified ?? "—",
-            categories: vfCategories,
-            maxLabel: `${vfSummary.positive} of ${vfSummary.total} positive factors`,
-          },
-        ].map((card, i) => (
-          <motion.div key={card.title} custom={i} initial="hidden" animate="visible" variants={fadeIn}>
-            <AssessmentOverviewCard {...card} />
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Summary Stats Row */}
-      <div className="grid grid-cols-4 gap-4">
-        {[
-          {
-            icon: CheckCircle2,
-            label: "Total Factors Assessed",
-            value: String(summaryStats.totalFactors),
-            color: "text-foreground",
-            iconBg: "bg-muted",
-            iconColor: "text-muted-foreground",
-          },
-          {
-            icon: AlertTriangle,
-            label: "Needs Improvement",
-            value: String(summaryStats.needsImprovement),
-            color: "text-destructive",
-            iconBg: "bg-destructive/10",
-            iconColor: "text-destructive",
-          },
-          {
-            icon: Star,
-            label: "Top Strengths",
-            value: String(summaryStats.topStrengths),
-            color: "text-primary",
-            iconBg: "bg-primary/10",
-            iconColor: "text-primary",
-          },
-          {
-            icon: Calendar,
-            label: "Last Assessment",
-            value: lastAssessmentDate,
-            color: "text-foreground",
-            iconBg: "bg-muted",
-            iconColor: "text-muted-foreground",
-          },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-card border border-border rounded-lg p-4 shadow-card flex items-center gap-3"
-          >
-            <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${stat.iconBg}`}>
-              <stat.icon className={`w-4 h-4 ${stat.iconColor}`} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wide truncate">
-                {stat.label}
-              </p>
-              <p className={`text-sm font-display font-semibold truncate ${stat.color}`}>
-                {stat.value}
-              </p>
-            </div>
+      {isLoading ? (
+        <div className="bg-card rounded-lg border border-border p-12 text-center text-sm text-muted-foreground">
+          Loading assessments...
+        </div>
+      ) : !selectedClientId ? (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <ClipboardCheck className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No client selected</h3>
+          <p className="text-sm text-muted-foreground">Select a client to view their assessments.</p>
+        </div>
+      ) : hasNoAssessments ? (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <ClipboardCheck className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No assessments yet</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Start an assessment for {selectedClient.name} to build their exit readiness profile.
+          </p>
+          <Button>Start Assessment</Button>
+        </div>
+      ) : (
+        <>
+          {/* Overview Grid — responsive 2×2 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              {
+                icon: TrendingUp,
+                title: "Business Attractiveness",
+                scorePercentage: displayBa,
+                completedDate: businessAttractiveness?.completedDate ?? null,
+                factorCount: businessAttractiveness?.factors.length ?? 0,
+                lastModified: businessAttractiveness?.lastModified ?? "—",
+                categories: baCategories,
+                maxLabel: `${businessAttractiveness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(businessAttractiveness?.factors.length ?? 0) * 6} points`,
+              },
+              {
+                icon: Shield,
+                title: "Business Readiness",
+                scorePercentage: displayBr,
+                completedDate: businessReadiness?.completedDate ?? null,
+                factorCount: businessReadiness?.factors.length ?? 0,
+                lastModified: businessReadiness?.lastModified ?? "—",
+                categories: brCategories,
+                maxLabel: `${businessReadiness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(businessReadiness?.factors.length ?? 0) * 6} points`,
+              },
+              {
+                icon: User,
+                title: "Personal Readiness",
+                scorePercentage: displayPr,
+                completedDate: personalReadiness?.completedDate ?? null,
+                factorCount: personalReadiness?.factors.length ?? 0,
+                lastModified: personalReadiness?.lastModified ?? "—",
+                categories: [],
+                maxLabel: `${personalReadiness?.factors.reduce((s, f) => s + f.score, 0) ?? 0} / ${(personalReadiness?.factors.length ?? 0) * 6} points`,
+              },
+              {
+                icon: LayoutGrid,
+                title: "54 Value Factors",
+                scorePercentage: displayVf,
+                completedDate: valueFactors?.completedDate ?? null,
+                factorCount: valueFactors?.factors.length ?? 0,
+                lastModified: valueFactors?.lastModified ?? "—",
+                categories: vfCategories,
+                maxLabel: `${vfSummary.positive} of ${vfSummary.total} positive factors`,
+              },
+            ].map((card, i) => (
+              <motion.div key={card.title} custom={i} initial="hidden" animate="visible" variants={fadeIn}>
+                <AssessmentOverviewCard {...card} />
+              </motion.div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      {/* Detail Tabs */}
-      <Tabs defaultValue="business-attractiveness">
-        <TabsList className="grid grid-cols-4 w-full h-auto p-1">
-          <TabsTrigger value="business-attractiveness" className="text-xs py-2">
-            Business Attractiveness
-          </TabsTrigger>
-          <TabsTrigger value="business-readiness" className="text-xs py-2">
-            Business Readiness
-          </TabsTrigger>
-          <TabsTrigger value="personal-readiness" className="text-xs py-2">
-            Personal Readiness
-          </TabsTrigger>
-          <TabsTrigger value="value-factors" className="text-xs py-2">
-            54 Value Factors
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Business Attractiveness */}
-        <TabsContent value="business-attractiveness" className="mt-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {businessAttractiveness?.factors.length ?? 0} factors · Max {(businessAttractiveness?.factors.length ?? 0) * 6} points · Score: {displayBa}%
-              </span>
-            </div>
-            {businessAttractiveness && (
-              <AssessmentFactorTable
-                factors={toDisplayFactors(businessAttractiveness.factors)}
-                mode="scored"
-              />
-            )}
+          {/* Summary Stats Row */}
+          <div className="grid grid-cols-4 gap-4">
+            {[
+              {
+                icon: CheckCircle2,
+                label: "Total Factors Assessed",
+                value: String(summaryStats.totalFactors),
+                color: "text-foreground",
+                iconBg: "bg-muted",
+                iconColor: "text-muted-foreground",
+              },
+              {
+                icon: AlertTriangle,
+                label: "Needs Improvement",
+                value: String(summaryStats.needsImprovement),
+                color: "text-destructive",
+                iconBg: "bg-destructive/10",
+                iconColor: "text-destructive",
+              },
+              {
+                icon: Star,
+                label: "Top Strengths",
+                value: String(summaryStats.topStrengths),
+                color: "text-primary",
+                iconBg: "bg-primary/10",
+                iconColor: "text-primary",
+              },
+              {
+                icon: Calendar,
+                label: "Last Assessment",
+                value: lastAssessmentDate,
+                color: "text-foreground",
+                iconBg: "bg-muted",
+                iconColor: "text-muted-foreground",
+              },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="bg-card border border-border rounded-lg p-4 shadow-card flex items-center gap-3"
+              >
+                <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${stat.iconBg}`}>
+                  <stat.icon className={`w-4 h-4 ${stat.iconColor}`} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide truncate">
+                    {stat.label}
+                  </p>
+                  <p className={`text-sm font-display font-semibold truncate ${stat.color}`}>
+                    {stat.value}
+                  </p>
+                </div>
+              </div>
+            ))}
           </div>
-        </TabsContent>
 
-        {/* Business Readiness */}
-        <TabsContent value="business-readiness" className="mt-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {businessReadiness?.factors.length ?? 0} factors · Max {(businessReadiness?.factors.length ?? 0) * 6} points · Score: {displayBr}%
-              </span>
-            </div>
-            {businessReadiness && (
-              <AssessmentFactorTable
-                factors={toDisplayFactors(businessReadiness.factors)}
-                mode="scored"
-              />
-            )}
-          </div>
-        </TabsContent>
+          {/* Detail Tabs */}
+          <Tabs defaultValue="business-attractiveness">
+            <TabsList className="grid grid-cols-4 w-full h-auto p-1">
+              <TabsTrigger value="business-attractiveness" className="text-xs py-2">
+                Business Attractiveness
+              </TabsTrigger>
+              <TabsTrigger value="business-readiness" className="text-xs py-2">
+                Business Readiness
+              </TabsTrigger>
+              <TabsTrigger value="personal-readiness" className="text-xs py-2">
+                Personal Readiness
+              </TabsTrigger>
+              <TabsTrigger value="value-factors" className="text-xs py-2">
+                54 Value Factors
+              </TabsTrigger>
+            </TabsList>
 
-        {/* Personal Readiness */}
-        <TabsContent value="personal-readiness" className="mt-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {personalReadiness?.factors.length ?? 0} factors · Max {(personalReadiness?.factors.length ?? 0) * 6} points · Score: {displayPr}%
-              </span>
-            </div>
-            {personalReadiness && (
-              <AssessmentFactorTable
-                factors={toDisplayFactors(personalReadiness.factors)}
-                mode="scored"
-                flat
-              />
-            )}
-          </div>
-        </TabsContent>
+            <TabsContent value="business-attractiveness" className="mt-4">
+              <div className="space-y-4">
+                <span className="text-xs text-muted-foreground">
+                  {businessAttractiveness?.factors.length ?? 0} factors · Max {(businessAttractiveness?.factors.length ?? 0) * 6} points · Score: {displayBa}%
+                </span>
+                {businessAttractiveness ? (
+                  <AssessmentFactorTable factors={toDisplayFactors(businessAttractiveness.factors)} mode="scored" />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No Business Attractiveness assessment on file.</p>
+                )}
+              </div>
+            </TabsContent>
 
-        {/* Value Factors */}
-        <TabsContent value="value-factors" className="mt-4">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {vfSummary.positive} positive · {vfSummary.neutral} neutral · {vfSummary.improvement} for improvement
-              </span>
-            </div>
-            {valueFactors && (
-              <AssessmentFactorTable
-                factors={toDisplayFactors(valueFactors.factors)}
-                mode="qualitative"
-              />
-            )}
-          </div>
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="business-readiness" className="mt-4">
+              <div className="space-y-4">
+                <span className="text-xs text-muted-foreground">
+                  {businessReadiness?.factors.length ?? 0} factors · Max {(businessReadiness?.factors.length ?? 0) * 6} points · Score: {displayBr}%
+                </span>
+                {businessReadiness ? (
+                  <AssessmentFactorTable factors={toDisplayFactors(businessReadiness.factors)} mode="scored" />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No Business Readiness assessment on file.</p>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="personal-readiness" className="mt-4">
+              <div className="space-y-4">
+                <span className="text-xs text-muted-foreground">
+                  {personalReadiness?.factors.length ?? 0} factors · Max {(personalReadiness?.factors.length ?? 0) * 6} points · Score: {displayPr}%
+                </span>
+                {personalReadiness ? (
+                  <AssessmentFactorTable factors={toDisplayFactors(personalReadiness.factors)} mode="scored" flat />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No Personal Readiness assessment on file.</p>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="value-factors" className="mt-4">
+              <div className="space-y-4">
+                <span className="text-xs text-muted-foreground">
+                  {vfSummary.positive} positive · {vfSummary.neutral} neutral · {vfSummary.improvement} for improvement
+                </span>
+                {valueFactors ? (
+                  <AssessmentFactorTable factors={toDisplayFactors(valueFactors.factors)} mode="qualitative" />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">No Value Factors assessment on file.</p>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </>
+      )}
     </div>
   );
 };

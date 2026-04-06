@@ -1,7 +1,7 @@
 import { buildPlatformContext } from "./platformContext.js";
 
-export function buildSystemPrompt(): string {
-  const context = buildPlatformContext();
+export async function buildSystemPrompt(advisorId: string): Promise<string> {
+  const context = await buildPlatformContext(advisorId);
 
   return `You are the Quarterback Copilot, the AI assistant embedded in The Founders Office — a capital alignment and exit planning platform for business advisors.
 

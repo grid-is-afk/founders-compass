@@ -1,7 +1,12 @@
 import { Activity } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
-import { copilotEngineStatus } from "@/lib/mockData";
 import { engineIcon } from "@/lib/copilotStyles";
+
+const copilotEngineStatus = [
+  { engine: "Capital Architecture", health: 72, activeClients: 3, pendingActions: 2, insight: "Entity misalignment detected for 1 client. Tax optimization opportunities identified for 2 clients." },
+  { engine: "Customer Capital Defense", health: 58, activeClients: 4, pendingActions: 3, insight: "Revenue concentration risk elevated across 2 clients. Retention durability below benchmark for Atlas." },
+  { engine: "Performance & Execution", health: 81, activeClients: 4, pendingActions: 1, insight: "Sprint velocity on track for 3 of 4 engagements. Pinnacle ahead of schedule." },
+];
 
 const EngineStatusPanel = () => {
   return (

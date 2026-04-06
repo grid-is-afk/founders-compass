@@ -2,12 +2,10 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
-import {
-  clientQuarterPlans,
-  clientInstruments,
-  clientGrowEngagements,
-  clientProtection,
-} from "@/lib/clientMockData";
+import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
+import { useClientInstruments } from "@/hooks/useInstrumentsApi";
+import { useClientGrow } from "@/hooks/useGrowApi";
+import { useClientProtection } from "@/hooks/useProtectionApi";
 import QuarterlyJourney from "@/components/dashboard/QuarterlyJourney";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -24,6 +22,7 @@ import {
   Compass,
   CalendarDays,
   BarChart3,
+  GitBranch,
 } from "lucide-react";
 
 const fadeIn = {
@@ -35,10 +34,7 @@ const fadeIn = {
   }),
 };
 
-// ---------------------------------------------------------------------------
-// Instrument status badge
-// ---------------------------------------------------------------------------
-const InstrumentBadge = ({ status }: { status: "complete" | "in_progress" | "not_started" }) => {
+const InstrumentBadge = ({ status }: { status: string }) => {
   if (status === "complete") {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 font-semibold">
@@ -60,21 +56,20 @@ const InstrumentBadge = ({ status }: { status: "complete" | "in_progress" | "not
   );
 };
 
-// ---------------------------------------------------------------------------
-// Protection status badge
-// ---------------------------------------------------------------------------
 const ProtectionBadge = ({ status }: { status: string }) => {
   const map: Record<string, string> = {
     in_place: "bg-emerald-500/10 text-emerald-700",
     under_review: "bg-accent/10 text-accent",
     partial: "bg-amber-500/10 text-amber-700",
     not_documented: "bg-destructive/10 text-destructive",
+    review: "bg-accent/10 text-accent",
   };
   const labels: Record<string, string> = {
     in_place: "In Place",
     under_review: "Under Review",
     partial: "Partial",
     not_documented: "Not Documented",
+    review: "Under Review",
   };
   return (
     <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-semibold", map[status] ?? "bg-muted text-muted-foreground")}>
@@ -83,15 +78,12 @@ const ProtectionBadge = ({ status }: { status: string }) => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// Grow capital type colors
-// ---------------------------------------------------------------------------
 const capitalColors: Record<string, { icon: string; bg: string }> = {
-  human_capital:     { icon: "text-primary",     bg: "bg-primary/10" },
-  customer_capital:  { icon: "text-accent",       bg: "bg-accent/10" },
-  structural_capital:{ icon: "text-emerald-600",  bg: "bg-emerald-500/10" },
-  social_capital:    { icon: "text-violet-600",   bg: "bg-violet-500/10" },
-  personal_path:     { icon: "text-amber-600",    bg: "bg-amber-500/10" },
+  human_capital:      { icon: "text-primary",     bg: "bg-primary/10" },
+  customer_capital:   { icon: "text-accent",       bg: "bg-accent/10" },
+  structural_capital: { icon: "text-emerald-600",  bg: "bg-emerald-500/10" },
+  social_capital:     { icon: "text-violet-600",   bg: "bg-violet-500/10" },
+  personal_path:      { icon: "text-amber-600",    bg: "bg-amber-500/10" },
 };
 
 const capitalIcons: Record<string, React.ReactNode> = {
@@ -102,9 +94,6 @@ const capitalIcons: Record<string, React.ReactNode> = {
   personal_path:      <Compass className="w-4 h-4" />,
 };
 
-// ---------------------------------------------------------------------------
-// Collapsible section wrapper
-// ---------------------------------------------------------------------------
 const PhaseSection = ({
   title,
   subtitle,
@@ -125,17 +114,13 @@ const PhaseSection = ({
         <CollapsibleTrigger className="w-full">
           <div className="flex items-center justify-between px-5 py-4 hover:bg-muted/30 transition-colors">
             <div className="flex items-center gap-3">
-              {accent && (
-                <div className={cn("w-2 h-6 rounded-full", accent)} />
-              )}
+              {accent && <div className={cn("w-2 h-6 rounded-full", accent)} />}
               <div className="text-left">
                 <p className="text-sm font-semibold text-foreground">{title}</p>
                 {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
               </div>
             </div>
-            <ChevronDown
-              className={cn("w-4 h-4 text-muted-foreground transition-transform", open && "rotate-180")}
-            />
+            <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", open && "rotate-180")} />
           </div>
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -146,24 +131,43 @@ const PhaseSection = ({
   );
 };
 
-// ---------------------------------------------------------------------------
-// Main page
-// ---------------------------------------------------------------------------
+// Adapt DB quarterly plan rows to the QuarterlyJourney component's expected shape
+function adaptQuarterPlans(dbPlans: any[]) {
+  return dbPlans.map((p) => ({
+    quarter: `Q${p.quarter}`,
+    year: p.year,
+    label: p.label ?? "",
+    status: p.status ?? "upcoming",
+    reviewDate: p.review_date ?? null,
+    phases: (p.phases ?? []).map((ph: any) => ({
+      id: ph.id ?? `${p.id}-${ph.phase}`,
+      phase: ph.phase,
+      label: ph.label ?? ph.phase,
+      status: ph.status ?? "not_started",
+      completedTasks: ph.completed_tasks ?? 0,
+      totalTasks: ph.total_tasks ?? 0,
+    })),
+  }));
+}
+
 const AdvisorJourney = () => {
   const { selectedClientId, selectedClient } = useClientContext();
+  const { data: rawPlans = [], isLoading: plansLoading } = useClientQuarterlyPlans(selectedClientId);
+  const { data: rawInstruments = [] } = useClientInstruments(selectedClientId);
+  const { data: rawGrow = [] } = useClientGrow(selectedClientId);
+  const { data: rawProtection = [] } = useClientProtection(selectedClientId);
 
-  const quarterPlans = clientQuarterPlans[selectedClientId] ?? clientQuarterPlans["1"];
-  const instruments = clientInstruments[selectedClientId] ?? clientInstruments["1"];
-  const growEngagements = clientGrowEngagements[selectedClientId] ?? clientGrowEngagements["1"];
-  const protection = clientProtection[selectedClientId] ?? clientProtection["1"];
+  const quarterPlans = adaptQuarterPlans(rawPlans as any[]);
+  const instruments = rawInstruments as any[];
+  const growEngagements = rawGrow as any[];
+  const protection = rawProtection as any[];
 
-  // Determine active quarter from the data
   const activeQuarterPlan = quarterPlans.find((q) => q.status === "active") ?? quarterPlans[0];
-  const activeQuarterNum = parseInt(activeQuarterPlan.quarter.replace("Q", "")) as 1 | 2 | 3 | 4;
+  const activeQuarterNum = activeQuarterPlan
+    ? (parseInt(activeQuarterPlan.quarter.replace("Q", "")) as 1 | 2 | 3 | 4)
+    : 1;
 
-  // Quarter indicator data
   const quarters = quarterPlans.map((q) => {
-    const num = parseInt(q.quarter.replace("Q", ""));
     const ranges: Record<string, string> = {
       Q1: "Jan 1 – Mar 31",
       Q2: "Apr 1 – Jun 30",
@@ -175,23 +179,60 @@ const AdvisorJourney = () => {
       year: q.year,
       range: ranges[q.quarter],
       status: q.status === "complete" ? "complete" : q.status === "active" ? "active" : "upcoming",
-      daysLeft: q.status === "active" ? 47 : undefined,
+      daysLeft: q.status === "active" ? undefined : undefined,
     };
   });
 
   const proveInstruments = instruments.filter((i) =>
-    ["diagnose", "design_tfo"].includes(i.linkedPhase)
+    ["diagnose", "design_tfo"].includes(i.linked_phase ?? "")
   );
+
+  if (plansLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Client Journey — {selectedClient.name}</h1>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center text-sm text-muted-foreground">
+          Loading journey data...
+        </div>
+      </div>
+    );
+  }
+
+  if (quarterPlans.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Client Journey — {selectedClient.name}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Quarterly cycle engagement</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <GitBranch className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No quarterly plans yet</h3>
+          <p className="text-sm text-muted-foreground">Create quarterly plans to track the client journey.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
         <h1 className="text-3xl font-display font-semibold text-foreground">
           Client Journey — {selectedClient.name}
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Quarterly cycle · {selectedClient.contact} · {activeQuarterPlan.quarter} {activeQuarterPlan.year} {activeQuarterPlan.status === "active" ? "Active" : activeQuarterPlan.status === "complete" ? "Complete" : "Upcoming"}
+          Quarterly cycle · {selectedClient.contact_name ?? "—"} ·{" "}
+          {activeQuarterPlan
+            ? `${activeQuarterPlan.quarter} ${activeQuarterPlan.year} ${
+                activeQuarterPlan.status === "active"
+                  ? "Active"
+                  : activeQuarterPlan.status === "complete"
+                  ? "Complete"
+                  : "Upcoming"
+              }`
+            : ""}
         </p>
       </motion.div>
 
@@ -215,22 +256,10 @@ const AdvisorJourney = () => {
             )}
           >
             <div className="flex items-center justify-between mb-0.5">
-              <span
-                className={cn(
-                  "text-xs font-bold",
-                  q.status === "active" ? "text-accent-foreground" : "text-foreground"
-                )}
-              >
+              <span className={cn("text-xs font-bold", q.status === "active" ? "text-accent-foreground" : "text-foreground")}>
                 {q.label}
               </span>
-              {q.status === "complete" && (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              )}
-              {q.status === "active" && q.daysLeft !== undefined && (
-                <span className="text-[10px] font-semibold text-accent-foreground">
-                  {q.daysLeft}d left
-                </span>
-              )}
+              {q.status === "complete" && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
             </div>
             <p className={cn("text-[10px]", q.status === "active" ? "text-accent-foreground/80" : "text-muted-foreground")}>
               {q.range}
@@ -241,10 +270,7 @@ const AdvisorJourney = () => {
 
       {/* Quarterly Journey Ring */}
       <motion.div custom={0} initial="hidden" animate="visible" variants={fadeIn}>
-        <QuarterlyJourney
-          quarterPlans={quarterPlans}
-          activeQuarter={activeQuarterNum}
-        />
+        <QuarterlyJourney quarterPlans={quarterPlans as any} activeQuarter={activeQuarterNum} />
       </motion.div>
 
       {/* Phase Sections */}
@@ -261,22 +287,23 @@ const AdvisorJourney = () => {
               <p className="text-xs text-muted-foreground">
                 Instruments and deliverables completed during Diagnose and Design phases.
               </p>
-              <div className="grid grid-cols-2 gap-2">
-                {proveInstruments.map((inst) => (
-                  <div
-                    key={inst.id}
-                    className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium text-foreground truncate">{inst.name}</p>
-                      {inst.completedDate && (
-                        <p className="text-[10px] text-muted-foreground">{inst.completedDate}</p>
-                      )}
+              {proveInstruments.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">No instruments on file yet.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {proveInstruments.map((inst) => (
+                    <div key={inst.id} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-foreground truncate">{inst.name}</p>
+                        {inst.completed_date && (
+                          <p className="text-[10px] text-muted-foreground">{inst.completed_date}</p>
+                        )}
+                      </div>
+                      <InstrumentBadge status={inst.status} />
                     </div>
-                    <InstrumentBadge status={inst.status} />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </PhaseSection>
         </motion.div>
@@ -288,37 +315,31 @@ const AdvisorJourney = () => {
             subtitle={`${protection.filter((i) => i.status === "in_place").length}/${protection.length} items in place`}
             accent="bg-accent"
           >
-            <div className="space-y-2">
-              {protection.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start justify-between gap-3 p-3 rounded-lg border border-border bg-muted/20"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />
-                      <span className="text-xs font-medium text-foreground">{item.label}</span>
+            {protection.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No protection items on file yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {protection.map((item) => (
+                  <div key={item.id} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-border bg-muted/20">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <ShieldCheck className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                        <span className="text-xs font-medium text-foreground">{item.label}</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-snug">{item.recommendation ?? "—"}</p>
                     </div>
-                    <p className="text-[11px] text-muted-foreground leading-snug">{item.recommendation}</p>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <ProtectionBadge status={item.status} />
+                      <span className={cn("text-[10px] font-medium",
+                        item.risk === "high" ? "text-destructive" : item.risk === "medium" ? "text-amber-600" : "text-muted-foreground"
+                      )}>
+                        {item.risk ?? "—"} risk
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <ProtectionBadge status={item.status} />
-                    <span
-                      className={cn(
-                        "text-[10px] font-medium",
-                        item.risk === "high"
-                          ? "text-destructive"
-                          : item.risk === "medium"
-                          ? "text-amber-600"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {item.risk} risk
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </PhaseSection>
         </motion.div>
 
@@ -326,42 +347,36 @@ const AdvisorJourney = () => {
         <motion.div custom={3} initial="hidden" animate="visible" variants={fadeIn}>
           <PhaseSection
             title="Grow"
-            subtitle={`${growEngagements.filter((e) => e.status === "in_progress").length}/${growEngagements.length} engagements active · ${growEngagements.filter((e) => e.partner).length} partners engaged`}
+            subtitle={`${growEngagements.filter((e) => e.status === "in_progress").length}/${growEngagements.length} engagements active`}
             accent="bg-emerald-600"
           >
-            <div className="grid grid-cols-5 gap-2">
-              {growEngagements.map((eng) => {
-                const colors = capitalColors[eng.capitalType] ?? { icon: "text-muted-foreground", bg: "bg-muted" };
-                const icon = capitalIcons[eng.capitalType];
-                const pct = eng.taskCount > 0 ? Math.round((eng.completedTasks / eng.taskCount) * 100) : 0;
-                return (
-                  <div
-                    key={eng.id}
-                    className="rounded-lg border border-border p-3 space-y-2"
-                  >
-                    <div className={cn("w-7 h-7 rounded-md flex items-center justify-center", colors.bg)}>
-                      <span className={colors.icon}>{icon}</span>
+            {growEngagements.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-4">No grow engagements on file yet.</p>
+            ) : (
+              <div className="grid grid-cols-5 gap-2">
+                {growEngagements.map((eng) => {
+                  const colors = capitalColors[eng.capital_type ?? ""] ?? { icon: "text-muted-foreground", bg: "bg-muted" };
+                  const icon = capitalIcons[eng.capital_type ?? ""] ?? null;
+                  const pct = eng.task_count > 0 ? Math.round((eng.completed_tasks / eng.task_count) * 100) : 0;
+                  return (
+                    <div key={eng.id} className="rounded-lg border border-border p-3 space-y-2">
+                      <div className={cn("w-7 h-7 rounded-md flex items-center justify-center", colors.bg)}>
+                        <span className={colors.icon}>{icon}</span>
+                      </div>
+                      <p className="text-xs font-semibold text-foreground leading-tight">{eng.label}</p>
+                      {eng.partner && <p className="text-[10px] text-muted-foreground truncate">{eng.partner}</p>}
+                      <Progress value={pct} className="h-1" />
+                      <p className="text-[10px] text-muted-foreground">{eng.completed_tasks}/{eng.task_count} tasks</p>
+                      <span className={cn("text-[10px] px-1.5 py-0.5 rounded-full font-medium",
+                        eng.status === "in_progress" ? "bg-accent/10 text-accent" : "bg-muted text-muted-foreground"
+                      )}>
+                        {eng.status === "in_progress" ? "Active" : "Upcoming"}
+                      </span>
                     </div>
-                    <p className="text-xs font-semibold text-foreground leading-tight">{eng.label}</p>
-                    {eng.partner && (
-                      <p className="text-[10px] text-muted-foreground truncate">{eng.partner}</p>
-                    )}
-                    <Progress value={pct} className="h-1" />
-                    <p className="text-[10px] text-muted-foreground">{eng.completedTasks}/{eng.taskCount} tasks</p>
-                    <span
-                      className={cn(
-                        "text-[10px] px-1.5 py-0.5 rounded-full font-medium",
-                        eng.status === "in_progress"
-                          ? "bg-accent/10 text-accent"
-                          : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {eng.status === "in_progress" ? "Active" : "Upcoming"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </PhaseSection>
         </motion.div>
 
@@ -369,27 +384,28 @@ const AdvisorJourney = () => {
         <motion.div custom={4} initial="hidden" animate="visible" variants={fadeIn}>
           <PhaseSection
             title="Align"
-            subtitle={`Quarterly review ${activeQuarterPlan.reviewDate ?? "TBD"}`}
+            subtitle={`Quarterly review ${activeQuarterPlan?.reviewDate ?? "TBD"}`}
             accent="bg-muted-foreground"
           >
             <div className="space-y-4">
               <div className="flex items-center gap-3 p-4 rounded-lg border border-border bg-muted/20">
                 <CalendarDays className="w-8 h-8 text-muted-foreground flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-foreground">{activeQuarterPlan.quarter} Quarterly Review</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Scheduled — {activeQuarterPlan.reviewDate ?? "TBD"}</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {activeQuarterPlan?.quarter} Quarterly Review
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Scheduled — {activeQuarterPlan?.reviewDate ?? "TBD"}
+                  </p>
                 </div>
               </div>
-
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Review Objectives
-                </p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Review Objectives</p>
                 {[
                   "Review Protect architecture progress with insurance specialist",
                   "Assess Grow Lane engagement across all 5 capital types",
                   "Present Founder's Optionality Framework outcomes",
-                  "Set Q3 priorities and Align commitments",
+                  "Set next quarter priorities and Align commitments",
                 ].map((obj, i) => (
                   <div key={i} className="flex items-center gap-2.5 text-xs text-foreground">
                     <Circle className="w-3 h-3 text-muted-foreground flex-shrink-0" />

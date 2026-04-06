@@ -1,7 +1,14 @@
 import { useMemo } from "react";
-import { meridianAssessments } from "@/lib/assessmentMockData";
 import { computeScoredPercentage, computeValueFactorsSummary } from "@/lib/assessmentUtils";
 import type { ClientAssessments } from "@/lib/types/assessments";
+
+const EMPTY_ASSESSMENTS: ClientAssessments = {
+  clientId: "",
+  businessAttractiveness: null,
+  businessReadiness: null,
+  personalReadiness: null,
+  valueFactors: null,
+};
 
 export interface AssessmentScores {
   assessments: ClientAssessments;
@@ -14,7 +21,7 @@ export interface AssessmentScores {
 }
 
 export function useAssessmentScores(
-  clientAssessments: ClientAssessments = meridianAssessments
+  clientAssessments: ClientAssessments = EMPTY_ASSESSMENTS
 ): AssessmentScores {
   return useMemo(() => {
     const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = clientAssessments;

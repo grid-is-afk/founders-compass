@@ -1,6 +1,12 @@
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { copilotDataGaps } from "@/lib/mockData";
+
+const copilotDataGaps = [
+  { id: "dg1", category: "Financials", gap: "Revenue segmentation by customer — last 3 years", client: "Atlas Manufacturing", impact: "Blocks Customer Capital Index" },
+  { id: "dg2", category: "Tax", gap: "2024 tax returns not uploaded", client: "Vanguard Tech Solutions", impact: "Blocks Capital Architecture review" },
+  { id: "dg3", category: "Governance", gap: "Founder dependency survey incomplete", client: "Vanguard Tech Solutions", impact: "Blocks Legacy score calculation" },
+  { id: "dg4", category: "Legal", gap: "Operating agreement not on file", client: "Atlas Manufacturing", impact: "Blocks entity restructuring analysis" },
+];
 
 const DataGapsTab = () => {
   return (

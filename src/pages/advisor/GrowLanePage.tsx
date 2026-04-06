@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
-import { clientGrowEngagements } from "@/lib/clientMockData";
+import { useClientGrow } from "@/hooks/useGrowApi";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -310,7 +310,19 @@ const CapitalDetailDialog = ({
 // ---------------------------------------------------------------------------
 const GrowLanePage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const engagements = clientGrowEngagements[selectedClientId] ?? clientGrowEngagements["1"];
+  const { data: rawGrow = [] } = useClientGrow(selectedClientId);
+  // Map DB rows to the GrowEngagement shape the cards expect
+  const engagements: GrowEngagement[] = (rawGrow as any[]).map((g) => ({
+    id: g.id,
+    clientId: g.client_id,
+    capitalType: (g.capital_type ?? "human_capital") as GrowCapitalType,
+    label: g.label,
+    partner: g.partner ?? null,
+    status: g.status ?? "exploring",
+    adoptedFromTemplate: g.adopted_from_template ?? false,
+    taskCount: g.task_count ?? 0,
+    completedTasks: g.completed_tasks ?? 0,
+  }));
   const [selectedCapital, setSelectedCapital] = useState<GrowCapitalType | null>(null);
 
   return (

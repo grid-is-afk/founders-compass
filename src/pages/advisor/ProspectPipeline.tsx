@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { prospects } from "@/lib/journeyMockData";
+import { useProspects, useCreateProspect } from "@/hooks/useProspects";
 import ProspectCard from "@/components/dashboard/ProspectCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle } from "lucide-react";
-import type { Prospect, ProspectStatus } from "@/lib/types/journey";
+import { Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, UserPlus } from "lucide-react";
+import type { ProspectStatus } from "@/lib/types/journey";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const fadeIn = {
   hidden: { opacity: 0, y: 12 },
@@ -29,7 +30,7 @@ const fadeIn = {
 interface Column {
   id: string;
   label: string;
-  statuses: ProspectStatus[];
+  statuses: string[];
   accent: string;
 }
 
@@ -37,7 +38,7 @@ const columns: Column[] = [
   {
     id: "intake",
     label: "Intake",
-    statuses: ["intake"],
+    statuses: ["intake", "new"],
     accent: "bg-muted text-muted-foreground",
   },
   {
@@ -60,11 +61,9 @@ const columns: Column[] = [
   },
 ];
 
-const filterProspects = (col: Column, all: Prospect[]) =>
-  all.filter((p) => col.statuses.includes(p.status));
-
-const statusLabel: Record<ProspectStatus, string> = {
+const statusLabel: Record<string, string> = {
   intake: "Intake",
+  new: "Intake",
   discovery_scheduled: "Discovery Scheduled",
   discovery_complete: "Discovery Complete",
   fit_assessment: "Fit Assessment",
@@ -73,11 +72,30 @@ const statusLabel: Record<ProspectStatus, string> = {
   onboarding: "Onboarding",
 };
 
+// Map a DB prospect row to the shape ProspectCard expects
+function toProspectShape(row: any) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    contact: row.contact ?? "—",
+    company: row.company ?? "—",
+    revenue: row.revenue ?? "—",
+    source: row.source ?? "—",
+    status: (row.status ?? "intake") as ProspectStatus,
+    fitScore: row.fit_score ?? undefined,
+    fitDecision: row.fit_decision ?? undefined,
+    notes: row.notes ?? undefined,
+    date: row.date
+      ? new Date(row.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "—",
+  };
+}
+
 const ProspectDetailDialog = ({
   prospect,
   onClose,
 }: {
-  prospect: Prospect | null;
+  prospect: ReturnType<typeof toProspectShape> | null;
   onClose: () => void;
 }) => {
   if (!prospect) return null;
@@ -90,10 +108,9 @@ const ProspectDetailDialog = ({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Status + source */}
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="outline" className="text-[10px] px-2 py-0">
-              {statusLabel[prospect.status]}
+              {statusLabel[prospect.status] ?? prospect.status}
             </Badge>
             <Badge variant="outline" className="text-[10px] px-2 py-0">
               {prospect.source}
@@ -110,7 +127,6 @@ const ProspectDetailDialog = ({
             )}
           </div>
 
-          {/* Key metrics */}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg bg-muted/40 border border-border p-3">
               <div className="flex items-center gap-1.5 mb-1">
@@ -128,7 +144,6 @@ const ProspectDetailDialog = ({
             </div>
           </div>
 
-          {/* Fit score */}
           {prospect.fitScore !== undefined && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs">
@@ -146,7 +161,6 @@ const ProspectDetailDialog = ({
             </div>
           )}
 
-          {/* Contact info */}
           <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1.5">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Contact</p>
             <div className="flex items-center gap-2 text-xs">
@@ -159,7 +173,6 @@ const ProspectDetailDialog = ({
             </div>
           </div>
 
-          {/* Notes */}
           {prospect.notes && (
             <div className="rounded-lg bg-muted/20 border border-border p-3">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold mb-1">Notes</p>
@@ -179,64 +192,152 @@ const ProspectDetailDialog = ({
   );
 };
 
+const AddProspectDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
+  const createProspect = useCreateProspect();
+  const [form, setForm] = useState({
+    name: "",
+    contact: "",
+    company: "",
+    revenue: "",
+    source: "",
+    notes: "",
+  });
+
+  const handleCreate = async () => {
+    if (!form.name.trim()) {
+      toast.error("Prospect name is required");
+      return;
+    }
+    try {
+      await createProspect.mutateAsync({
+        name: form.name.trim(),
+        contact: form.contact.trim() || null,
+        company: form.company.trim() || null,
+        revenue: form.revenue.trim() || null,
+        source: form.source.trim() || null,
+        notes: form.notes.trim() || null,
+        status: "intake",
+      });
+      toast.success(`Prospect "${form.name}" added`);
+      setForm({ name: "", contact: "", company: "", revenue: "", source: "", notes: "" });
+      onClose();
+    } catch {
+      toast.error("Failed to add prospect");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">Add Prospect</DialogTitle>
+          <DialogDescription>Enter prospect details to add them to the pipeline.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          {[
+            { label: "Name *", key: "name", placeholder: "e.g. John Smith" },
+            { label: "Contact", key: "contact", placeholder: "e.g. john@company.com" },
+            { label: "Company", key: "company", placeholder: "e.g. Acme Corp" },
+            { label: "Revenue", key: "revenue", placeholder: "e.g. $5M" },
+            { label: "Source", key: "source", placeholder: "e.g. Referral" },
+            { label: "Notes", key: "notes", placeholder: "Optional notes..." },
+          ].map(({ label, key, placeholder }) => (
+            <div key={key} className="space-y-1">
+              <label className="text-xs font-medium text-foreground">{label}</label>
+              <input
+                className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder={placeholder}
+                value={form[key as keyof typeof form]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+              />
+            </div>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={createProspect.isPending}>
+            {createProspect.isPending ? "Adding..." : "Add Prospect"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
 const ProspectPipeline = () => {
-  const [selectedProspect, setSelectedProspect] = useState<Prospect | null>(null);
+  const { data: rawProspects = [], isLoading } = useProspects();
+  const [selectedProspect, setSelectedProspect] = useState<ReturnType<typeof toProspectShape> | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const prospects = (rawProspects as any[]).map(toProspectShape);
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
-        <h1 className="text-3xl font-display font-semibold text-foreground">Prospect Pipeline</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Pre-client fit assessment and onboarding funnel</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-display font-semibold text-foreground">Prospect Pipeline</h1>
+            <p className="text-muted-foreground mt-1 text-sm">Pre-client fit assessment and onboarding funnel</p>
+          </div>
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />Add Prospect
+          </Button>
+        </div>
       </motion.div>
 
-      {/* Kanban board */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
-        {columns.map((col, colIdx) => {
-          const colProspects = filterProspects(col, prospects);
-          return (
-            <motion.div
-              key={col.id}
-              custom={colIdx}
-              initial="hidden"
-              animate="visible"
-              variants={fadeIn}
-              className="space-y-3"
-            >
-              {/* Column header */}
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">{col.label}</h2>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] px-1.5 py-0 font-semibold ${col.accent}`}
-                >
-                  {colProspects.length}
-                </Badge>
-              </div>
+      {isLoading ? (
+        <div className="text-center text-sm text-muted-foreground py-12">Loading prospects...</div>
+      ) : (
+        /* Kanban board */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start">
+          {columns.map((col, colIdx) => {
+            const colProspects = prospects.filter((p) => col.statuses.includes(p.status));
+            return (
+              <motion.div
+                key={col.id}
+                custom={colIdx}
+                initial="hidden"
+                animate="visible"
+                variants={fadeIn}
+                className="space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-foreground">{col.label}</h2>
+                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 font-semibold ${col.accent}`}>
+                    {colProspects.length}
+                  </Badge>
+                </div>
 
-              {/* Drop zone background */}
-              <div className="rounded-lg bg-muted/30 border border-dashed border-border min-h-[120px] p-2 space-y-2">
-                {colProspects.length === 0 && (
-                  <div className="flex items-center justify-center h-16">
-                    <span className="text-xs text-muted-foreground/50">No prospects</span>
-                  </div>
-                )}
-                {colProspects.map((prospect) => (
-                  <div key={prospect.id} onClick={() => setSelectedProspect(prospect)}>
-                    <ProspectCard prospect={prospect} />
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
+                <div className="rounded-lg bg-muted/30 border border-dashed border-border min-h-[120px] p-2 space-y-2">
+                  {colProspects.length === 0 && (
+                    <div className="flex items-center justify-center h-16">
+                      <span className="text-xs text-muted-foreground/50">No prospects</span>
+                    </div>
+                  )}
+                  {colProspects.map((prospect) => (
+                    <div key={prospect.id} onClick={() => setSelectedProspect(prospect)}>
+                      <ProspectCard prospect={prospect as any} />
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Prospect detail dialog */}
-      <ProspectDetailDialog
-        prospect={selectedProspect}
-        onClose={() => setSelectedProspect(null)}
-      />
+      {prospects.length === 0 && !isLoading && (
+        <div className="text-center py-8">
+          <UserPlus className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No prospects yet</h3>
+          <p className="text-sm text-muted-foreground mb-4">Add your first prospect to start the pipeline.</p>
+          <Button onClick={() => setAddOpen(true)}>Add Prospect</Button>
+        </div>
+      )}
+
+      <ProspectDetailDialog prospect={selectedProspect} onClose={() => setSelectedProspect(null)} />
+      <AddProspectDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 };
