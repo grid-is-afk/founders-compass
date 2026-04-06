@@ -17,9 +17,11 @@ const Login = () => {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Already logged in — go straight to dashboard
+  // Already logged in — redirect based on role
   if (!isLoading && isAuthenticated) {
-    return <Navigate to="/advisor" replace />;
+    const savedUser = localStorage.getItem("tfo-user");
+    const role = savedUser ? JSON.parse(savedUser).role : "advisor";
+    return <Navigate to={role === "client" ? "/client" : "/advisor"} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -29,7 +31,10 @@ const Login = () => {
 
     try {
       await login(email.trim().toLowerCase(), password);
-      navigate("/advisor", { replace: true });
+      // Redirect based on role
+      const savedUser = localStorage.getItem("tfo-user");
+      const role = savedUser ? JSON.parse(savedUser).role : "advisor";
+      navigate(role === "client" ? "/client" : "/advisor", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
