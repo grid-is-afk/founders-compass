@@ -1,4 +1,11 @@
-import { Zap, TrendingUp, AlertTriangle, FileText, FileWarning, BarChart3 } from "lucide-react";
+import {
+  Zap,
+  AlertTriangle,
+  FileText,
+  ArrowRight,
+  CheckSquare,
+  Calendar,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 interface Suggestion {
@@ -8,11 +15,11 @@ interface Suggestion {
 
 const suggestions: Suggestion[] = [
   { text: "What should I focus on today?", icon: Zap },
-  { text: "Summarize Meridian Industries", icon: TrendingUp },
-  { text: "What are the top risks across my portfolio?", icon: AlertTriangle },
-  { text: "Draft a Capital Readiness Memo for Meridian", icon: FileText },
-  { text: "What data is missing for my clients?", icon: FileWarning },
-  { text: "Compare my client assessment scores", icon: BarChart3 },
+  { text: "Create a sprint task for Meridian's Q2 review", icon: CheckSquare },
+  { text: "Generate a Capital Readiness Memo for Meridian", icon: FileText },
+  { text: "Move Summit Logistics to discovery stage", icon: ArrowRight },
+  { text: "Flag a risk for Atlas — customer concentration above 30%", icon: AlertTriangle },
+  { text: "Schedule a quarterly review with Pinnacle for next month", icon: Calendar },
 ];
 
 interface CopilotSuggestionsProps {

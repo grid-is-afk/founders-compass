@@ -2,12 +2,23 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  actions?: ChatAction[];
 }
+
+export interface ChatAction {
+  type: string;
+  toolName: string;
+  [key: string]: unknown;
+}
+
+export type StreamEvent =
+  | { kind: "text"; text: string }
+  | { kind: "action"; action: ChatAction };
 
 export async function* streamChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   signal?: AbortSignal
-): AsyncGenerator<string> {
+): AsyncGenerator<StreamEvent> {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -37,7 +48,16 @@ export async function* streamChat(
         try {
           const parsed = JSON.parse(data);
           if (parsed.type === "text") {
-            yield parsed.text;
+            yield { kind: "text", text: parsed.text };
+          } else if (parsed.type === "action") {
+            yield {
+              kind: "action",
+              action: {
+                type: parsed.action?.type ?? parsed.toolName,
+                toolName: parsed.toolName,
+                ...parsed.action,
+              },
+            };
           } else if (parsed.type === "error") {
             throw new Error(parsed.error);
           } else if (parsed.type === "done") {
