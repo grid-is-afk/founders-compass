@@ -7,6 +7,23 @@ import { buildSystemPrompt } from "./systemPrompt.js";
 import { tools, executeTool } from "./tools.js";
 import dotenv from "dotenv";
 
+import { authMiddleware } from "./middleware/auth.js";
+import authRoutes from "./routes/auth.js";
+import clientRoutes from "./routes/clients.js";
+import assessmentRoutes from "./routes/assessments.js";
+import taskRoutes from "./routes/tasks.js";
+import prospectRoutes from "./routes/prospects.js";
+import instrumentRoutes from "./routes/instruments.js";
+import protectionRoutes from "./routes/protection.js";
+import growRoutes from "./routes/grow.js";
+import riskAlertRoutes from "./routes/risk-alerts.js";
+import deliverableRoutes from "./routes/deliverables.js";
+import meetingRoutes from "./routes/meetings.js";
+import documentRoutes from "./routes/documents.js";
+import quarterlyPlanRoutes from "./routes/quarterly-plans.js";
+import dashboardRoutes from "./routes/dashboard.js";
+import activityRoutes from "./routes/activity.js";
+
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +37,33 @@ const anthropic = new Anthropic({
 
 const systemPrompt = buildSystemPrompt();
 
-app.post("/api/chat", async (req, res) => {
+// ============================================================
+// Public routes
+// ============================================================
+app.use("/api/auth", authRoutes);
+
+// ============================================================
+// Protected API routes — all require a valid JWT
+// ============================================================
+app.use("/api/clients", authMiddleware, clientRoutes);
+app.use("/api/assessments", authMiddleware, assessmentRoutes);
+app.use("/api/tasks", authMiddleware, taskRoutes);
+app.use("/api/prospects", authMiddleware, prospectRoutes);
+app.use("/api/instruments", authMiddleware, instrumentRoutes);
+app.use("/api/protection", authMiddleware, protectionRoutes);
+app.use("/api/grow", authMiddleware, growRoutes);
+app.use("/api/risk-alerts", authMiddleware, riskAlertRoutes);
+app.use("/api/deliverables", authMiddleware, deliverableRoutes);
+app.use("/api/meetings", authMiddleware, meetingRoutes);
+app.use("/api/documents", authMiddleware, documentRoutes);
+app.use("/api/quarterly-plans", authMiddleware, quarterlyPlanRoutes);
+app.use("/api/dashboard", authMiddleware, dashboardRoutes);
+app.use("/api/activity", authMiddleware, activityRoutes);
+
+// ============================================================
+// Copilot chat — protected
+// ============================================================
+app.post("/api/chat", authMiddleware, async (req, res) => {
   const { messages } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
@@ -111,11 +154,12 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// Serve static frontend files in production
+// ============================================================
+// Static frontend + SPA fallback — MUST stay at the bottom
+// ============================================================
 const distPath = path.join(__dirname, "..", "dist");
 app.use(express.static(distPath));
 
-// SPA fallback — serve index.html for all non-API routes
 app.get("{*path}", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });

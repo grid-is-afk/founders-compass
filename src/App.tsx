@@ -4,7 +4,11 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
+import { AuthProvider } from "@/lib/auth";
+import ProtectedRoute from "@/components/ProtectedRoute";
+
 import Landing from "./pages/Landing";
+import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
 import AdvisorLayout from "./components/layout/AdvisorLayout";
@@ -46,64 +50,85 @@ import FounderExperience from "./pages/founder/FounderExperience";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Landing />} />
+  <AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* Public */}
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
 
-          {/* Advisor Back Office */}
-          <Route path="/advisor" element={<AdvisorLayout />}>
-            <Route index element={<AdvisorDashboard />} />
-            <Route path="clients" element={<AdvisorClients />} />
+            {/* Protected Advisor Back Office */}
+            <Route
+              path="/advisor"
+              element={
+                <ProtectedRoute>
+                  <AdvisorLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<AdvisorDashboard />} />
+              <Route path="clients" element={<AdvisorClients />} />
 
-            {/* Journey (replaces workflow) */}
-            <Route path="journey" element={<AdvisorJourney />} />
-            <Route path="workflow" element={<Navigate to="/advisor/journey" replace />} />
+              {/* Journey */}
+              <Route path="journey" element={<AdvisorJourney />} />
+              <Route
+                path="workflow"
+                element={<Navigate to="/advisor/journey" replace />}
+              />
 
-            {/* New TFO pages */}
-            <Route path="prospects" element={<ProspectPipeline />} />
-            <Route path="instruments" element={<InstrumentsPage />} />
-            <Route path="grow-lane" element={<GrowLanePage />} />
-            <Route path="protection" element={<ProtectionPage />} />
-            <Route path="quarterly-review" element={<QuarterlyReviewPage />} />
+              {/* TFO pages */}
+              <Route path="prospects" element={<ProspectPipeline />} />
+              <Route path="instruments" element={<InstrumentsPage />} />
+              <Route path="grow-lane" element={<GrowLanePage />} />
+              <Route path="protection" element={<ProtectionPage />} />
+              <Route path="quarterly-review" element={<QuarterlyReviewPage />} />
 
-            {/* Legacy engine pages — still valuable as analytics views */}
-            <Route path="capital-architecture" element={<CapitalArchitecture />} />
-            <Route path="customer-capital" element={<CustomerCapital />} />
-            <Route path="performance" element={<PerformanceEngine />} />
+              {/* Engine analytics pages */}
+              <Route path="capital-architecture" element={<CapitalArchitecture />} />
+              <Route path="customer-capital" element={<CustomerCapital />} />
+              <Route path="performance" element={<PerformanceEngine />} />
 
-            <Route path="assessments" element={<AdvisorAssessmentsPage />} />
-            <Route path="uploads" element={<AdvisorUploads />} />
-            <Route path="data-room" element={<AdvisorDataRoom />} />
-            <Route path="copilot" element={<CopilotPage />} />
-            <Route path="sprints" element={<AdvisorSprints />} />
-            <Route path="reports" element={<AdvisorReports />} />
-            <Route path="publish" element={<AdvisorPublish />} />
-            <Route path="investor-share" element={<AdvisorInvestorShare />} />
-          </Route>
+              <Route path="assessments" element={<AdvisorAssessmentsPage />} />
+              <Route path="uploads" element={<AdvisorUploads />} />
+              <Route path="data-room" element={<AdvisorDataRoom />} />
+              <Route path="copilot" element={<CopilotPage />} />
+              <Route path="sprints" element={<AdvisorSprints />} />
+              <Route path="reports" element={<AdvisorReports />} />
+              <Route path="publish" element={<AdvisorPublish />} />
+              <Route path="investor-share" element={<AdvisorInvestorShare />} />
+            </Route>
 
-          {/* Client Portal */}
-          <Route path="/client" element={<ClientLayout />}>
-            <Route index element={<ClientDashboard />} />
-            <Route path="questionnaires" element={<ClientQuestionnaires />} />
-            <Route path="uploads" element={<ClientUploads />} />
-            <Route path="tasks" element={<ClientTasks />} />
-            <Route path="reports" element={<ClientReports />} />
-            <Route path="meetings" element={<ClientMeetings />} />
-          </Route>
+            {/* Protected Client Portal */}
+            <Route
+              path="/client"
+              element={
+                <ProtectedRoute>
+                  <ClientLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<ClientDashboard />} />
+              <Route path="questionnaires" element={<ClientQuestionnaires />} />
+              <Route path="uploads" element={<ClientUploads />} />
+              <Route path="tasks" element={<ClientTasks />} />
+              <Route path="reports" element={<ClientReports />} />
+              <Route path="meetings" element={<ClientMeetings />} />
+            </Route>
 
-          {/* Shared Experiences */}
-          <Route path="/founder" element={<FounderExperience />} />
-          <Route path="/investor" element={<InvestorView />} />
+            {/* Public shared experiences */}
+            <Route path="/founder" element={<FounderExperience />} />
+            <Route path="/investor" element={<InvestorView />} />
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </AuthProvider>
 );
 
 export default App;

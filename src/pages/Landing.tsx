@@ -35,7 +35,7 @@ const Landing = () => {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/client" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Client Portal</Link>
-            <Link to="/advisor">
+            <Link to="/login">
               <Button size="sm">Advisor Login</Button>
             </Link>
           </div>
@@ -58,7 +58,7 @@ const Landing = () => {
             The Founders Office helps advisors prepare founder-led businesses for stronger exits, smarter tax outcomes, reduced founder dependency, and real capital optionality — with structure, discipline, and institutional credibility.
           </p>
           <div className="flex gap-3">
-            <Link to="/advisor">
+            <Link to="/login">
               <Button size="lg" className="gap-2">
                 Enter Advisor Dashboard <ArrowRight className="w-4 h-4" />
               </Button>
@@ -133,7 +133,7 @@ const Landing = () => {
           <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
             Structure. Discipline. Institutional Credibility. Capital alignment is not theory — it is leadership in motion.
           </p>
-          <Link to="/advisor">
+          <Link to="/login">
             <Button size="lg" className="gap-2">
               Get Started <ArrowRight className="w-4 h-4" />
             </Button>

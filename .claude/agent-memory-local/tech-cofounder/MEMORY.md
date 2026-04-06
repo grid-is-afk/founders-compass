@@ -1,0 +1,1 @@
+- [Founders Compass Architecture](project_founders_compass.md) -- TFO advisory platform moving from mock data to PostgreSQL+auth, multi-tenant

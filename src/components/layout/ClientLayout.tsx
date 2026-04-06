@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, ClipboardCheck, Upload, CalendarDays, FileText, Video, LogOut, User, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,7 @@ const clientNav = [
 const ClientLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-background">
@@ -37,13 +39,22 @@ const ClientLayout = () => {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="w-8 h-8 rounded-full bg-primary flex items-center justify-center focus-visible:ring-2 focus-visible:ring-ring outline-none">
-                <span className="text-xs font-semibold text-primary-foreground">AC</span>
+                <span className="text-xs font-semibold text-primary-foreground">
+                  {user?.name
+                    ? user.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase()
+                    : "?"}
+                </span>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel>
-                <p className="text-sm font-medium">Sarah Chen</p>
-                <p className="text-xs text-muted-foreground">Meridian Industries</p>
+                <p className="text-sm font-medium">{user?.name ?? "User"}</p>
+                <p className="text-xs text-muted-foreground truncate">{user?.email ?? ""}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => navigate("/client")}>
@@ -56,7 +67,12 @@ const ClientLayout = () => {
                 <FileText className="w-4 h-4 mr-2" /> Reports
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => navigate("/")}>
+              <DropdownMenuItem
+                onClick={() => {
+                  logout();
+                  navigate("/login");
+                }}
+              >
                 <LogOut className="w-4 h-4 mr-2" /> Sign Out
               </DropdownMenuItem>
             </DropdownMenuContent>

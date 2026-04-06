@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/lib/auth";
 import {
   Activity,
   AlertTriangle,
@@ -83,6 +84,7 @@ const TopBar = () => {
   const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
   const { selectedClientId, setSelectedClientId } = useClientContext();
+  const { user, logout } = useAuth();
 
   // Combine risk alerts + recent activity into a single flat list
   const notificationCount = riskNotifications.length + recentActivity.length;
@@ -281,14 +283,23 @@ const TopBar = () => {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="w-8 h-8 rounded-full gradient-olive flex items-center justify-center focus-visible:ring-2 focus-visible:ring-ring outline-none">
-              <span className="text-xs font-semibold text-primary-foreground">JW</span>
+              <span className="text-xs font-semibold text-primary-foreground">
+                {user?.name
+                  ? user.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase()
+                  : "?"}
+              </span>
             </button>
           </DropdownMenuTrigger>
 
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuLabel>
-              <p className="text-sm font-medium">James Wilson</p>
-              <p className="text-xs text-muted-foreground font-normal">Senior Advisor</p>
+              <p className="text-sm font-medium">{user?.name ?? "Advisor"}</p>
+              <p className="text-xs text-muted-foreground font-normal truncate">{user?.email ?? ""}</p>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate("/advisor")} className="cursor-pointer">
@@ -304,7 +315,13 @@ const TopBar = () => {
               Assessments
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/")} className="cursor-pointer">
+            <DropdownMenuItem
+              onClick={() => {
+                logout();
+                navigate("/login");
+              }}
+              className="cursor-pointer"
+            >
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </DropdownMenuItem>
