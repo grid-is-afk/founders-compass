@@ -3,38 +3,48 @@ import ShareInvestorPortal from "@/components/ShareInvestorPortal";
 import { TrendingUp, Shield, Target, CheckCircle2, Clock, Circle, ChevronDown, ChevronRight, FileText, FileSpreadsheet, File, Activity, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useClientContext } from "@/hooks/useClientContext";
 import { useClientTasks } from "@/hooks/useTasks";
-import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 
-const statusIcon = {
+const statusIcon: Record<string, React.ReactNode> = {
   done: <CheckCircle2 className="w-4 h-4 text-primary" />,
   in_progress: <Clock className="w-4 h-4 text-accent" />,
   todo: <Circle className="w-4 h-4 text-muted-foreground" />,
-};
-
-const docIcon = {
-  pdf: <FileText className="w-3 h-3 text-destructive/70" />,
-  spreadsheet: <FileSpreadsheet className="w-3 h-3 text-primary" />,
-  document: <File className="w-3 h-3 text-accent" />,
 };
 
 const ClientDashboard = () => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
-  // Client portal always fetches the record that belongs to the logged-in user
-  const { data: firstClient } = useQuery<any>({
-    queryKey: ["my-client"],
-    queryFn: () => api.get("/clients/me"),
-  });
-  const clientId = firstClient?.id ?? "";
+  const { selectedClient, selectedClientId, isLoading: clientLoading } = useClientContext();
+  const { data: rawTasks = [] } = useClientTasks(selectedClientId);
 
-  const { data: rawTasks = [] } = useClientTasks(clientId);
-  const { data: rawPlans = [] } = useClientQuarterlyPlans(clientId);
+  if (clientLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-muted-foreground">Loading your engagement...</p>
+      </div>
+    );
+  }
 
-  // Filter to tasks assigned to the client user
+  if (!selectedClientId) {
+    return (
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Your Engagement</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Welcome to The Founders Office</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <Target className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">Getting started</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Your advisor is setting up your engagement. Check back soon to see your dashboard.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const clientTasks = (rawTasks as any[]).filter(
     (t) => t.assignee === "Client" || t.assignee?.toLowerCase() === "client"
   );
@@ -42,11 +52,8 @@ const ClientDashboard = () => {
   const totalSubs = clientTasks.reduce((a: number, t: any) => a + (t.subtasks?.length ?? 0), 0);
   const doneSubs = clientTasks.reduce((a: number, t: any) => a + (t.subtasks?.filter((s: any) => s.done).length ?? 0), 0);
 
-  const activePlan = (rawPlans as any[]).find((p) => p.status === "active") ?? (rawPlans as any[])[0];
-  const phases = activePlan?.phases ?? [];
-
-  const capitalReadiness = firstClient?.capital_readiness ?? 0;
-  const customerCapital = firstClient?.customer_capital ?? 0;
+  const capitalReadiness = selectedClient?.capital_readiness ?? 0;
+  const customerCapital = selectedClient?.customer_capital ?? 0;
   const sprintPct = totalSubs > 0 ? Math.round((doneSubs / totalSubs) * 100) : 0;
 
   return (
@@ -54,7 +61,7 @@ const ClientDashboard = () => {
       <div>
         <h1 className="text-3xl font-display font-semibold text-foreground">Your Engagement</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          {firstClient?.name ?? "Loading..."} — {activePlan ? `Q${activePlan.quarter} ${activePlan.year} — ${activePlan.label ?? ""}` : ""}
+          {selectedClient.name} — {selectedClient.stage || "Getting started"}
         </p>
       </div>
 
@@ -63,49 +70,6 @@ const ClientDashboard = () => {
         <StatCard icon={Shield} label="Customer Capital" value={String(customerCapital)} suffix="/100" />
         <StatCard icon={Target} label="Sprint Progress" value={String(sprintPct)} suffix="%" />
       </div>
-
-      {/* Quarterly progress display */}
-      {activePlan && (
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-xs text-muted-foreground uppercase tracking-widest font-semibold">
-                Q{activePlan.quarter} {activePlan.year} Journey
-              </p>
-            </div>
-            {activePlan.review_date && (
-              <span className="text-xs text-muted-foreground">
-                Review {new Date(activePlan.review_date).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-4">
-            {phases.map((phase: any) => (
-              <div key={phase.id ?? phase.phase} className="flex items-center gap-2 flex-1">
-                <div className="flex items-center gap-1.5">
-                  {phase.status === "complete" ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  ) : phase.status === "in_progress" ? (
-                    <Activity className="w-4 h-4 text-primary flex-shrink-0" />
-                  ) : (
-                    <Circle className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
-                  )}
-                  <span className={cn(
-                    "text-sm font-medium",
-                    phase.status === "in_progress"
-                      ? "text-foreground font-semibold"
-                      : phase.status === "complete"
-                      ? "text-muted-foreground"
-                      : "text-muted-foreground/40"
-                  )}>
-                    {phase.label ?? phase.phase}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Sprint Tasks */}
       <div>
@@ -140,7 +104,7 @@ const ClientDashboard = () => {
                     ) : (
                       <div className="w-4" />
                     )}
-                    {statusIcon[status]}
+                    {statusIcon[status] || statusIcon.todo}
                     <div className="flex-1 min-w-0">
                       <p className={cn("text-sm", status === "done" ? "text-muted-foreground line-through" : "text-foreground")}>
                         {task.title}
@@ -176,7 +140,7 @@ const ClientDashboard = () => {
       {/* Share Portal */}
       <div>
         <h2 className="text-lg font-display font-semibold text-foreground mb-3">Share with Partners</h2>
-        <ShareInvestorPortal variant="card" clientName={firstClient?.name ?? ""} />
+        <ShareInvestorPortal variant="card" clientName={selectedClient.name} />
       </div>
     </div>
   );
