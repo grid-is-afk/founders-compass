@@ -3,10 +3,11 @@ import { query } from "../db.js";
 
 const router = Router();
 
-async function verifyClient(clientId: string, advisorId: string) {
+async function verifyClientAccess(clientId: string, userId: string, userRole: string) {
+  const col = userRole === "client" ? "user_id" : "advisor_id";
   const result = await query(
-    "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
-    [clientId, advisorId]
+    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
+    [clientId, userId]
   );
   return result.rows.length > 0;
 }
@@ -19,7 +20,7 @@ router.get("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClient(client_id as string, req.user!.id))) {
+    if (!(await verifyClientAccess(client_id as string, req.user!.id, req.user!.role))) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -51,7 +52,7 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClient(client_id, req.user!.id))) {
+    if (!(await verifyClientAccess(client_id, req.user!.id, req.user!.role))) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -93,7 +94,7 @@ router.patch("/:id", async (req, res) => {
     if (gResult.rows.length === 0) {
       return res.status(404).json({ error: "Grow engagement not found" });
     }
-    if (!(await verifyClient(gResult.rows[0].client_id, req.user!.id))) {
+    if (!(await verifyClientAccess(gResult.rows[0].client_id, req.user!.id, req.user!.role))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -122,7 +123,7 @@ router.delete("/:id", async (req, res) => {
     if (gResult.rows.length === 0) {
       return res.status(404).json({ error: "Grow engagement not found" });
     }
-    if (!(await verifyClient(gResult.rows[0].client_id, req.user!.id))) {
+    if (!(await verifyClientAccess(gResult.rows[0].client_id, req.user!.id, req.user!.role))) {
       return res.status(403).json({ error: "Access denied" });
     }
 

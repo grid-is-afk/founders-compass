@@ -40,20 +40,28 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
   return res;
 }
 
+async function safeJson(r: Response) {
+  const ct = r.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    // Server returned HTML (SPA fallback) or non-JSON — return empty array
+    console.warn(`API returned non-JSON for ${r.url}`);
+    return [];
+  }
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({}));
+    throw new Error(body.error || `API error ${r.status}`);
+  }
+  return r.json();
+}
+
 export const api = {
-  get: (path: string) => apiFetch(path).then((r) => r.json()),
+  get: (path: string) => apiFetch(path).then(safeJson),
   post: (path: string, body: unknown) =>
-    apiFetch(path, { method: "POST", body: JSON.stringify(body) }).then((r) =>
-      r.json()
-    ),
+    apiFetch(path, { method: "POST", body: JSON.stringify(body) }).then(safeJson),
   patch: (path: string, body: unknown) =>
-    apiFetch(path, { method: "PATCH", body: JSON.stringify(body) }).then(
-      (r) => r.json()
-    ),
+    apiFetch(path, { method: "PATCH", body: JSON.stringify(body) }).then(safeJson),
   put: (path: string, body: unknown) =>
-    apiFetch(path, { method: "PUT", body: JSON.stringify(body) }).then((r) =>
-      r.json()
-    ),
+    apiFetch(path, { method: "PUT", body: JSON.stringify(body) }).then(safeJson),
   delete: (path: string) =>
-    apiFetch(path, { method: "DELETE" }).then((r) => r.json()),
+    apiFetch(path, { method: "DELETE" }).then(safeJson),
 };
