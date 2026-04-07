@@ -6,6 +6,9 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useClients } from "./useClients";
 
 interface ApiClient {
@@ -57,7 +60,25 @@ export function ClientProvider({
   initialClientId?: string;
   onClientChange?: (id: string) => void;
 }) {
-  const { data: clients = [], isLoading } = useClients();
+  const { user } = useAuth();
+  const isClientRole = user?.role === "client";
+
+  // Advisor path: fetch all their clients
+  const { data: advisorClients = [], isLoading: advisorLoading } = useClients();
+
+  // Client portal path: fetch only the logged-in client's own record
+  const { data: myClientRecord, isLoading: myClientLoading } = useQuery<ApiClient>({
+    queryKey: ["my-client"],
+    queryFn: () => api.get("/clients/me"),
+    enabled: isClientRole,
+  });
+
+  const clients: ApiClient[] = isClientRole
+    ? myClientRecord ? [myClientRecord] : []
+    : (advisorClients as ApiClient[]);
+
+  const isLoading = isClientRole ? myClientLoading : advisorLoading;
+
   const [selectedClientId, setSelectedClientIdState] = useState<string>(
     initialClientId ?? ""
   );
@@ -78,8 +99,8 @@ export function ClientProvider({
   );
 
   const selectedClient: ApiClient =
-    (clients as ApiClient[]).find((c) => c.id === selectedClientId) ??
-    (clients as ApiClient[])[0] ??
+    clients.find((c) => c.id === selectedClientId) ??
+    clients[0] ??
     FALLBACK_CLIENT;
 
   return (

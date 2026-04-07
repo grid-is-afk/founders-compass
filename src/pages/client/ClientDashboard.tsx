@@ -1,10 +1,10 @@
 import StatCard from "@/components/dashboard/StatCard";
 import ShareInvestorPortal from "@/components/ShareInvestorPortal";
-import { TrendingUp, Shield, Target, CheckCircle2, Clock, Circle, ChevronDown, ChevronRight, FileText, FileSpreadsheet, File, Paperclip, Activity, CheckSquare } from "lucide-react";
+import { TrendingUp, Shield, Target, CheckCircle2, Clock, Circle, ChevronDown, ChevronRight, FileText, FileSpreadsheet, File, Activity, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { useAuth } from "@/lib/auth";
-import { useClients } from "@/hooks/useClients";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useClientTasks } from "@/hooks/useTasks";
 import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 
@@ -21,14 +21,14 @@ const docIcon = {
 };
 
 const ClientDashboard = () => {
-  const { user } = useAuth();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
-  // In the client portal, we infer the client from the logged-in user.
-  // The server should scope this to the advisor's clients for the logged-in client user.
-  const { data: clients = [] } = useClients();
-  const firstClient = (clients as any[])[0];
+  // Client portal always fetches the record that belongs to the logged-in user
+  const { data: firstClient } = useQuery<any>({
+    queryKey: ["my-client"],
+    queryFn: () => api.get("/clients/me"),
+  });
   const clientId = firstClient?.id ?? "";
 
   const { data: rawTasks = [] } = useClientTasks(clientId);

@@ -1,23 +1,29 @@
 import { useState } from "react";
 import ClientRow from "@/components/dashboard/ClientRow";
-import { Plus, Filter, Users } from "lucide-react";
+import { Filter, Lock, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { toast } from "sonner";
+
+interface GeneratedCredentials {
+  email: string;
+  password: string;
+}
 
 const AdvisorClients = () => {
   const { data: clients = [], isLoading } = useClients();
   const createClient = useCreateClient();
 
   const [open, setOpen] = useState(false);
+  const [credentials, setCredentials] = useState<GeneratedCredentials | null>(null);
   const [form, setForm] = useState({
     name: "",
     contact_name: "",
@@ -30,19 +36,38 @@ const AdvisorClients = () => {
       toast.error("Client name is required");
       return;
     }
+    if (!form.contact_email.trim()) {
+      toast.error("Contact email is required — it will be used as the client's login");
+      return;
+    }
+
     try {
-      await createClient.mutateAsync({
+      const result = await createClient.mutateAsync({
         name: form.name.trim(),
         contact_name: form.contact_name.trim() || null,
-        contact_email: form.contact_email.trim() || null,
+        contact_email: form.contact_email.trim(),
         revenue: form.revenue.trim() || null,
-      });
-      toast.success(`Client "${form.name}" created`);
+      }) as any;
+
       setForm({ name: "", contact_name: "", contact_email: "", revenue: "" });
       setOpen(false);
+
+      if (result?.generatedCredentials) {
+        setCredentials(result.generatedCredentials);
+      } else {
+        toast.success(`Client "${form.name}" created`);
+      }
     } catch {
       toast.error("Failed to create client");
     }
+  };
+
+  const handleCopyCredentials = () => {
+    if (!credentials) return;
+    navigator.clipboard
+      .writeText(`Email: ${credentials.email}\nPassword: ${credentials.password}`)
+      .then(() => toast.success("Credentials copied to clipboard"))
+      .catch(() => toast.error("Failed to copy — please copy manually"));
   };
 
   return (
@@ -86,7 +111,7 @@ const AdvisorClients = () => {
               </tr>
             </thead>
             <tbody>
-              {clients.map((c: any) => <ClientRow key={c.id} client={c} />)}
+              {(clients as any[]).map((c: any) => <ClientRow key={c.id} client={c} />)}
             </tbody>
           </table>
         </div>
@@ -97,7 +122,9 @@ const AdvisorClients = () => {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="font-display">Add New Client</DialogTitle>
-            <DialogDescription>Enter the client details to create a new engagement.</DialogDescription>
+            <DialogDescription>
+              A login account will be created automatically using the contact email.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -120,7 +147,10 @@ const AdvisorClients = () => {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Contact Email</label>
+              <label className="text-xs font-medium text-foreground">
+                Contact Email *
+                <span className="ml-1 font-normal text-muted-foreground">(used as login)</span>
+              </label>
               <input
                 type="email"
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -145,6 +175,47 @@ const AdvisorClients = () => {
             <Button onClick={handleCreate} disabled={createClient.isPending}>
               {createClient.isPending ? "Creating..." : "Create Client"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials Dialog — shown once after successful creation */}
+      <Dialog open={!!credentials} onOpenChange={() => setCredentials(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display">Client Account Created</DialogTitle>
+            <DialogDescription>
+              Share these login credentials with your client. The password is shown only once.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="bg-muted/50 rounded-lg border border-border p-4 space-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Login Email</p>
+                <p className="text-sm font-medium text-foreground font-mono select-all">
+                  {credentials?.email}
+                </p>
+              </div>
+              <div className="border-t border-border pt-3">
+                <p className="text-xs text-muted-foreground mb-1">Password</p>
+                <p className="text-sm font-medium text-foreground font-mono select-all">
+                  {credentials?.password}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Lock className="w-3 h-3 flex-shrink-0" />
+              <span>This password will not be shown again. Save it before closing.</span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={handleCopyCredentials}>
+              Copy Credentials
+            </Button>
+            <Button onClick={() => setCredentials(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

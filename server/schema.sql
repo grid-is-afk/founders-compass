@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS clients (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   advisor_id          UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id             UUID REFERENCES users(id) ON DELETE SET NULL,
   name                TEXT NOT NULL,
   contact_name        TEXT,
   contact_email       TEXT,
@@ -32,6 +33,9 @@ CREATE TABLE IF NOT EXISTS clients (
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration: add user_id column to existing clients tables
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_clients_advisor ON clients(advisor_id);
 
