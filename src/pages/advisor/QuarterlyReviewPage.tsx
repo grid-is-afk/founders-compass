@@ -72,10 +72,10 @@ const pastReviews = [
     protectionPct: 20,
     valueEnhancementPct: 35,
     summary: `Q1 2026 QUARTERLY REVIEW SUMMARY
-Meridian Industries · Sarah Chen · Jan 15, 2026
+Jan 15, 2026
 
 REVIEW HIGHLIGHTS
-The Q1 2026 review established the baseline for Meridian Industries' TFO engagement. Sarah Chen and the TFO team reviewed all Diagnose phase instruments and finalized the Capital Strategy Architecture.
+The Q1 2026 review established the baseline for the TFO engagement. The advisor team reviewed all Diagnose phase instruments and finalized the Capital Strategy Architecture.
 
 KEY OUTCOMES
 • Founder Business Index: 72/100 — strong systemic infrastructure
@@ -91,12 +91,12 @@ VALUE ENHANCEMENT STATUS
 
 Q2 COMMITMENTS
 1. Complete Capital Strategy Architecture implementation
-2. Engage Meridian HR Partners for human capital engagement
+2. Engage HR partner for human capital engagement
 3. Close key person insurance gap
 4. Begin customer concentration reduction sprint
 
 REFERRALS MADE
-1 referral to Meridian HR Partners for organizational assessment.`,
+1 referral to HR partner for organizational assessment.`,
   },
 ];
 
@@ -201,7 +201,7 @@ const ScheduleDialog = ({ open, onClose, clientName }: { open: boolean; onClose:
               </div>
             </div>
             <div className="rounded-lg bg-muted/40 border border-border p-3 text-xs text-muted-foreground">
-              <p><span className="font-medium text-foreground">Attendees:</span> Sarah Chen, TFO Advisor</p>
+              <p><span className="font-medium text-foreground">Attendees:</span> {clientName}, TFO Advisor</p>
               <p className="mt-1"><span className="font-medium text-foreground">Duration:</span> 90 minutes</p>
               <p className="mt-1"><span className="font-medium text-foreground">Agenda:</span> {currentReview.objectives.length} objectives scheduled</p>
             </div>

@@ -105,7 +105,7 @@ const AdvisorClients = () => {
               <label className="text-xs font-medium text-foreground">Client Name *</label>
               <input
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g. Meridian Industries"
+                placeholder="e.g. Acme Corp"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               />
@@ -114,7 +114,7 @@ const AdvisorClients = () => {
               <label className="text-xs font-medium text-foreground">Contact Name</label>
               <input
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g. Sarah Chen"
+                placeholder="e.g. Jane Smith"
                 value={form.contact_name}
                 onChange={(e) => setForm((f) => ({ ...f, contact_name: e.target.value }))}
               />
@@ -124,7 +124,7 @@ const AdvisorClients = () => {
               <input
                 type="email"
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="e.g. sarah@meridian.com"
+                placeholder="e.g. jane@acmecorp.com"
                 value={form.contact_email}
                 onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
               />

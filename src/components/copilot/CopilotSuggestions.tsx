@@ -15,11 +15,11 @@ interface Suggestion {
 
 const suggestions: Suggestion[] = [
   { text: "What should I focus on today?", icon: Zap },
-  { text: "Create a sprint task for Meridian's Q2 review", icon: CheckSquare },
-  { text: "Generate a Capital Readiness Memo for Meridian", icon: FileText },
-  { text: "Move Summit Logistics to discovery stage", icon: ArrowRight },
-  { text: "Flag a risk for Atlas — customer concentration above 30%", icon: AlertTriangle },
-  { text: "Schedule a quarterly review with Pinnacle for next month", icon: Calendar },
+  { text: "Create a new sprint task for my client", icon: CheckSquare },
+  { text: "Generate a Capital Readiness Memo", icon: FileText },
+  { text: "Add a new prospect to my pipeline", icon: ArrowRight },
+  { text: "Flag a risk alert for a client", icon: AlertTriangle },
+  { text: "Schedule a quarterly review meeting", icon: Calendar },
 ];
 
 interface CopilotSuggestionsProps {

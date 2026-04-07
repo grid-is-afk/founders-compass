@@ -61,7 +61,7 @@ const FounderExperience = () => {
           transition={{ duration: 0.5 }}
         >
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent mb-2">Founder Experience</p>
-          <h1 className="text-4xl font-display font-semibold text-foreground mb-2">Meridian Industries</h1>
+          <h1 className="text-4xl font-display font-semibold text-foreground mb-2">Your Company</h1>
           <p className="text-muted-foreground text-sm">Your engagement overview — Q2 2026 — Protect &amp; Grow</p>
         </motion.div>
 

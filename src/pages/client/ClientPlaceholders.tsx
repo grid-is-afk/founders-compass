@@ -143,7 +143,7 @@ export const ClientQuestionnaires = () => {
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
         <h1 className="text-3xl font-display font-semibold text-foreground">Your Assessments</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          These assessments help your advisor evaluate Meridian Industries' readiness and value
+          These assessments help your advisor evaluate your business's readiness and value
           across key dimensions.
         </p>
       </motion.div>
@@ -569,7 +569,7 @@ export const ClientTasks = () => {
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
         <h1 className="text-3xl font-display font-semibold text-foreground">Your Sprint Tasks</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Meridian Industries — 90-Day Execution Sprint · Q2 2026 — Protect &amp; Grow
+          90-Day Execution Sprint · Q2 2026 — Protect &amp; Grow
         </p>
       </motion.div>
 

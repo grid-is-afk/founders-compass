@@ -1,47 +1,5 @@
 import StatCard from "@/components/dashboard/StatCard";
-import { Shield, FileText, Landmark, GitBranch, Umbrella, ExternalLink, CircleAlert, AlertTriangle, Info } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-
-const severityIcon: Record<string, React.ReactNode> = {
-  critical: <CircleAlert className="w-3.5 h-3.5 text-destructive" />,
-  warning: <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />,
-  info: <Info className="w-3.5 h-3.5 text-primary" />,
-};
-
-const severityBorder: Record<string, string> = {
-  critical: "border-destructive/30",
-  warning: "border-amber-500/30",
-  info: "border-primary/30",
-};
-
-const capitalArchInsurance = [
-  {
-    id: "ins1",
-    type: "Key Person Insurance",
-    severity: "critical" as const,
-    reason: "Founder dependency risk identified and no continuity funding mechanism documented.",
-    benefit: "Provides liquidity and stability in the event of founder loss and strengthens investor confidence.",
-    client: "Vanguard Tech Solutions",
-  },
-  {
-    id: "ins2",
-    type: "Buy-Sell Funding Insurance",
-    severity: "warning" as const,
-    reason: "Multi-owner entity with no funded buy-sell agreement. Ownership transfer risk in the event of partner departure or death.",
-    benefit: "Ensures orderly ownership transition and protects remaining partners from capital strain.",
-    client: "Atlas Manufacturing",
-  },
-  {
-    id: "ins3",
-    type: "Estate Planning — Life Insurance",
-    severity: "warning" as const,
-    reason: "Founder estate tax exposure estimated at $3.2M with no documented insurance strategy.",
-    benefit: "Offsets estate tax liability and preserves business continuity for heirs.",
-    client: "Meridian Industries",
-  },
-];
+import { Shield, FileText, Landmark, GitBranch, Umbrella } from "lucide-react";
 
 const CapitalArchitecture = () => {
   return (
@@ -106,38 +64,18 @@ const CapitalArchitecture = () => {
       </div>
 
       {/* Insurance Strategy Insights */}
-      {capitalArchInsurance.length > 0 && (
-        <div className="bg-card rounded-lg border border-border p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Umbrella className="w-4 h-4 text-primary" />
-            <h3 className="font-display font-semibold text-foreground">Risk Protection & Insurance Strategy</h3>
-            <Badge variant="secondary" className="text-[10px] ml-1">{capitalArchInsurance.length} opportunities</Badge>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">Strategic insurance recommendations surfaced by the Quarterback Copilot based on capital architecture analysis.</p>
-          <div className="space-y-3">
-            {capitalArchInsurance.map((opp) => (
-              <div key={opp.id} className={cn("p-4 rounded-md border", severityBorder[opp.severity])}>
-                <div className="flex items-start gap-2.5">
-                  {severityIcon[opp.severity]}
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-foreground">{opp.type}</p>
-                      <span className="text-[10px] text-muted-foreground">{opp.client}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">{opp.reason}</p>
-                    <p className="text-xs text-muted-foreground mt-1"><span className="font-medium text-foreground">Benefit:</span> {opp.benefit}</p>
-                    <div className="mt-2">
-                      <Button variant="outline" size="sm" className="text-xs h-7">
-                        <ExternalLink className="w-3 h-3 mr-1" />Generate Referral
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+      <div className="bg-card rounded-lg border border-border p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <Umbrella className="w-4 h-4 text-primary" />
+          <h3 className="font-display font-semibold text-foreground">Risk Protection & Insurance Strategy</h3>
         </div>
-      )}
+        <p className="text-xs text-muted-foreground mb-4">Strategic insurance recommendations are surfaced by the Quarterback Copilot once capital architecture analysis is complete.</p>
+        <div className="bg-muted/30 rounded-lg border border-border p-6 text-center">
+          <Umbrella className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h4 className="font-display font-semibold text-foreground mb-1">No insurance opportunities identified yet</h4>
+          <p className="text-sm text-muted-foreground">Recommendations will appear here once client data and capital architecture analysis are complete.</p>
+        </div>
+      </div>
     </div>
   );
 };

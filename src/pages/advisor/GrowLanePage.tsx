@@ -60,8 +60,8 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     description: "Leadership, talent, and org development to scale performance beyond the founder.",
     details: "Human Capital growth focuses on building leadership depth, implementing performance management systems, and reducing the business's dependency on the founder. This includes key hire planning, succession mapping, and culture codification.",
     tasks: [
-      { title: "COO onboarding playbook complete", done: true },
-      { title: "Leadership assessment with Meridian HR Partners", done: true },
+      { title: "COO onboarding playbook complete", done: false },
+      { title: "Leadership assessment with HR partner", done: false },
       { title: "Sales management hire — VP Sales", done: false },
       { title: "CFO role gap analysis", done: false },
       { title: "Annual performance review system deployed", done: false },
@@ -76,9 +76,9 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     description: "Retention, concentration reduction, and lifetime value expansion.",
     details: "Customer Capital engagement targets the reduction of revenue concentration risk, improves customer retention, and drives Net Revenue Retention above 110%. The TFO partner network is engaged to execute diversification campaigns and long-term contract strategies.",
     tasks: [
-      { title: "Customer concentration analysis delivered", done: true },
-      { title: "NRR baseline established — 108%", done: true },
-      { title: "Concentration reduction plan: reduce top-3 from 61% to 45%", done: false },
+      { title: "Customer concentration analysis delivered", done: false },
+      { title: "NRR baseline established", done: false },
+      { title: "Concentration reduction plan developed", done: false },
       { title: "Long-term contract incentive program", done: false },
       { title: "Customer advisory council launched", done: false },
     ],
@@ -92,8 +92,8 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     description: "Systems, IP, processes, and infrastructure that operate without the founder.",
     details: "Structural Capital ensures the business can operate, scale, and eventually transfer value independently of the founder. This includes SOPs, technology stack documentation, IP registration, and governance infrastructure.",
     tasks: [
-      { title: "Core SOP documentation — 80% complete", done: true },
-      { title: "ERP system implementation with SysTech Consulting", done: true },
+      { title: "Core SOP documentation", done: false },
+      { title: "ERP system implementation", done: false },
       { title: "IP audit and provisional registration", done: false },
       { title: "Financial reporting automation", done: false },
       { title: "Board governance structure established", done: false },
@@ -136,11 +136,7 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
 // ---------------------------------------------------------------------------
 // Partner referral data
 // ---------------------------------------------------------------------------
-const growPartners = [
-  { name: "Meridian HR Partners", capitalType: "human_capital" as GrowCapitalType, direction: "TFO → Partner", status: "Active" },
-  { name: "SysTech Consulting", capitalType: "structural_capital" as GrowCapitalType, direction: "TFO → Partner", status: "Active" },
-  { name: "Apex Insurance Group", capitalType: "customer_capital" as GrowCapitalType, direction: "Partner → TFO", status: "Potential" },
-];
+const growPartners: { name: string; capitalType: GrowCapitalType; direction: string; status: string }[] = [];
 
 // ---------------------------------------------------------------------------
 // Capital Card
@@ -366,44 +362,52 @@ const GrowLanePage = () => {
       <motion.div custom={5} initial="hidden" animate="visible" variants={fadeIn}>
         <div className="bg-card rounded-xl border border-border p-5 space-y-4">
           <h2 className="text-base font-display font-semibold text-foreground">Grow Partners</h2>
-          <div className="space-y-2">
-            {growPartners.map((partner, i) => {
-              const config = capitalConfig[partner.capitalType];
-              return (
-                <div
-                  key={i}
-                  className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={cn("w-7 h-7 rounded-md flex items-center justify-center", config.bg)}>
-                      <span className={config.color}>{config.icon}</span>
+          {growPartners.length === 0 ? (
+            <div className="text-center py-6">
+              <Network className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+              <h3 className="font-display font-semibold text-foreground mb-1">No partners added yet</h3>
+              <p className="text-sm text-muted-foreground">Partner referrals will appear here once subcontractor relationships are established.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {growPartners.map((partner, i) => {
+                const config = capitalConfig[partner.capitalType];
+                return (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn("w-7 h-7 rounded-md flex items-center justify-center", config.bg)}>
+                        <span className={config.color}>{config.icon}</span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{partner.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{config.label}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{partner.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{config.label}</p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <ArrowLeftRight className="w-3 h-3" />
+                        <span>{partner.direction}</span>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0",
+                          partner.status === "Active"
+                            ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                            : "text-muted-foreground"
+                        )}
+                      >
+                        {partner.status}
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <ArrowLeftRight className="w-3 h-3" />
-                      <span>{partner.direction}</span>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-[10px] px-1.5 py-0",
-                        partner.status === "Active"
-                          ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
-                          : "text-muted-foreground"
-                      )}
-                    >
-                      {partner.status}
-                    </Badge>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </motion.div>
 

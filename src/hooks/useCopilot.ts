@@ -136,7 +136,7 @@ export function useCopilot(clientContext?: string) {
           if (last && last.role === "assistant" && !last.content) {
             updated[updated.length - 1] = {
               ...last,
-              content: "I encountered an error. Please try again.",
+              content: `Something went wrong: ${errorMsg}. Please try again.`,
             };
           }
           return updated;

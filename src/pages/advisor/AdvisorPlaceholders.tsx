@@ -727,76 +727,9 @@ const missingData: Record<string, string> = {
   "del7": "Missing: Governance assessment, Q1 board minutes",
 };
 
-const publishedReports = [
-  { title: "Capital Readiness Memo", client: "Meridian Industries", date: "Mar 5, 2026", engine: "Performance" },
-  { title: "Customer Capital Defense Summary", client: "Meridian Industries", date: "Feb 28, 2026", engine: "Customer Capital" },
-  { title: "Six Keys Scorecard Export", client: "Meridian Industries", date: "Mar 3, 2026", engine: "Performance" },
-];
+const publishedReports: { title: string; client: string; date: string; engine: string }[] = [];
 
-const reportContent: Record<string, string> = {
-  "Capital Readiness Memo": `CAPITAL READINESS MEMO — MERIDIAN INDUSTRIES
-March 5, 2026 | Confidential
-
-EXECUTIVE SUMMARY
-Meridian Industries has achieved a Founder Business Index score of 72, placing it in the top quartile of advisable businesses in the manufacturing sector. The company demonstrates strong systemic infrastructure but carries elevated customer concentration risk that must be addressed before capital raise.
-
-KEY FINDINGS
-• Revenue Quality: $8.2M ARR with 84% recurring contracts — strong foundation
-• Customer Concentration: Top 3 customers represent 61% of revenue — requires mitigation
-• EBITDA Margin: 22% — above sector median of 18%
-• Wealth Gap: $4.2M shortfall to founder's Economic Certainty target of $12.8M
-
-RECOMMENDED ACTIONS
-1. Execute customer diversification sprint — reduce top-3 concentration to below 45%
-2. Finalize entity restructuring per Capital Strategy Architecture
-3. Engage insurance partner to close key person coverage gap
-4. Target capital raise readiness by Q4 2026`,
-
-  "Customer Capital Defense Summary": `CUSTOMER CAPITAL DEFENSE SUMMARY
-February 28, 2026 | Meridian Industries
-
-OVERVIEW
-Analysis of Meridian Industries' customer retention, concentration, and lifetime value across the full client portfolio.
-
-CONCENTRATION RISK
-• Top customer (Anchor Corp): 28% of total revenue — HIGH RISK
-• Customers 2-3 combined: 33% — MEDIUM RISK
-• Remaining 47 customers: 39% of revenue
-
-RETENTION METRICS
-• 3-year retention rate: 91%
-• Average contract length: 2.4 years
-• Net Revenue Retention: 108%
-
-RECOMMENDED MITIGATION
-• Accelerate sales pipeline in underserved verticals
-• Offer long-term contract incentives to mid-tier customers
-• Reduce Anchor Corp dependency to below 20% within 18 months`,
-
-  "Six Keys Scorecard Export": `SIX KEYS SCORECARD — MERIDIAN INDUSTRIES
-March 3, 2026 | Performance Engine
-
-SCORECARD RESULTS
-Overall Score: 72/100
-
-1. REVENUE QUALITY: 78/100
-   Recurring revenue strong. Concentration risk flagged.
-
-2. OPERATIONAL INFRASTRUCTURE: 81/100
-   Systems run without founder. Documentation complete.
-
-3. MANAGEMENT TEAM: 64/100
-   COO in place. CFO role vacant — critical gap.
-
-4. MARKET POSITION: 70/100
-   Regional leader. National expansion underway.
-
-5. FINANCIAL PERFORMANCE: 74/100
-   EBITDA 22%. Growth 14% YoY. Margins stable.
-
-6. CAPITAL STRUCTURE: 58/100
-   Suboptimal entity structure. Restructuring in progress.`,
-};
+const reportContent: Record<string, string> = {};
 
 interface GenerateDialogState {
   open: boolean;
@@ -844,10 +777,10 @@ export const AdvisorReports = () => {
 
   const handleEdit = (title: string) => {
     const draftContent = `DRAFT — ${title.toUpperCase()}
-Meridian Industries | In Progress
+${selectedClient.name} | In Progress
 
 [Section 1: Executive Summary]
-This report is currently being prepared for Meridian Industries. The following sections require review and completion before publication.
+This report is currently being prepared for ${selectedClient.name}. The following sections require review and completion before publication.
 
 [Section 2: Key Findings]
 • Finding 1: [Placeholder — review source data]
@@ -860,7 +793,7 @@ Based on the preliminary analysis, the following actions are recommended:
 2. [Action item pending review]
 
 [NOTES FOR ADVISOR]
-This draft requires sign-off from Sarah Chen before publication. Please confirm the financial figures in Section 2 against the uploaded statements.`;
+This draft requires sign-off from the client before publication. Please confirm the financial figures in Section 2 against the uploaded statements.`;
     setEditContent(draftContent);
     setEditDialog({ open: true, title, content: draftContent });
   };
@@ -959,44 +892,52 @@ This draft requires sign-off from Sarah Chen before publication. Please confirm 
       {/* Published reports */}
       <div>
         <h2 className="text-base font-display font-semibold text-foreground mb-3">Published Reports</h2>
-        <div className="bg-card rounded-lg border border-border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Report</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Client</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Engine</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Published</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {publishedReports.map((r) => (
-                <tr key={r.title} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <FileText className="w-4 h-4 text-red-500" />
-                      <span className="text-xs font-medium text-foreground">{r.title}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{r.client}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium">{r.engine}</span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{r.date}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      className="text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => handleReportPreview(r.title)}
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
+        {publishedReports.length === 0 ? (
+          <div className="bg-card rounded-lg border border-border p-8 text-center">
+            <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+            <h3 className="font-display font-semibold text-foreground mb-1">No published reports yet</h3>
+            <p className="text-sm text-muted-foreground">Generate and publish reports from the Deliverables Queue above.</p>
+          </div>
+        ) : (
+          <div className="bg-card rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Report</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Client</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Engine</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-medium text-muted-foreground">Published</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-medium text-muted-foreground"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {publishedReports.map((r) => (
+                  <tr key={r.title} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <FileText className="w-4 h-4 text-red-500" />
+                        <span className="text-xs font-medium text-foreground">{r.title}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{r.client}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium">{r.engine}</span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{r.date}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => handleReportPreview(r.title)}
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Generate Report Dialog */}
@@ -1035,7 +976,7 @@ This draft requires sign-off from Sarah Chen before publication. Please confirm 
                 <p>Generated: {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
                 <div className="pt-2 border-t border-border">
                   <p className="text-foreground font-semibold mb-1">Executive Summary</p>
-                  <p className="leading-relaxed">Meridian Industries demonstrates strong capital readiness fundamentals with a FBI score of 72. Revenue quality is high at $8.2M ARR with 84% recurring contracts. Primary risk factor: customer concentration at 61% in top 3 clients. Recommended for capital strategy engagement before Q4 raise.</p>
+                  <p className="leading-relaxed">{selectedClient.name} demonstrates strong capital readiness fundamentals. This report has been generated based on available client data and is ready for advisor review before publication.</p>
                 </div>
               </div>
               <DialogFooter>
@@ -1123,13 +1064,7 @@ interface PublishItem {
   date: string;
 }
 
-const initialPublishedItems: PublishItem[] = [
-  { id: "pub1", title: "Capital Readiness Memo", client: "Meridian Industries", status: "published", audience: "Investor", date: "Mar 5, 2026" },
-  { id: "pub2", title: "Q2 Progress Summary", client: "Meridian Industries", status: "published", audience: "Client", date: "Mar 3, 2026" },
-  { id: "pub3", title: "Institutional Performance Brief", client: "Meridian Industries", status: "pending", audience: "Investor", date: "Mar 6, 2026" },
-  { id: "pub4", title: "Pain Point Analysis", client: "Atlas Manufacturing", status: "draft", audience: "Internal", date: "Feb 28, 2026" },
-  { id: "pub5", title: "90-Day Execution Plan", client: "Pinnacle Services Group", status: "draft", audience: "Client", date: "Feb 25, 2026" },
-];
+const initialPublishedItems: PublishItem[] = [];
 
 const publishStatusConfig: Record<PublishStatus, { label: string; color: string; icon: React.ReactNode }> = {
   published: {
@@ -1434,11 +1369,7 @@ interface ShareLink {
   revoked?: boolean;
 }
 
-const initialShareLinks: ShareLink[] = [
-  { id: "lnk1", recipient: "James Whitfield", email: "j.whitfield@capitalventures.com", type: "Capital Partner", created: "Mar 5, 2026", expires: "Mar 19, 2026", views: 4, downloads: 2 },
-  { id: "lnk2", recipient: "Priya Nair", email: "priya@meridianpe.com", type: "Buyer / Acquirer", created: "Mar 1, 2026", expires: "Mar 15, 2026", views: 7, downloads: 3 },
-  { id: "lnk3", recipient: "Keith Alvarez", email: "k.alvarez@brokeragefirm.com", type: "Broker", created: "Feb 25, 2026", expires: "Mar 11, 2026", views: 2, downloads: 0 },
-];
+const initialShareLinks: ShareLink[] = [];
 
 const accessLog = [
   { recipient: "James Whitfield", action: "Viewed Capital Readiness Memo", time: "2h ago" },

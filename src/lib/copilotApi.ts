@@ -19,15 +19,22 @@ export async function* streamChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
   signal?: AbortSignal
 ): AsyncGenerator<StreamEvent> {
+  const token = localStorage.getItem("tfo-access-token");
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const response = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ messages }),
     signal,
   });
 
   if (!response.ok) {
-    throw new Error(`Chat request failed: ${response.status}`);
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `Chat request failed: ${response.status}`);
   }
 
   const reader = response.body!.getReader();

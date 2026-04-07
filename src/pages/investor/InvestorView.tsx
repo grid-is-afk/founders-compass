@@ -26,11 +26,11 @@ const investorRiskProtection = [
 
 /* ── Founders Office Analysis ── */
 const foAnalysis = {
-  company: "Meridian Industries",
+  company: "Portfolio Company",
   preparedFor: "Invited Partner",
   overallScore: 78,
   scoreLabel: "Strong",
-  summary: "Meridian demonstrates institutional-quality fundamentals with notable strengths in revenue durability and execution discipline. Key areas for continued focus include founder dependency reduction and capital structure optimization.",
+  summary: "This company demonstrates institutional-quality fundamentals with notable strengths in revenue durability and execution discipline. Key areas for continued focus include founder dependency reduction and capital structure optimization.",
   dimensions: [
     { key: "Clarity", score: 85, label: "Strong", desc: "Clear value proposition with well-defined capital thesis and market positioning." },
     { key: "Alignment", score: 72, label: "Developing", desc: "Stakeholder alignment improving; board governance in process of institutionalization." },
