@@ -1,7 +1,6 @@
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientTasks } from "@/hooks/useTasks";
-import StatCard from "@/components/dashboard/StatCard";
-import { Target, CheckCircle2, Clock, Circle, BarChart3 } from "lucide-react";
+import { Target, CheckCircle2, Clock, Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const statusIcon: Record<string, React.ReactNode> = {
@@ -10,95 +9,63 @@ const statusIcon: Record<string, React.ReactNode> = {
   todo: <Circle className="w-4 h-4 text-muted-foreground" />,
 };
 
-const kpis = [
-  { metric: "Monthly Recurring Revenue", current: "$1.2M", target: "$1.5M", progress: 80 },
-  { metric: "Gross Margin", current: "68%", target: "72%", progress: 94 },
-  { metric: "Customer Retention", current: "89%", target: "95%", progress: 93 },
-  { metric: "Founder Hours / Week", current: "52h", target: "35h", progress: 67 },
-];
+interface DbTask {
+  id: string;
+  title: string;
+  assignee: string;
+  status: string;
+  priority: string;
+  due_date: string | null;
+}
 
 const PerformanceEngine = () => {
-  const { selectedClientId } = useClientContext();
+  const { selectedClientId, selectedClient } = useClientContext();
   const { data: rawTasks = [] } = useClientTasks(selectedClientId);
-
-  interface DbTask {
-    id: string;
-    title: string;
-    status: string;
-    assignee: string | null;
-    due_date: string | null;
-  }
+  const clientName = selectedClient?.name || "your client";
 
   const tasks = (rawTasks as DbTask[]).map((t) => ({
     id: t.id,
     title: t.title,
-    status: t.status ?? "todo",
     assignee: t.assignee ?? "Advisor",
+    status: t.status ?? "todo",
     dueDate: t.due_date ?? "",
   }));
 
   const doneCount = tasks.filter((t) => t.status === "done").length;
-  const totalCount = tasks.length;
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-display font-semibold text-foreground">Performance & Execution</h1>
-        <p className="text-muted-foreground mt-1 text-sm">Turn strategy into disciplined 90-day execution sprints</p>
+        <p className="text-muted-foreground mt-1 text-sm">Turn strategy into disciplined 90-day execution sprints — {clientName}</p>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <StatCard
-          icon={Target}
-          label="Sprint Progress"
-          value={totalCount > 0 ? String(Math.round((doneCount / totalCount) * 100)) : "0"}
-          suffix="%"
-        />
-        <StatCard icon={CheckCircle2} label="Tasks Complete" value={String(doneCount)} suffix={`/${totalCount}`} />
-        <StatCard icon={BarChart3} label="KPIs On Track" value="3" suffix="/4" />
-        <StatCard icon={Clock} label="Days Remaining" value="47" />
-      </div>
-
-      <div>
-        <h2 className="text-lg font-display font-semibold text-foreground mb-4">KPI Dashboard</h2>
-        <div className="bg-card rounded-lg border border-border divide-y divide-border">
-          {kpis.map((kpi) => (
-            <div key={kpi.metric} className="flex items-center gap-6 px-5 py-4">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-foreground">{kpi.metric}</p>
-              </div>
-              <span className="text-sm text-foreground font-medium w-16">{kpi.current}</span>
-              <span className="text-xs text-muted-foreground w-16">Target: {kpi.target}</span>
-              <div className="w-32 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full gradient-olive" style={{ width: `${kpi.progress}%` }} />
-              </div>
-              <span className="text-xs text-muted-foreground w-8">{kpi.progress}%</span>
-            </div>
-          ))}
+      {tasks.length === 0 ? (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <Target className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">No performance data yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Sprint tasks, KPI tracking, and execution metrics will appear here once you create tasks for this client.
+          </p>
         </div>
-      </div>
-
-      <div>
-        <h2 className="text-lg font-display font-semibold text-foreground mb-4">Sprint Tasks</h2>
-        <div className="bg-card rounded-lg border border-border divide-y divide-border">
-          {tasks.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted-foreground">
-              No tasks found for this client.
-            </div>
-          ) : (
-            tasks.map((task) => (
+      ) : (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-display font-semibold text-foreground">Sprint Tasks</h2>
+            <span className="text-xs text-muted-foreground">{doneCount}/{tasks.length} complete</span>
+          </div>
+          <div className="bg-card rounded-lg border border-border divide-y divide-border">
+            {tasks.map((task) => (
               <div key={task.id} className="flex items-center gap-4 px-5 py-4">
-                {statusIcon[task.status] ?? <Circle className="w-4 h-4 text-muted-foreground" />}
-                <p className={cn("text-sm flex-1", task.status === "done" && "text-muted-foreground line-through")}>
-                  {task.title}
-                </p>
+                {statusIcon[task.status] || statusIcon.todo}
+                <p className={cn("text-sm flex-1", task.status === "done" && "text-muted-foreground line-through")}>{task.title}</p>
                 <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">{task.assignee}</span>
-                <span className="text-xs text-muted-foreground">{task.dueDate}</span>
+                {task.dueDate && <span className="text-xs text-muted-foreground">{task.dueDate}</span>}
               </div>
-            ))
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
