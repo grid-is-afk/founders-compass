@@ -11,6 +11,7 @@ const Login = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading } = useAuth();
 
+  const [loginMode, setLoginMode] = useState<"advisor" | "client">("advisor");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -111,11 +112,39 @@ const Login = () => {
             </span>
           </div>
 
+          {/* Login mode tabs */}
+          <div className="flex rounded-lg border border-border bg-muted/30 p-1 mb-8">
+            <button
+              type="button"
+              onClick={() => { setLoginMode("advisor"); setError(null); }}
+              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                loginMode === "advisor"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Advisor
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLoginMode("client"); setError(null); }}
+              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                loginMode === "client"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Client
+            </button>
+          </div>
+
           <h1 className="text-2xl font-display font-semibold text-foreground mb-1">
-            Advisor Sign In
+            {loginMode === "advisor" ? "Advisor Sign In" : "Client Sign In"}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
-            Enter your credentials to access the back office.
+            {loginMode === "advisor"
+              ? "Enter your credentials to access the back office."
+              : "Enter the credentials your advisor shared with you."}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -131,7 +160,7 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9"
-                  placeholder="you@foundersoffice.com"
+                  placeholder={loginMode === "advisor" ? "you@foundersoffice.com" : "your@email.com"}
                   disabled={submitting}
                 />
               </div>
