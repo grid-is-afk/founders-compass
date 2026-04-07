@@ -38,14 +38,7 @@ const FileTypeIcon = ({ type }: { type: "pdf" | "spreadsheet" | "document" }) =>
 // AdvisorUploads — Financial Uploads
 // ---------------------------------------------------------------------------
 
-const requiredDocs = [
-  { label: "Tax Returns — 2022", uploaded: true },
-  { label: "Tax Returns — 2023", uploaded: true },
-  { label: "Tax Returns — 2024", uploaded: false },
-  { label: "Operating Agreements", uploaded: true },
-  { label: "Financial Statements (3 years)", uploaded: true },
-  { label: "Customer Revenue Data", uploaded: false },
-];
+const requiredDocs: Array<{ label: string; uploaded: boolean }> = [];
 
 export const AdvisorUploads = () => {
   const { selectedClient } = useClientContext();
@@ -1095,7 +1088,7 @@ const availableDocuments = [
   "Wealth Gap Analysis",
   "Capital Strategy Architecture",
   "Protection Architecture Summary",
-  "Customer Concentration Analysis",
+  "Assessment Report",
   "Q2 Sprint Progress Report",
 ];
 
@@ -1372,11 +1365,6 @@ interface ShareLink {
 const initialShareLinks: ShareLink[] = [];
 
 const accessLog = [
-  { recipient: "James Whitfield", action: "Viewed Capital Readiness Memo", time: "2h ago" },
-  { recipient: "Priya Nair", action: "Downloaded 3-Year Adjusted P&L", time: "4h ago" },
-  { recipient: "Priya Nair", action: "Viewed Investor Portal", time: "6h ago" },
-  { recipient: "James Whitfield", action: "Downloaded Customer Concentration Analysis", time: "1d ago" },
-  { recipient: "Keith Alvarez", action: "Viewed Investor Portal", time: "2d ago" },
 ];
 
 export const AdvisorInvestorShare = () => {
@@ -1538,9 +1526,6 @@ export const AdvisorInvestorShare = () => {
             </div>
             <div className="space-y-2">
               {[
-                { name: "Capital Readiness Memo.pdf", size: "2.4 MB" },
-                { name: "3-Year Adjusted P&L.xlsx", size: "1.1 MB" },
-                { name: "Customer Concentration Analysis.pdf", size: "0.8 MB" },
                 { name: "Founder Business Index Report.pdf", size: "3.2 MB" },
               ].map((doc) => (
                 <div key={doc.name} className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/20">

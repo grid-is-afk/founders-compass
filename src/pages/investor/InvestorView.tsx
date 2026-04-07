@@ -3,26 +3,9 @@ import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
-const dataRoomDocuments = [
-  { id: "dr1", name: "Capital Readiness Memo", category: "Reports", date: "Mar 5, 2026", size: "2.4 MB", type: "pdf" as const },
-  { id: "dr2", name: "Institutional Performance Brief", category: "Reports", date: "Feb 28, 2026", size: "1.8 MB", type: "pdf" as const },
-  { id: "dr3", name: "3-Year Adjusted P&L", category: "Financials", date: "Feb 20, 2026", size: "540 KB", type: "spreadsheet" as const },
-  { id: "dr4", name: "Balance Sheet — Normalized", category: "Financials", date: "Feb 20, 2026", size: "480 KB", type: "spreadsheet" as const },
-  { id: "dr5", name: "Customer Concentration Analysis", category: "Customer Capital", date: "Mar 1, 2026", size: "1.1 MB", type: "pdf" as const },
-  { id: "dr6", name: "Revenue by Segment Breakdown", category: "Customer Capital", date: "Feb 25, 2026", size: "320 KB", type: "spreadsheet" as const },
-  { id: "dr7", name: "Entity Structure Diagram", category: "Legal & Structure", date: "Feb 15, 2026", size: "890 KB", type: "pdf" as const },
-  { id: "dr8", name: "Operating Agreement Summary", category: "Legal & Structure", date: "Jan 30, 2026", size: "1.5 MB", type: "document" as const },
-  { id: "dr9", name: "Management Team Overview", category: "Governance", date: "Feb 10, 2026", size: "720 KB", type: "pdf" as const },
-  { id: "dr10", name: "Six Keys Scorecard Export", category: "Reports", date: "Mar 3, 2026", size: "280 KB", type: "pdf" as const },
-];
+const dataRoomDocuments: Array<{ id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document" }> = [];
 
-const investorRiskProtection = [
-  { category: "Key Person Coverage", status: "Not Documented" as const, risk: "high" as const, recommendation: "Recommend key person policy with coverage equal to 3–5x EBITDA." },
-  { category: "Buy-Sell Funding", status: "Unfunded" as const, risk: "high" as const, recommendation: "Cross-purchase or entity-purchase agreement should be insurance-funded." },
-  { category: "Business Continuity", status: "Partial" as const, risk: "medium" as const, recommendation: "Current coverage does not address key customer concentration scenario." },
-  { category: "Estate & Succession", status: "Under Review" as const, risk: "medium" as const, recommendation: "ILIT structure recommended to offset projected estate tax exposure." },
-  { category: "Executive Retention", status: "Not in Place" as const, risk: "low" as const, recommendation: "Consider deferred compensation or split-dollar arrangement for key managers." },
-];
+const investorRiskProtection: Array<{ category: string; status: string; risk: "high" | "medium" | "low"; recommendation: string }> = [];
 
 /* ── Founders Office Analysis ── */
 const foAnalysis = {
@@ -41,20 +24,9 @@ const foAnalysis = {
   ],
 };
 
-const capitalHighlights = [
-  { label: "Revenue", value: "$14.2M ARR", trend: "+18% YoY", positive: true },
-  { label: "EBITDA Margin", value: "22.4%", trend: "+3.1pp", positive: true },
-  { label: "Customer Concentration", value: "24%", trend: "Top 3 clients", positive: false },
-  { label: "Retention Rate", value: "94%", trend: "Net Revenue", positive: true },
-];
+const capitalHighlights: Array<{ label: string; value: string; trend: string; positive: boolean }> = [];
 
-const publishedReports = [
-  { title: "Founders Office Capital Readiness Memo", date: "Mar 5, 2026", pages: 18, category: "Analysis" },
-  { title: "Institutional Performance Brief", date: "Feb 28, 2026", pages: 12, category: "Performance" },
-  { title: "Customer Capital Defense Summary", date: "Feb 20, 2026", pages: 8, category: "Risk" },
-  { title: "Capital Architecture Overview", date: "Feb 15, 2026", pages: 10, category: "Structure" },
-  { title: "90-Day Execution Plan", date: "Feb 10, 2026", pages: 6, category: "Execution" },
-];
+const publishedReports: Array<{ title: string; date: string; pages: number; category: string }> = [];
 
 const categories = ["All", ...Array.from(new Set(dataRoomDocuments.map(d => d.category)))];
 

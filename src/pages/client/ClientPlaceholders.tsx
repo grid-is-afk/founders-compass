@@ -631,11 +631,7 @@ const reportEngineIcon: Record<string, React.ReactNode> = {
   "Capital Architecture": <Star className="w-4 h-4 text-primary" />,
 };
 
-const reportTimeline = [
-  { title: "Capital Readiness Memo", date: "Mar 5, 2026", engine: "Capital Architecture" },
-  { title: "Institutional Performance Brief", date: "Feb 28, 2026", engine: "Performance" },
-  { title: "Six Keys Scorecard", date: "Mar 3, 2026", engine: "Performance" },
-];
+const reportTimeline: Array<{ title: string; date: string; engine: string }> = [];
 
 const reportRequestTypes = [
   "Six Keys Scorecard Update",
@@ -827,83 +823,9 @@ export const ClientReports = () => {
 
 // ─── 5. CLIENT MEETINGS ───────────────────────────────────────────────────────
 
-const upcomingMeetings = [
-  {
-    id: "um1",
-    date: "Apr 2, 2026",
-    time: "2:00 PM EST",
-    type: "Quarterly Review",
-    with: "James Wilson",
-    description: "Q1 assessment review, capital architecture options, sprint task debrief.",
-    isNext: true,
-    agenda: [
-      "Review Q1 assessment progress",
-      "Discuss capital architecture options",
-      "Sprint task review and Q2 planning",
-    ],
-  },
-  {
-    id: "um2",
-    date: "Apr 16, 2026",
-    time: "10:00 AM EST",
-    type: "Sprint Check-in",
-    with: "James Wilson",
-    description: "Mid-sprint progress review and blocker discussion.",
-    isNext: false,
-    agenda: [],
-  },
-  {
-    id: "um3",
-    date: "Apr 30, 2026",
-    time: "1:00 PM EST",
-    type: "Document Review",
-    with: "James Wilson",
-    description: "Review uploaded tax returns and customer revenue breakdown.",
-    isNext: false,
-    agenda: [],
-  },
-  {
-    id: "um4",
-    date: "May 14, 2026",
-    time: "2:00 PM EST",
-    type: "Strategy Session",
-    with: "James Wilson",
-    description: "Entity restructuring strategy and capital stack planning.",
-    isNext: false,
-    agenda: [],
-  },
-];
+const upcomingMeetings: Array<{ id: string; date: string; time: string; type: string; with: string; description: string; isNext: boolean; agenda: string[] }> = [];
 
-const pastMeetings = [
-  {
-    id: "pm1",
-    date: "Mar 19, 2026",
-    type: "Sprint Check-in",
-    outcome: "Confirmed customer data export on track. Discussed Q1 assessment completion timeline.",
-    actions: "Sarah to complete assessment by Mar 22.",
-  },
-  {
-    id: "pm2",
-    date: "Mar 5, 2026",
-    type: "Document Review",
-    outcome: "Capital Readiness Memo published. Reviewed P&L normalization and add-backs.",
-    actions: "Upload operating agreement. Begin tax return collection.",
-  },
-  {
-    id: "pm3",
-    date: "Feb 19, 2026",
-    type: "Quarterly Review",
-    outcome: "Q4 financial data reviewed. Entity structure concerns flagged for follow-up.",
-    actions: "Entity org chart to be prepared by advisor.",
-  },
-  {
-    id: "pm4",
-    date: "Feb 5, 2026",
-    type: "Strategy Session",
-    outcome: "90-Day Sprint formally kicked off. Priorities and task assignments confirmed.",
-    actions: "Sprint tasks distributed. Next meeting set for Feb 19.",
-  },
-];
+const pastMeetings: Array<{ id: string; date: string; type: string; outcome: string; actions: string }> = [];
 
 const meetingTypeColor: Record<string, string> = {
   "Quarterly Review": "border-primary/40 text-primary bg-primary/5",
