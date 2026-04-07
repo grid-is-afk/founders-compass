@@ -1,6 +1,6 @@
 import { useState } from "react";
 import ClientRow from "@/components/dashboard/ClientRow";
-import { Filter, Lock, Plus, Users } from "lucide-react";
+import { Lock, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -78,7 +78,6 @@ const AdvisorClients = () => {
           <p className="text-muted-foreground mt-1 text-sm">Manage all founder engagements</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm"><Filter className="w-4 h-4 mr-2" />Filter</Button>
           <Button size="sm" onClick={() => setOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />Add Client
           </Button>

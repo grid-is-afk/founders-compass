@@ -3,6 +3,8 @@ import { query } from "../db.js";
 
 const router = Router();
 
+const ALLOWED_COLUMNS = new Set(["name", "category", "type"]);
+
 async function verifyClient(clientId: string, userId: string, userRole: string) {
   const col = userRole === "client" ? "user_id" : "advisor_id";
   const result = await query(

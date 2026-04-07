@@ -3,10 +3,12 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientProtection } from "@/hooks/useProtectionApi";
+import { useCreateTask } from "@/hooks/useTasks";
 import type { ProtectionItem } from "@/lib/types/journey";
 import StatCard from "@/components/dashboard/StatCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -167,9 +169,11 @@ const actionsByStatus: Record<string, string[]> = {
 const ProtectionDetailDialog = ({
   item,
   onClose,
+  onAddToSprint,
 }: {
   item: ProtectionItem | null;
   onClose: () => void;
+  onAddToSprint: (item: ProtectionItem) => void;
 }) => {
   if (!item) return null;
   const actions = actionsByStatus[item.status] ?? actionsByStatus["not_documented"];
@@ -226,9 +230,10 @@ const ProtectionDetailDialog = ({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={() => {
-            onClose();
-          }} className="gap-2">
+          <Button
+            onClick={() => onAddToSprint(item)}
+            className="gap-2"
+          >
             <ShieldCheck className="w-4 h-4" /> Add to Sprint
           </Button>
         </DialogFooter>
@@ -243,6 +248,7 @@ const ProtectionDetailDialog = ({
 const ProtectionPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
   const { data: rawProtection = [], isLoading } = useClientProtection(selectedClientId);
+  const createTask = useCreateTask();
   // Map DB rows to ProtectionItem shape
   const protection: ProtectionItem[] = (rawProtection as any[]).map((p) => ({
     id: p.id,
@@ -254,6 +260,26 @@ const ProtectionPage = () => {
     recommendation: p.recommendation ?? null,
   }));
   const [selectedItem, setSelectedItem] = useState<ProtectionItem | null>(null);
+
+  const handleAddToSprint = async (item: ProtectionItem) => {
+    if (!selectedClientId) return;
+    try {
+      await createTask.mutateAsync({
+        client_id: selectedClientId,
+        title: item.label,
+        assignee: "Advisor",
+        status: "todo",
+        priority: item.risk === "high" ? "high" : item.risk === "medium" ? "medium" : "low",
+        phase: "Protection",
+      });
+      toast.success("Added to sprint", {
+        description: `"${item.label}" has been added as a sprint task.`,
+      });
+      setSelectedItem(null);
+    } catch {
+      toast.error("Failed to add task to sprint");
+    }
+  };
 
   if (!selectedClientId) {
     return (
@@ -404,6 +430,7 @@ const ProtectionPage = () => {
       <ProtectionDetailDialog
         item={selectedItem}
         onClose={() => setSelectedItem(null)}
+        onAddToSprint={handleAddToSprint}
       />
     </div>
   );

@@ -21,7 +21,8 @@ const Login = () => {
   // Already logged in — redirect based on role
   if (!isLoading && isAuthenticated) {
     const savedUser = localStorage.getItem("tfo-user");
-    const role = savedUser ? JSON.parse(savedUser).role : "advisor";
+    let role = "advisor";
+    try { role = savedUser ? JSON.parse(savedUser).role : "advisor"; } catch { /* corrupted localStorage */ }
     return <Navigate to={role === "client" ? "/client" : "/advisor"} replace />;
   }
 
@@ -34,7 +35,8 @@ const Login = () => {
       await login(email.trim().toLowerCase(), password);
       // Redirect based on role
       const savedUser = localStorage.getItem("tfo-user");
-      const role = savedUser ? JSON.parse(savedUser).role : "advisor";
+      let role = "advisor";
+      try { role = savedUser ? JSON.parse(savedUser).role : "advisor"; } catch { /* corrupted localStorage */ }
       navigate(role === "client" ? "/client" : "/advisor", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");

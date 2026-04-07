@@ -8,21 +8,25 @@ const dataRoomDocuments: Array<{ id: string; name: string; category: string; dat
 const investorRiskProtection: Array<{ category: string; status: string; risk: "high" | "medium" | "low"; recommendation: string }> = [];
 
 /* ── Founders Office Analysis ── */
+// Scores are not available until the advisor publishes a formal assessment.
+// Using zeroed-out placeholders so the UI never shows fabricated data.
 const foAnalysis = {
   company: "Portfolio Company",
   preparedFor: "Invited Partner",
-  overallScore: 78,
-  scoreLabel: "Strong",
-  summary: "This company demonstrates institutional-quality fundamentals with notable strengths in revenue durability and execution discipline. Key areas for continued focus include founder dependency reduction and capital structure optimization.",
+  overallScore: 0,
+  scoreLabel: "Pending",
+  summary: null,
   dimensions: [
-    { key: "Clarity", score: 85, label: "Strong", desc: "Clear value proposition with well-defined capital thesis and market positioning." },
-    { key: "Alignment", score: 72, label: "Developing", desc: "Stakeholder alignment improving; board governance in process of institutionalization." },
-    { key: "Structure", score: 68, label: "Developing", desc: "Entity structure functional but opportunities exist for tax-efficient restructuring." },
-    { key: "Stewardship", score: 82, label: "Strong", desc: "Strong financial controls, clean reporting, and disciplined cash management." },
-    { key: "Velocity", score: 80, label: "Strong", desc: "Consistent execution cadence with 90-day sprint discipline producing measurable outcomes." },
-    { key: "Legacy", score: 74, label: "Developing", desc: "Founder dependency remains moderate; key-person transition plan in development." },
+    { key: "Clarity", score: 0, label: "Pending", desc: null },
+    { key: "Alignment", score: 0, label: "Pending", desc: null },
+    { key: "Structure", score: 0, label: "Pending", desc: null },
+    { key: "Stewardship", score: 0, label: "Pending", desc: null },
+    { key: "Velocity", score: 0, label: "Pending", desc: null },
+    { key: "Legacy", score: 0, label: "Pending", desc: null },
   ],
 };
+
+const hasAnalysisData = false; // set to true when advisor publishes assessment
 
 const capitalHighlights: Array<{ label: string; value: string; trend: string; positive: boolean }> = [];
 
@@ -94,10 +98,16 @@ const InvestorView = () => {
             <h1 className="text-3xl font-display font-semibold text-foreground">{foAnalysis.company}</h1>
             <p className="text-muted-foreground mt-1 text-sm">Curated capital readiness materials prepared by The Founders Office advisory team</p>
           </div>
-          <div className={cn("text-center px-5 py-3 rounded-lg border border-border", scoreBg(foAnalysis.overallScore))}>
-            <p className={cn("text-3xl font-display font-bold", scoreColor(foAnalysis.overallScore))}>{foAnalysis.overallScore}</p>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-semibold mt-0.5">Capital Readiness</p>
-          </div>
+          {hasAnalysisData ? (
+            <div className={cn("text-center px-5 py-3 rounded-lg border border-border", scoreBg(foAnalysis.overallScore))}>
+              <p className={cn("text-3xl font-display font-bold", scoreColor(foAnalysis.overallScore))}>{foAnalysis.overallScore}</p>
+              <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-semibold mt-0.5">Capital Readiness</p>
+            </div>
+          ) : (
+            <div className="text-center px-5 py-3 rounded-lg border border-border bg-muted/30">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground font-semibold">Score Pending</p>
+            </div>
+          )}
         </div>
 
         {/* ── Founders Office Analysis ── */}
@@ -109,23 +119,35 @@ const InvestorView = () => {
             </div>
             <p className="text-xs text-muted-foreground">Six Keys of Capital™ Assessment</p>
           </div>
-          <div className="p-6">
-            <p className="text-sm text-muted-foreground leading-relaxed mb-6">{foAnalysis.summary}</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {foAnalysis.dimensions.map(d => (
-                <div key={d.key} className="p-4 rounded-lg border border-border bg-background">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-foreground">{d.key}</span>
-                    <span className={cn("text-lg font-display font-bold", scoreColor(d.score))}>{d.score}</span>
+          {hasAnalysisData ? (
+            <div className="p-6">
+              {foAnalysis.summary && (
+                <p className="text-sm text-muted-foreground leading-relaxed mb-6">{foAnalysis.summary}</p>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {foAnalysis.dimensions.map(d => (
+                  <div key={d.key} className="p-4 rounded-lg border border-border bg-background">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-semibold text-foreground">{d.key}</span>
+                      <span className={cn("text-lg font-display font-bold", scoreColor(d.score))}>{d.score}</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-muted mb-2">
+                      <div className={cn("h-full rounded-full", d.score >= 80 ? "bg-emerald-500" : d.score >= 65 ? "bg-amber-500" : "bg-destructive")} style={{ width: `${d.score}%` }} />
+                    </div>
+                    {d.desc && <p className="text-xs text-muted-foreground leading-relaxed">{d.desc}</p>}
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-muted mb-2">
-                    <div className={cn("h-full rounded-full", d.score >= 80 ? "bg-emerald-500" : d.score >= 65 ? "bg-amber-500" : "bg-destructive")} style={{ width: `${d.score}%` }} />
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">{d.desc}</p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-10 text-center">
+              <AlertTriangle className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm font-medium text-foreground mb-1">Analysis not yet available</p>
+              <p className="text-xs text-muted-foreground">
+                The Founders Office assessment will appear here once the advisor has completed and published the capital readiness evaluation.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Capital Highlights */}

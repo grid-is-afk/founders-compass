@@ -27,6 +27,14 @@ import activityRoutes from "./routes/activity.js";
 
 dotenv.config();
 
+const requiredEnvVars = ["DATABASE_URL", "JWT_SECRET", "JWT_REFRESH_SECRET"];
+for (const v of requiredEnvVars) {
+  if (!process.env[v]) {
+    console.error(`Missing required environment variable: ${v}`);
+    process.exit(1);
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());

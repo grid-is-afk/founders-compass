@@ -3,6 +3,15 @@ import { query } from "../db.js";
 
 const router = Router();
 
+const ALLOWED_COLUMNS = new Set([
+  "title",
+  "assignee",
+  "status",
+  "priority",
+  "due_date",
+  "phase",
+]);
+
 // Helper: verify client belongs to the requesting user (advisor or client-role)
 async function verifyClient(clientId: string, userId: string, userRole: string) {
   const col = userRole === "client" ? "user_id" : "advisor_id";
@@ -128,7 +137,11 @@ router.get("/:id", async (req, res) => {
 
 // PATCH /api/tasks/:id
 router.patch("/:id", async (req, res) => {
-  const { subtasks, ...fields } = req.body;
+  const { subtasks, ...rawFields } = req.body;
+  const fields: Record<string, unknown> = {};
+  for (const k of Object.keys(rawFields)) {
+    if (ALLOWED_COLUMNS.has(k)) fields[k] = rawFields[k];
+  }
   const keys = Object.keys(fields);
 
   try {

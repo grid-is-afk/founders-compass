@@ -43,6 +43,10 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 async function safeJson(r: Response) {
   const ct = r.headers.get("content-type") || "";
   if (!ct.includes("application/json")) return [];
+  if (!r.ok) {
+    const body = await r.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(body.error || `API error ${r.status}`);
+  }
   return r.json();
 }
 

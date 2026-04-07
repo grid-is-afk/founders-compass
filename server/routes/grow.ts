@@ -3,6 +3,15 @@ import { query } from "../db.js";
 
 const router = Router();
 
+const ALLOWED_COLUMNS = new Set([
+  "label",
+  "partner",
+  "status",
+  "adopted_from_template",
+  "task_count",
+  "completed_tasks",
+]);
+
 async function verifyClient(clientId: string, userId: string, userRole: string) {
   const col = userRole === "client" ? "user_id" : "advisor_id";
   const result = await query(
@@ -80,10 +89,14 @@ router.post("/", async (req, res) => {
 
 // PATCH /api/grow/:id
 router.patch("/:id", async (req, res) => {
-  const fields = req.body;
+  const raw = req.body;
+  const fields: Record<string, unknown> = {};
+  for (const k of Object.keys(raw)) {
+    if (ALLOWED_COLUMNS.has(k)) fields[k] = raw[k];
+  }
   const keys = Object.keys(fields);
   if (keys.length === 0) {
-    return res.status(400).json({ error: "No fields to update" });
+    return res.status(400).json({ error: "No valid fields to update" });
   }
 
   try {

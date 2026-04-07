@@ -4,6 +4,19 @@ import { query } from "../db.js";
 
 const router = Router();
 
+const ALLOWED_COLUMNS = new Set([
+  "name",
+  "contact_name",
+  "contact_email",
+  "revenue",
+  "stage",
+  "current_quarter",
+  "current_year",
+  "capital_readiness",
+  "customer_capital",
+  "performance_score",
+]);
+
 /** Generate a readable 10-char password — no ambiguous chars (0/O, 1/l/I) */
 function generatePassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -65,11 +78,21 @@ router.post("/", async (req, res) => {
     const generatedPassword = generatePassword();
     const passwordHash = await bcryptjs.hash(generatedPassword, 12);
 
-    // Create (or update) the user account for the client
+    // Check if user already exists — never silently overwrite an existing password
+    const existingUser = await query(
+      "SELECT id FROM users WHERE email = $1",
+      [contact_email.toLowerCase()]
+    );
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({
+        error: "A user with this email already exists. Use a different email for this client.",
+      });
+    }
+
+    // Create a fresh user account for the new client
     const userResult = await query(
       `INSERT INTO users (email, password_hash, name, role)
        VALUES ($1, $2, $3, 'client')
-       ON CONFLICT (email) DO UPDATE SET password_hash = $2, name = $3
        RETURNING id`,
       [contact_email.toLowerCase(), passwordHash, contact_name?.trim() || name]
     );
@@ -165,9 +188,9 @@ router.get("/:id", async (req, res) => {
 // PATCH /api/clients/:id
 router.patch("/:id", async (req, res) => {
   const fields = req.body;
-  const keys = Object.keys(fields);
+  const keys = Object.keys(fields).filter((k) => ALLOWED_COLUMNS.has(k));
   if (keys.length === 0) {
-    return res.status(400).json({ error: "No fields to update" });
+    return res.status(400).json({ error: "No valid fields to update" });
   }
 
   try {

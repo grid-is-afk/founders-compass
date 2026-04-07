@@ -206,11 +206,13 @@ export const AdvisorUploads = () => {
               <div className="w-full bg-muted rounded-full h-1.5">
                 <div
                   className="bg-emerald-500 h-1.5 rounded-full transition-all"
-                  style={{ width: `${(uploadedCount / requiredDocs.length) * 100}%` }}
+                  style={{ width: `${requiredDocs.length > 0 ? Math.round((uploadedCount / requiredDocs.length) * 100) : 0}%` }}
                 />
               </div>
               <p className="text-[10px] text-muted-foreground mt-1.5">
-                {uploadedCount} of {requiredDocs.length} required documents uploaded
+                {requiredDocs.length > 0
+                  ? `${uploadedCount} of ${requiredDocs.length} required documents uploaded`
+                  : "No required documents configured"}
               </p>
             </div>
           </div>
@@ -298,8 +300,34 @@ export const AdvisorDataRoom = () => {
     return matchesCategory && matchesSearch;
   });
 
-  const totalSize = "9.0 MB";
-  const lastUpdated = "Mar 5, 2026";
+  const totalSizeBytes = allDocs.reduce((acc, doc) => {
+    if (!doc.size || doc.size === "—") return acc;
+    const match = doc.size.match(/^([\d.]+)\s*(B|KB|MB)$/i);
+    if (!match) return acc;
+    const n = parseFloat(match[1]);
+    const unit = match[2].toUpperCase();
+    if (unit === "MB") return acc + n * 1024 * 1024;
+    if (unit === "KB") return acc + n * 1024;
+    return acc + n;
+  }, 0);
+  const totalSize =
+    totalSizeBytes === 0
+      ? "—"
+      : totalSizeBytes < 1024 * 1024
+      ? `${(totalSizeBytes / 1024).toFixed(0)} KB`
+      : `${(totalSizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+
+  const apiDocDates = (apiDocs as any[])
+    .map((d: any) => (d.uploaded_at ? new Date(d.uploaded_at).getTime() : 0))
+    .filter((t) => t > 0);
+  const lastUpdated =
+    apiDocDates.length > 0
+      ? new Date(Math.max(...apiDocDates)).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "—";
 
   return (
     <div className="space-y-6">

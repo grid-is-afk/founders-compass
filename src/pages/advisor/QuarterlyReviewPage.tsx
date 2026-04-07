@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   CalendarDays,
   CheckCircle2,
@@ -65,7 +66,15 @@ const QuarterlyReviewPage = () => {
           <p className="text-sm text-muted-foreground max-w-md mx-auto">
             Quarterly reviews will appear here once they are created for {selectedClient.name}. Use the schedule button to set up the first review.
           </p>
-          <Button className="mt-6 gap-2" onClick={() => {}}>
+          <Button
+            className="mt-6 gap-2"
+            onClick={() =>
+              toast("Review scheduling coming soon", {
+                description:
+                  "Review scheduling will be available once quarterly plans are created for this client.",
+              })
+            }
+          >
             <CalendarDays className="w-4 h-4" />
             Schedule First Review
           </Button>

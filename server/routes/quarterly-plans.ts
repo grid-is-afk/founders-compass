@@ -3,6 +3,8 @@ import { query } from "../db.js";
 
 const router = Router();
 
+const ALLOWED_PLAN_COLUMNS = new Set(["label", "status", "review_date"]);
+
 async function verifyClient(clientId: string, userId: string, userRole: string) {
   const col = userRole === "client" ? "user_id" : "advisor_id";
   const result = await query(
@@ -105,7 +107,11 @@ router.post("/", async (req, res) => {
 
 // PATCH /api/quarterly-plans/:id
 router.patch("/:id", async (req, res) => {
-  const { phases, ...fields } = req.body;
+  const { phases, ...rawFields } = req.body;
+  const fields: Record<string, unknown> = {};
+  for (const k of Object.keys(rawFields)) {
+    if (ALLOWED_PLAN_COLUMNS.has(k)) fields[k] = rawFields[k];
+  }
   const keys = Object.keys(fields);
 
   try {

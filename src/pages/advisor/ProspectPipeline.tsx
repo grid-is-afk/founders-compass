@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useProspects, useCreateProspect } from "@/hooks/useProspects";
+import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import ProspectCard from "@/components/dashboard/ProspectCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,9 +94,11 @@ function toProspectShape(row: any) {
 const ProspectDetailDialog = ({
   prospect,
   onClose,
+  onBeginDiscovery,
 }: {
   prospect: ReturnType<typeof toProspectShape> | null;
   onClose: () => void;
+  onBeginDiscovery: (id: string) => void;
 }) => {
   if (!prospect) return null;
   return (
@@ -183,7 +185,10 @@ const ProspectDetailDialog = ({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button onClick={onClose} className="gap-2">
+          <Button
+            onClick={() => onBeginDiscovery(prospect.id)}
+            className="gap-2"
+          >
             <Users className="w-4 h-4" /> Begin Discovery
           </Button>
         </DialogFooter>
@@ -266,8 +271,21 @@ const AddProspectDialog = ({ open, onClose }: { open: boolean; onClose: () => vo
 
 const ProspectPipeline = () => {
   const { data: rawProspects = [], isLoading } = useProspects();
+  const updateProspect = useUpdateProspect();
   const [selectedProspect, setSelectedProspect] = useState<ReturnType<typeof toProspectShape> | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+
+  const handleBeginDiscovery = async (id: string) => {
+    try {
+      await updateProspect.mutateAsync({ id, status: "discovery_scheduled" });
+      toast.success("Discovery scheduled", {
+        description: "Prospect status updated to Discovery Scheduled.",
+      });
+      setSelectedProspect(null);
+    } catch {
+      toast.error("Failed to update prospect status");
+    }
+  };
 
   const prospects = (rawProspects as any[]).map(toProspectShape);
 
@@ -336,7 +354,11 @@ const ProspectPipeline = () => {
         </div>
       )}
 
-      <ProspectDetailDialog prospect={selectedProspect} onClose={() => setSelectedProspect(null)} />
+      <ProspectDetailDialog
+        prospect={selectedProspect}
+        onClose={() => setSelectedProspect(null)}
+        onBeginDiscovery={handleBeginDiscovery}
+      />
       <AddProspectDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
