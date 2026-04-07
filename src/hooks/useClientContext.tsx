@@ -9,6 +9,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useClients } from "./useClients";
 
 interface ApiClient {
   id: string;
@@ -62,17 +63,21 @@ export function ClientProvider({
   const { user } = useAuth();
   const isClientRole = user?.role === "client";
 
-  // Single query — works for both roles because the API handles it
-  // For advisors: GET /api/clients returns all their clients (array)
-  // For clients: GET /api/clients returns only their own record (array with 1 item)
-  const { data: rawData, isLoading } = useQuery({
-    queryKey: ["clients", user?.id],
-    queryFn: () => api.get("/clients"),
-    enabled: !!user,
+  // Advisor path: fetch all their clients
+  const { data: advisorClients = [], isLoading: advisorLoading } = useClients();
+
+  // Client portal path: fetch only the logged-in client's own record
+  const { data: myClientRecord, isLoading: myClientLoading } = useQuery<ApiClient>({
+    queryKey: ["my-client"],
+    queryFn: () => api.get("/clients/me"),
+    enabled: isClientRole,
   });
 
-  // Normalize — ensure it's always an array
-  const clients: ApiClient[] = Array.isArray(rawData) ? rawData : rawData ? [rawData] : [];
+  const clients: ApiClient[] = isClientRole
+    ? myClientRecord ? [myClientRecord] : []
+    : (advisorClients as ApiClient[]);
+
+  const isLoading = isClientRole ? myClientLoading : advisorLoading;
 
   const [selectedClientId, setSelectedClientIdState] = useState<string>(
     initialClientId ?? ""

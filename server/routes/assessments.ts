@@ -3,15 +3,6 @@ import { query } from "../db.js";
 
 const router = Router();
 
-async function verifyClientAccess(clientId: string, userId: string, userRole: string) {
-  const col = userRole === "client" ? "user_id" : "advisor_id";
-  const result = await query(
-    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
-    [clientId, userId]
-  );
-  return result.rows.length > 0;
-}
-
 // GET /api/assessments?client_id=xxx
 router.get("/", async (req, res) => {
   const { client_id } = req.query;
@@ -20,7 +11,12 @@ router.get("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClientAccess(client_id as string, req.user!.id, req.user!.role))) {
+    // Verify client belongs to this advisor
+    const clientCheck = await query(
+      "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+      [client_id, req.user!.id]
+    );
+    if (clientCheck.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -56,7 +52,12 @@ router.put("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClientAccess(client_id, req.user!.id, req.user!.role))) {
+    // Verify client belongs to this advisor
+    const clientCheck = await query(
+      "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+      [client_id, req.user!.id]
+    );
+    if (clientCheck.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -119,7 +120,12 @@ router.get("/:id", async (req, res) => {
     }
     const assessment = aResult.rows[0];
 
-    if (!(await verifyClientAccess(assessment.client_id, req.user!.id, req.user!.role))) {
+    // Verify client belongs to this advisor
+    const clientCheck = await query(
+      "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+      [assessment.client_id, req.user!.id]
+    );
+    if (clientCheck.rows.length === 0) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -145,7 +151,11 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Assessment not found" });
     }
 
-    if (!(await verifyClientAccess(aResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+    const clientCheck = await query(
+      "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+      [aResult.rows[0].client_id, req.user!.id]
+    );
+    if (clientCheck.rows.length === 0) {
       return res.status(403).json({ error: "Access denied" });
     }
 

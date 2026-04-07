@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 import { AuthProvider } from "@/lib/auth";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import ErrorBoundary from "@/components/ErrorBoundary";
 
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -51,7 +50,6 @@ import FounderExperience from "./pages/founder/FounderExperience";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <ErrorBoundary>
   <AuthProvider>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
@@ -131,7 +129,6 @@ const App = () => (
       </TooltipProvider>
     </QueryClientProvider>
   </AuthProvider>
-  </ErrorBoundary>
 );
 
 export default App;

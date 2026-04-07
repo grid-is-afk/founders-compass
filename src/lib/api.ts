@@ -42,15 +42,7 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
 
 async function safeJson(r: Response) {
   const ct = r.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) {
-    // Server returned HTML (SPA fallback) or non-JSON — return empty array
-    console.warn(`API returned non-JSON for ${r.url}`);
-    return [];
-  }
-  if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error(body.error || `API error ${r.status}`);
-  }
+  if (!ct.includes("application/json")) return [];
   return r.json();
 }
 

@@ -3,12 +3,11 @@ import { query } from "../db.js";
 
 const router = Router();
 
-// Helper: verify user has access to this client (works for both advisor and client roles)
-async function verifyClientAccess(clientId: string, userId: string, userRole: string) {
-  const col = userRole === "client" ? "user_id" : "advisor_id";
+// Helper: verify client belongs to advisor
+async function verifyClient(clientId: string, advisorId: string) {
   const result = await query(
-    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
-    [clientId, userId]
+    "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+    [clientId, advisorId]
   );
   return result.rows.length > 0;
 }
@@ -21,7 +20,7 @@ router.get("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClientAccess(client_id as string, req.user!.id, req.user!.role))) {
+    if (!(await verifyClient(client_id as string, req.user!.id))) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -57,7 +56,7 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    if (!(await verifyClientAccess(client_id, req.user!.id, req.user!.role))) {
+    if (!(await verifyClient(client_id, req.user!.id))) {
       return res.status(404).json({ error: "Client not found" });
     }
 
@@ -110,7 +109,7 @@ router.get("/:id", async (req, res) => {
     }
     const task = tResult.rows[0];
 
-    if (!(await verifyClientAccess(task.client_id, req.user!.id, req.user!.role))) {
+    if (!(await verifyClient(task.client_id, req.user!.id))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -139,7 +138,7 @@ router.patch("/:id", async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
 
-    if (!(await verifyClientAccess(tResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+    if (!(await verifyClient(tResult.rows[0].client_id, req.user!.id))) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -189,7 +188,7 @@ router.delete("/:id", async (req, res) => {
       return res.status(404).json({ error: "Task not found" });
     }
 
-    if (!(await verifyClientAccess(tResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+    if (!(await verifyClient(tResult.rows[0].client_id, req.user!.id))) {
       return res.status(403).json({ error: "Access denied" });
     }
 

@@ -1,8 +1,7 @@
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ClipboardCheck, Upload, CalendarDays, FileText, Video, LogOut } from "lucide-react";
+import { LayoutDashboard, ClipboardCheck, Upload, CalendarDays, FileText, Video, LogOut, User, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
-import { ClientProvider } from "@/hooks/useClientContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,7 +26,6 @@ const ClientLayout = () => {
   const { user, logout } = useAuth();
 
   return (
-    <ClientProvider>
     <div className="min-h-screen bg-background">
       {/* Top nav */}
       <header className="border-b border-border bg-card">
@@ -105,7 +103,6 @@ const ClientLayout = () => {
         <Outlet />
       </main>
     </div>
-    </ClientProvider>
   );
 };
 

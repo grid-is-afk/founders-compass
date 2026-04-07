@@ -26,7 +26,7 @@ import {
   Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useClientContext } from "@/hooks/useClientContext";
+import { useClients } from "@/hooks/useClients";
 import { useClientTasks } from "@/hooks/useTasks";
 import { useClientDocuments } from "@/hooks/useDocuments";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
@@ -71,7 +71,8 @@ const docIcon = {
 // ─── 1. CLIENT QUESTIONNAIRES ─────────────────────────────────────────────────
 
 export const ClientQuestionnaires = () => {
-  const { selectedClientId: clientId, selectedClient } = useClientContext();
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
   const { data: rawAssessments = [] } = useClientAssessments(clientId);
   const adapted = adaptAssessments(rawAssessments, clientId);
   const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = adapted;
@@ -302,7 +303,8 @@ const requiredDocs = [
 ];
 
 export const ClientUploads = () => {
-  const { selectedClientId: clientId, selectedClient } = useClientContext();
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
   const { data: rawDocs = [] } = useClientDocuments(clientId);
   const clientDocs = (rawDocs as any[]).map((d) => ({
     id: d.id,
@@ -438,7 +440,8 @@ export const ClientTasks = () => {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const { selectedClientId: clientId, selectedClient } = useClientContext();
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
   const { data: rawTasks = [] } = useClientTasks(clientId);
 
   const allTasks = (rawTasks as any[]).map((t) => ({
@@ -640,7 +643,8 @@ const reportRequestTypes = [
 ];
 
 export const ClientReports = () => {
-  const { selectedClientId: clientId, selectedClient } = useClientContext();
+  const { data: clients = [] } = useClients();
+  const clientId = (clients as any[])[0]?.id ?? "";
   const { data: rawDeliverables = [] } = useClientDeliverables(clientId);
 
   const allDeliverables = (rawDeliverables as any[]).map((d) => ({
