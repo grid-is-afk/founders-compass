@@ -72,9 +72,11 @@ const docIcon = {
 
 export const ClientQuestionnaires = () => {
   const { data: clients = [] } = useClients();
-  const clientId = (clients as any[])[0]?.id ?? "";
+  const clientsArray = Array.isArray(clients) ? clients : [];
+  const clientId = (clientsArray as any[])[0]?.id ?? "";
   const { data: rawAssessments = [] } = useClientAssessments(clientId);
-  const adapted = adaptAssessments(rawAssessments, clientId);
+  const assessmentsArray = Array.isArray(rawAssessments) ? rawAssessments : [];
+  const adapted = adaptAssessments(assessmentsArray as any, clientId);
   const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = adapted;
 
   const assessments = [
@@ -304,9 +306,11 @@ const requiredDocs = [
 
 export const ClientUploads = () => {
   const { data: clients = [] } = useClients();
-  const clientId = (clients as any[])[0]?.id ?? "";
+  const clientsArray = Array.isArray(clients) ? clients : [];
+  const clientId = (clientsArray as any[])[0]?.id ?? "";
   const { data: rawDocs = [] } = useClientDocuments(clientId);
-  const clientDocs = (rawDocs as any[]).map((d) => ({
+  const docsArray = Array.isArray(rawDocs) ? rawDocs : [];
+  const clientDocs = (docsArray as any[]).map((d) => ({
     id: d.id,
     name: d.name,
     category: d.category ?? "Uploads",
@@ -441,10 +445,12 @@ export const ClientTasks = () => {
   const toggle = (id: string) => setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
   const { data: clients = [] } = useClients();
-  const clientId = (clients as any[])[0]?.id ?? "";
+  const clientsArray = Array.isArray(clients) ? clients : [];
+  const clientId = (clientsArray as any[])[0]?.id ?? "";
   const { data: rawTasks = [] } = useClientTasks(clientId);
+  const tasksArray = Array.isArray(rawTasks) ? rawTasks : [];
 
-  const allTasks = (rawTasks as any[]).map((t) => ({
+  const allTasks = (tasksArray as any[]).map((t) => ({
     id: t.id,
     title: t.title,
     status: (t.status ?? "todo") as "done" | "in_progress" | "todo",
@@ -644,10 +650,12 @@ const reportRequestTypes = [
 
 export const ClientReports = () => {
   const { data: clients = [] } = useClients();
-  const clientId = (clients as any[])[0]?.id ?? "";
+  const clientsArray = Array.isArray(clients) ? clients : [];
+  const clientId = (clientsArray as any[])[0]?.id ?? "";
   const { data: rawDeliverables = [] } = useClientDeliverables(clientId);
+  const deliverablesArray = Array.isArray(rawDeliverables) ? rawDeliverables : [];
 
-  const allDeliverables = (rawDeliverables as any[]).map((d) => ({
+  const allDeliverables = (deliverablesArray as any[]).map((d) => ({
     id: d.id,
     title: d.title,
     status: d.status ?? "pending",
@@ -835,7 +843,7 @@ const meetingTypeColor: Record<string, string> = {
 };
 
 export const ClientMeetings = () => {
-  const nextMeeting = upcomingMeetings[0];
+  const nextMeeting = upcomingMeetings[0] ?? null;
   const futureMeetings = upcomingMeetings.slice(1);
 
   return (
@@ -849,6 +857,7 @@ export const ClientMeetings = () => {
 
       {/* Next meeting — prominent card */}
       <motion.div initial="hidden" animate="visible" custom={1} variants={fadeUp}>
+        {nextMeeting ? (
         <div className="bg-card rounded-lg border border-primary/30 p-6 space-y-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
@@ -895,6 +904,13 @@ export const ClientMeetings = () => {
             </div>
           )}
         </div>
+        ) : (
+          <div className="bg-card rounded-lg border border-border p-6 text-center">
+            <CalendarDays className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+            <h3 className="font-display font-semibold text-foreground mb-1">No meetings scheduled</h3>
+            <p className="text-sm text-muted-foreground">Your advisor will schedule upcoming meetings here.</p>
+          </div>
+        )}
       </motion.div>
 
       {/* Upcoming meetings */}

@@ -34,15 +34,19 @@ const ClientDashboard = () => {
   const { data: rawTasks = [] } = useClientTasks(clientId);
   const { data: rawPlans = [] } = useClientQuarterlyPlans(clientId);
 
+  // Defensive: API may return an error object instead of array if clientId resolves before server is ready
+  const tasksArray = Array.isArray(rawTasks) ? rawTasks : [];
+  const plansArray = Array.isArray(rawPlans) ? rawPlans : [];
+
   // Filter to tasks assigned to the client user
-  const clientTasks = (rawTasks as any[]).filter(
-    (t) => t.assignee === "Client" || t.assignee?.toLowerCase() === "client"
+  const clientTasks = tasksArray.filter(
+    (t: any) => t.assignee === "Client" || t.assignee?.toLowerCase() === "client"
   );
 
   const totalSubs = clientTasks.reduce((a: number, t: any) => a + (t.subtasks?.length ?? 0), 0);
   const doneSubs = clientTasks.reduce((a: number, t: any) => a + (t.subtasks?.filter((s: any) => s.done).length ?? 0), 0);
 
-  const activePlan = (rawPlans as any[]).find((p) => p.status === "active") ?? (rawPlans as any[])[0];
+  const activePlan = plansArray.find((p: any) => p.status === "active") ?? plansArray[0];
   const phases = activePlan?.phases ?? [];
 
   const capitalReadiness = firstClient?.capital_readiness ?? 0;
