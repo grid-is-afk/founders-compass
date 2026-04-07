@@ -298,7 +298,7 @@ export const AdvisorDataRoom = () => {
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowUpload(!showUpload)}>
             <Upload className="w-3.5 h-3.5" />{showUpload ? "Hide Upload" : "Upload Files"}
           </Button>
-          <ShareInvestorPortal />
+          <ShareInvestorPortal clientName={selectedClient?.name} />
         </div>
       </div>
 
@@ -1135,7 +1135,7 @@ export const AdvisorPublish = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <ShareInvestorPortal />
+          <ShareInvestorPortal clientName={selectedClient?.name} />
           <Button
             size="sm"
             className="gap-2"
@@ -1391,7 +1391,7 @@ export const AdvisorInvestorShare = () => {
             Manage secure, watermarked share links for capital partners, buyers, and brokers
           </p>
         </div>
-        <ShareInvestorPortal />
+        <ShareInvestorPortal clientName={selectedClient?.name} />
       </div>
 
       {/* Stats */}

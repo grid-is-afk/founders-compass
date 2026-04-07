@@ -25,7 +25,7 @@ interface ShareInvestorPortalProps {
   variant?: "button" | "card";
 }
 
-const ShareInvestorPortal = ({ clientName = "your client", variant = "button" }: ShareInvestorPortalProps) => {
+const ShareInvestorPortal = ({ clientName = "Your Client", variant = "button" }: ShareInvestorPortalProps) => {
   const [copied, setCopied] = useState(false);
   const [sent, setSent] = useState(false);
   const [recipientName, setRecipientName] = useState("");
