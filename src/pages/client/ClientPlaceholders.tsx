@@ -80,6 +80,29 @@ export const ClientQuestionnaires = () => {
   const adapted = adaptAssessments(assessmentsArray as any, clientId);
   const { businessAttractiveness, businessReadiness, personalReadiness, valueFactors } = adapted;
 
+  // Compute scores from real assessment data
+  function computeScore(assessment: typeof businessAttractiveness): { pct: number; total: number; max: number } {
+    if (!assessment?.factors?.length) return { pct: 0, total: 0, max: 0 };
+    const factors = assessment.factors;
+    const total = factors.reduce((sum: number, f: any) => sum + (f.score ?? 0), 0);
+    const max = factors.length * 6;
+    return { pct: Math.round((total / max) * 100), total, max };
+  }
+
+  function computeVF(assessment: typeof valueFactors): { positive: number; neutral: number; improvement: number; total: number; pct: number } {
+    if (!assessment?.factors?.length) return { positive: 0, neutral: 0, improvement: 0, total: 0, pct: 0 };
+    const factors = assessment.factors;
+    const positive = factors.filter((f: any) => f.rating === "positive").length;
+    const neutral = factors.filter((f: any) => f.rating === "neutral").length;
+    const improvement = factors.filter((f: any) => f.rating === "improvement" || f.rating === "needs_improvement").length;
+    return { positive, neutral, improvement, total: factors.length, pct: Math.round((positive / factors.length) * 100) };
+  }
+
+  const baScore = computeScore(businessAttractiveness);
+  const brScore = computeScore(businessReadiness);
+  const prScore = computeScore(personalReadiness);
+  const vfScore = computeVF(valueFactors);
+
   const assessments = [
     {
       id: "ba",
@@ -87,9 +110,9 @@ export const ClientQuestionnaires = () => {
       icon: TrendingUp,
       questionCount: businessAttractiveness?.factors.length ?? 25,
       completedDate: businessAttractiveness?.completedDate ?? null,
-      scoreLabel: "72%",
-      scoreValue: 72,
-      scoreNote: "108 / 150 points",
+      scoreLabel: businessAttractiveness?.factors.length ? `${baScore.pct}%` : "0%",
+      scoreValue: baScore.pct,
+      scoreNote: businessAttractiveness?.factors.length ? `${baScore.total} / ${baScore.max} points` : "No assessment data yet",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
@@ -99,9 +122,9 @@ export const ClientQuestionnaires = () => {
       icon: BarChart3,
       questionCount: businessReadiness?.factors.length ?? 22,
       completedDate: businessReadiness?.completedDate ?? null,
-      scoreLabel: "68%",
-      scoreValue: 68,
-      scoreNote: "90 / 132 points",
+      scoreLabel: businessReadiness?.factors.length ? `${brScore.pct}%` : "0%",
+      scoreValue: brScore.pct,
+      scoreNote: businessReadiness?.factors.length ? `${brScore.total} / ${brScore.max} points` : "No assessment data yet",
       color: "text-accent",
       bgColor: "bg-accent/10",
     },
@@ -111,9 +134,9 @@ export const ClientQuestionnaires = () => {
       icon: User,
       questionCount: personalReadiness?.factors.length ?? 11,
       completedDate: personalReadiness?.completedDate ?? null,
-      scoreLabel: "80%",
-      scoreValue: 80,
-      scoreNote: "53 / 66 points",
+      scoreLabel: personalReadiness?.factors.length ? `${prScore.pct}%` : "0%",
+      scoreValue: prScore.pct,
+      scoreNote: personalReadiness?.factors.length ? `${prScore.total} / ${prScore.max} points` : "No assessment data yet",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
@@ -123,9 +146,11 @@ export const ClientQuestionnaires = () => {
       icon: Star,
       questionCount: valueFactors?.factors.length ?? 54,
       completedDate: valueFactors?.completedDate ?? null,
-      scoreLabel: "35 / 54 Positive",
-      scoreValue: Math.round((35 / 54) * 100),
-      scoreNote: "11 neutral · 8 need improvement",
+      scoreLabel: valueFactors?.factors.length ? `${vfScore.positive} / ${vfScore.total} Positive` : "0 / 0 Positive",
+      scoreValue: vfScore.pct,
+      scoreNote: valueFactors?.factors.length
+        ? `${vfScore.neutral} neutral · ${vfScore.improvement} need improvement`
+        : "No assessment data yet",
       color: "text-accent",
       bgColor: "bg-accent/10",
     },

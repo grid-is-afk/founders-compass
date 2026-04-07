@@ -17,7 +17,8 @@ export type StreamEvent =
 
 export async function* streamChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  clientId?: string
 ): AsyncGenerator<StreamEvent> {
   const token = localStorage.getItem("tfo-access-token");
   const headers: Record<string, string> = {
@@ -28,7 +29,7 @@ export async function* streamChat(
   const response = await fetch("/api/chat", {
     method: "POST",
     headers,
-    body: JSON.stringify({ messages }),
+    body: JSON.stringify({ messages, clientId }),
     signal,
   });
 

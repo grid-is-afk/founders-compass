@@ -45,7 +45,7 @@ export const AdvisorUploads = () => {
   const { data: apiDocs = [] } = useClientDocuments(selectedClient.id);
   const [dragging, setDragging] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{
-    id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document";
+    id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document"; blob?: File;
   }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +61,19 @@ export const AdvisorUploads = () => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleDownload = (doc: { name: string; blob?: File }) => {
+    if (doc.blob) {
+      const url = URL.createObjectURL(doc.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = doc.name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      toast("File not available for download", { description: "This file was uploaded in a previous session." });
+    }
+  };
+
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const now = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -71,6 +84,7 @@ export const AdvisorUploads = () => {
       date: now,
       size: formatFileSize(file.size),
       type: getFileType(file.name),
+      blob: file,
     }));
     setUploadedFiles((prev) => [...newDocs, ...prev]);
     toast(`${files.length} file${files.length > 1 ? "s" : ""} uploaded`, {
@@ -169,7 +183,7 @@ export const AdvisorUploads = () => {
                     <td className="px-4 py-3 text-right">
                       <button
                         className="text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => toast("Downloading", { description: doc.name })}
+                        onClick={() => handleDownload(doc)}
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>

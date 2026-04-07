@@ -19,11 +19,13 @@ const CopilotContext = createContext<CopilotContextType | null>(null);
 export function CopilotProvider({
   children,
   clientContext,
+  clientId,
 }: {
   children: ReactNode;
   clientContext?: string;
+  clientId?: string;
 }) {
-  const copilot = useCopilot(clientContext);
+  const copilot = useCopilot(clientContext, clientId);
   const [isOpen, setIsOpen] = useState(false);
   const togglePanel = () => setIsOpen((prev) => !prev);
 

@@ -69,9 +69,9 @@ const QuarterlyReviewPage = () => {
           <Button
             className="mt-6 gap-2"
             onClick={() =>
-              toast("Review scheduling coming soon", {
+              toast("Create quarterly plans first", {
                 description:
-                  "Review scheduling will be available once quarterly plans are created for this client.",
+                  "Create quarterly plans for this client first (go to Journey page), then reviews can be scheduled.",
               })
             }
           >

@@ -33,7 +33,7 @@ function loadMessages(): ChatMessage[] {
   }
 }
 
-export function useCopilot(clientContext?: string) {
+export function useCopilot(clientContext?: string, clientId?: string) {
   const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export function useCopilot(clientContext?: string) {
             ]
           : historyMessages;
 
-        for await (const event of streamChat(allMessages, abortController.signal)) {
+        for await (const event of streamChat(allMessages, abortController.signal, clientId)) {
           if (event.kind === "text") {
             setMessages((prev) => {
               const updated = [...prev];
@@ -146,7 +146,7 @@ export function useCopilot(clientContext?: string) {
         abortRef.current = null;
       }
     },
-    [messages, isStreaming, clientContext]
+    [messages, isStreaming, clientContext, clientId]
   );
 
   const cancelStream = useCallback(() => {

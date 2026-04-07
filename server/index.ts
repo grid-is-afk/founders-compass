@@ -92,8 +92,13 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       })
     );
 
+    // Detect client disconnect so we can break the tool-use loop early
+    let clientDisconnected = false;
+    req.on("close", () => { clientDisconnected = true; });
+
     // Tool-use loop: Claude may call tools multiple times before producing final text
     while (true) {
+      if (clientDisconnected) break;
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-20250514",
         max_tokens: 4096,

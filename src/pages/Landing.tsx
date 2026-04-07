@@ -34,7 +34,7 @@ const Landing = () => {
             <span className="font-display text-lg font-semibold text-foreground tracking-tight">The Founders Office</span>
           </div>
           <div className="flex items-center gap-4">
-            <Link to="/client" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Client Portal</Link>
+            <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Client Portal</Link>
             <Link to="/login">
               <Button size="sm">Advisor Login</Button>
             </Link>
