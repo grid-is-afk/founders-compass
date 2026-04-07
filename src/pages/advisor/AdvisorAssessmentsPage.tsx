@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { TrendingUp, Shield, User, LayoutGrid, CheckCircle2, AlertTriangle, Star, Calendar, ClipboardCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import { TrendingUp, Shield, User, LayoutGrid, CheckCircle2, AlertTriangle, Star, Calendar, ClipboardCheck, Plus, Pencil } from "lucide-react";
 import { motion } from "framer-motion";
 import { getCategoryLabel } from "@/lib/assessmentUtils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -12,6 +12,7 @@ import { useClientContext } from "@/hooks/useClientContext";
 import { useClientAssessments } from "@/hooks/useAssessmentsApi";
 import { adaptAssessments } from "@/lib/assessmentAdapter";
 import { Button } from "@/components/ui/button";
+import AssessmentForm from "@/components/assessments/AssessmentForm";
 
 // ─── Display factor adapters ─────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ const fadeIn = {
 const AdvisorAssessmentsPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
   const { data: rawAssessments = [], isLoading } = useClientAssessments(selectedClientId);
+  const [formOpen, setFormOpen] = useState(false);
 
   const clientAssessments = useMemo(
     () => adaptAssessments(rawAssessments, selectedClientId),
@@ -148,6 +150,12 @@ const AdvisorAssessmentsPage = () => {
             Exit readiness scorecards and value factor analysis
           </p>
         </div>
+        {selectedClientId && !hasNoAssessments && (
+          <Button size="sm" onClick={() => setFormOpen(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Add Assessment
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -167,7 +175,7 @@ const AdvisorAssessmentsPage = () => {
           <p className="text-sm text-muted-foreground mb-4">
             Start an assessment for {selectedClient.name} to build their exit readiness profile.
           </p>
-          <Button>Start Assessment</Button>
+          <Button onClick={() => setFormOpen(true)}>Start Assessment</Button>
         </div>
       ) : (
         <>
@@ -295,9 +303,15 @@ const AdvisorAssessmentsPage = () => {
 
             <TabsContent value="business-attractiveness" className="mt-4">
               <div className="space-y-4">
-                <span className="text-xs text-muted-foreground">
-                  {businessAttractiveness?.factors.length ?? 0} factors · Max {(businessAttractiveness?.factors.length ?? 0) * 6} points · Score: {displayBa}%
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {businessAttractiveness?.factors.length ?? 0} factors · Max {(businessAttractiveness?.factors.length ?? 0) * 6} points · Score: {displayBa}%
+                  </span>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => setFormOpen(true)}>
+                    <Pencil className="w-3 h-3" />
+                    {businessAttractiveness ? "Re-score" : "Score Now"}
+                  </Button>
+                </div>
                 {businessAttractiveness ? (
                   <AssessmentFactorTable factors={toDisplayFactors(businessAttractiveness.factors)} mode="scored" />
                 ) : (
@@ -308,9 +322,15 @@ const AdvisorAssessmentsPage = () => {
 
             <TabsContent value="business-readiness" className="mt-4">
               <div className="space-y-4">
-                <span className="text-xs text-muted-foreground">
-                  {businessReadiness?.factors.length ?? 0} factors · Max {(businessReadiness?.factors.length ?? 0) * 6} points · Score: {displayBr}%
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {businessReadiness?.factors.length ?? 0} factors · Max {(businessReadiness?.factors.length ?? 0) * 6} points · Score: {displayBr}%
+                  </span>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => setFormOpen(true)}>
+                    <Pencil className="w-3 h-3" />
+                    {businessReadiness ? "Re-score" : "Score Now"}
+                  </Button>
+                </div>
                 {businessReadiness ? (
                   <AssessmentFactorTable factors={toDisplayFactors(businessReadiness.factors)} mode="scored" />
                 ) : (
@@ -321,9 +341,15 @@ const AdvisorAssessmentsPage = () => {
 
             <TabsContent value="personal-readiness" className="mt-4">
               <div className="space-y-4">
-                <span className="text-xs text-muted-foreground">
-                  {personalReadiness?.factors.length ?? 0} factors · Max {(personalReadiness?.factors.length ?? 0) * 6} points · Score: {displayPr}%
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {personalReadiness?.factors.length ?? 0} factors · Max {(personalReadiness?.factors.length ?? 0) * 6} points · Score: {displayPr}%
+                  </span>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => setFormOpen(true)}>
+                    <Pencil className="w-3 h-3" />
+                    {personalReadiness ? "Re-score" : "Score Now"}
+                  </Button>
+                </div>
                 {personalReadiness ? (
                   <AssessmentFactorTable factors={toDisplayFactors(personalReadiness.factors)} mode="scored" flat />
                 ) : (
@@ -334,9 +360,15 @@ const AdvisorAssessmentsPage = () => {
 
             <TabsContent value="value-factors" className="mt-4">
               <div className="space-y-4">
-                <span className="text-xs text-muted-foreground">
-                  {vfSummary.positive} positive · {vfSummary.neutral} neutral · {vfSummary.improvement} for improvement
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">
+                    {vfSummary.positive} positive · {vfSummary.neutral} neutral · {vfSummary.improvement} for improvement
+                  </span>
+                  <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={() => setFormOpen(true)}>
+                    <Pencil className="w-3 h-3" />
+                    {valueFactors ? "Re-score" : "Score Now"}
+                  </Button>
+                </div>
                 {valueFactors ? (
                   <AssessmentFactorTable factors={toDisplayFactors(valueFactors.factors)} mode="qualitative" />
                 ) : (
@@ -346,6 +378,16 @@ const AdvisorAssessmentsPage = () => {
             </TabsContent>
           </Tabs>
         </>
+      )}
+
+      {/* Assessment creation form dialog */}
+      {selectedClientId && (
+        <AssessmentForm
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          clientId={selectedClientId}
+          clientName={selectedClient.name}
+        />
       )}
     </div>
   );
