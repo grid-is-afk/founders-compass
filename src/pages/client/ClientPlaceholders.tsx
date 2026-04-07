@@ -267,13 +267,13 @@ export const ClientQuestionnaires = () => {
           </div>
           <div className="flex items-center justify-between rounded-md bg-muted/40 border border-border px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-foreground">Quarterly Review — Q2 2026</p>
+              <p className="text-sm font-medium text-foreground">Quarterly Review</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 All four assessments will be refreshed at your next advisory session
               </p>
             </div>
             <Badge variant="outline" className="text-[10px] text-muted-foreground border-muted shrink-0">
-              June 2026
+              Upcoming
             </Badge>
           </div>
         </div>
@@ -569,7 +569,7 @@ export const ClientTasks = () => {
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
         <h1 className="text-3xl font-display font-semibold text-foreground">Your Sprint Tasks</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          90-Day Execution Sprint · Q2 2026 — Protect &amp; Grow
+          90-Day Execution Sprint
         </p>
       </motion.div>
 

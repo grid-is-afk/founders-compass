@@ -187,6 +187,22 @@ const AdvisorJourney = () => {
     ["diagnose", "design_tfo"].includes(i.linked_phase ?? "")
   );
 
+  if (!selectedClientId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Client Journey</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Quarterly cycle engagement</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <GitBranch className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
+          <h3 className="font-display font-semibold text-foreground mb-1">No clients yet</h3>
+          <p className="text-sm text-muted-foreground">Add your first client to begin tracking their engagement journey.</p>
+        </div>
+      </div>
+    );
+  }
+
   if (plansLoading) {
     return (
       <div className="space-y-6">
@@ -399,19 +415,10 @@ const AdvisorJourney = () => {
                   </p>
                 </div>
               </div>
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Review Objectives</p>
-                {[
-                  "Review Protect architecture progress with insurance specialist",
-                  "Assess Grow Lane engagement across all 5 capital types",
-                  "Present Founder's Optionality Framework outcomes",
-                  "Set next quarter priorities and Align commitments",
-                ].map((obj, i) => (
-                  <div key={i} className="flex items-center gap-2.5 text-xs text-foreground">
-                    <Circle className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                    {obj}
-                  </div>
-                ))}
+              <div className="rounded-lg bg-muted/30 border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Review objectives will be defined when the quarterly review is scheduled.
+                </p>
               </div>
             </div>
           </PhaseSection>

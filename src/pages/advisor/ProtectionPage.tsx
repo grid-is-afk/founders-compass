@@ -160,7 +160,7 @@ const actionsByStatus: Record<string, string[]> = {
     "Annual review scheduled — confirm renewal date",
     "Store current version in data room",
     "Notify relevant parties of any changes",
-    "Schedule next review for Q3 2026",
+    "Schedule next review at the upcoming quarterly review",
   ],
 };
 
@@ -198,7 +198,7 @@ const ProtectionDetailDialog = ({
               <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-destructive mb-1">High Risk — Immediate Action Required</p>
-                <p className="text-xs text-muted-foreground">This gap creates material risk to business value and the capital readiness score. Resolving this should be a Q2 priority.</p>
+                <p className="text-xs text-muted-foreground">This gap creates material risk to business value and the capital readiness score. Resolving this should be a top priority.</p>
               </div>
             </div>
           )}
@@ -207,7 +207,7 @@ const ProtectionDetailDialog = ({
               <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
                 <p className="text-xs font-semibold text-amber-700 mb-1">Medium Risk — Address Within 90 Days</p>
-                <p className="text-xs text-muted-foreground">This item should be resolved before capital conversations begin. Include in Q2 sprint planning.</p>
+                <p className="text-xs text-muted-foreground">This item should be resolved before capital conversations begin. Include in the next sprint planning session.</p>
               </div>
             </div>
           )}
@@ -242,7 +242,7 @@ const ProtectionDetailDialog = ({
 // ---------------------------------------------------------------------------
 const ProtectionPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const { data: rawProtection = [] } = useClientProtection(selectedClientId);
+  const { data: rawProtection = [], isLoading } = useClientProtection(selectedClientId);
   // Map DB rows to ProtectionItem shape
   const protection: ProtectionItem[] = (rawProtection as any[]).map((p) => ({
     id: p.id,
@@ -254,6 +254,24 @@ const ProtectionPage = () => {
     recommendation: p.recommendation ?? null,
   }));
   const [selectedItem, setSelectedItem] = useState<ProtectionItem | null>(null);
+
+  if (!selectedClientId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Protection Architecture</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Asset protection, insurance, and IP coverage</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <ShieldCheck className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">No protection data yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Add your first client to begin building their protection architecture.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const assetItems = protection.filter((i) => i.category === "asset_matrix");
   const insuranceItems = protection.filter((i) => i.category === "insurance");

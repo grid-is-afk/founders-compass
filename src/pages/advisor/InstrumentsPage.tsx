@@ -210,7 +210,7 @@ const InstrumentDialog = ({
 // ---------------------------------------------------------------------------
 const InstrumentsPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
-  const { data: rawInstruments = [] } = useClientInstruments(selectedClientId);
+  const { data: rawInstruments = [], isLoading } = useClientInstruments(selectedClientId);
   // Map DB rows to the InstrumentRef shape the cards expect
   const instruments: InstrumentRef[] = (rawInstruments as any[]).map((inst) => ({
     id: inst.id,
@@ -221,6 +221,30 @@ const InstrumentsPage = () => {
     linkedPhase: inst.linked_phase ?? "diagnose",
   }));
   const [selectedInst, setSelectedInst] = useState<InstrumentRef | null>(null);
+
+  if (!selectedClientId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Instruments</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Diagnostic and design instruments powering the TFO methodology</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <BarChart3 className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">No instruments yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Add your first client to begin assigning and tracking diagnostic instruments.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">Loading instruments...</div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -254,6 +278,15 @@ const InstrumentsPage = () => {
       </motion.div>
 
       {/* Instrument grid */}
+      {instruments.length === 0 && (
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <BarChart3 className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">No instruments assigned</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            No instruments have been assigned to {selectedClient.name} yet.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-4">
         {instruments.map((inst, i) => {
           const meta = instrumentMeta[inst.type];

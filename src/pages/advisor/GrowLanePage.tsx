@@ -22,8 +22,6 @@ import {
   Compass,
   ArrowLeftRight,
   Info,
-  CheckCircle2,
-  Circle,
 } from "lucide-react";
 import type { GrowCapitalType, GrowEngagement } from "@/lib/types/journey";
 
@@ -47,7 +45,6 @@ interface CapitalConfig {
   border: string;
   description: string;
   details: string;
-  tasks: { title: string; done: boolean }[];
 }
 
 const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
@@ -59,13 +56,6 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     border: "border-primary/20",
     description: "Leadership, talent, and org development to scale performance beyond the founder.",
     details: "Human Capital growth focuses on building leadership depth, implementing performance management systems, and reducing the business's dependency on the founder. This includes key hire planning, succession mapping, and culture codification.",
-    tasks: [
-      { title: "COO onboarding playbook complete", done: false },
-      { title: "Leadership assessment with HR partner", done: false },
-      { title: "Sales management hire — VP Sales", done: false },
-      { title: "CFO role gap analysis", done: false },
-      { title: "Annual performance review system deployed", done: false },
-    ],
   },
   customer_capital: {
     label: "Customer Capital",
@@ -74,14 +64,7 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     bg: "bg-accent/10",
     border: "border-accent/20",
     description: "Retention, concentration reduction, and lifetime value expansion.",
-    details: "Customer Capital engagement targets the reduction of revenue concentration risk, improves customer retention, and drives Net Revenue Retention above 110%. The TFO partner network is engaged to execute diversification campaigns and long-term contract strategies.",
-    tasks: [
-      { title: "Customer concentration analysis delivered", done: false },
-      { title: "NRR baseline established", done: false },
-      { title: "Concentration reduction plan developed", done: false },
-      { title: "Long-term contract incentive program", done: false },
-      { title: "Customer advisory council launched", done: false },
-    ],
+    details: "Customer Capital engagement targets the reduction of revenue concentration risk, improves customer retention, and drives Net Revenue Retention. The TFO partner network is engaged to execute diversification campaigns and long-term contract strategies.",
   },
   structural_capital: {
     label: "Structural Capital",
@@ -91,13 +74,6 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     border: "border-emerald-500/20",
     description: "Systems, IP, processes, and infrastructure that operate without the founder.",
     details: "Structural Capital ensures the business can operate, scale, and eventually transfer value independently of the founder. This includes SOPs, technology stack documentation, IP registration, and governance infrastructure.",
-    tasks: [
-      { title: "Core SOP documentation", done: false },
-      { title: "ERP system implementation", done: false },
-      { title: "IP audit and provisional registration", done: false },
-      { title: "Financial reporting automation", done: false },
-      { title: "Board governance structure established", done: false },
-    ],
   },
   social_capital: {
     label: "Social Capital",
@@ -107,13 +83,6 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     border: "border-violet-500/20",
     description: "Relationships, reputation, and referral networks that compound value over time.",
     details: "Social Capital development grows the founder's and business's market reputation to create proprietary deal flow and inbound capital interest. This includes thought leadership, strategic partnerships, and advisor network development.",
-    tasks: [
-      { title: "Industry association memberships established", done: false },
-      { title: "Advisor network of 3 strategic advisors", done: false },
-      { title: "Founder LinkedIn authority content plan", done: false },
-      { title: "Strategic partner introductions — 2 targets", done: false },
-      { title: "Press feature in trade publication", done: false },
-    ],
   },
   personal_path: {
     label: "Personal Path",
@@ -123,13 +92,6 @@ const capitalConfig: Record<GrowCapitalType, CapitalConfig> = {
     border: "border-amber-500/20",
     description: "The founder's personal transition, wealth, and life design beyond the business.",
     details: "The Personal Path engagement focuses on the founder's life after the business event — personal financial planning, lifestyle design, philanthropic intent, and identity transition. This ensures the founder is personally ready for the capital or exit event.",
-    tasks: [
-      { title: "Economic Certainty Framework completed", done: true },
-      { title: "Personal financial plan with wealth advisor", done: false },
-      { title: "Post-transition life design session", done: false },
-      { title: "Estate plan review and update", done: false },
-      { title: "Philanthropic intent documented", done: false },
-    ],
   },
 };
 
@@ -264,23 +226,6 @@ const CapitalDetailDialog = ({
             </div>
           )}
 
-          {/* Tasks */}
-          <div className="space-y-1.5">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Tasks</p>
-            {config.tasks.map((task, i) => (
-              <div key={i} className="flex items-center gap-2.5">
-                {task.done ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                ) : (
-                  <Circle className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                )}
-                <span className={cn("text-xs", task.done ? "line-through text-muted-foreground" : "text-foreground")}>
-                  {task.title}
-                </span>
-              </div>
-            ))}
-          </div>
-
           {/* Partner */}
           {engagement?.partner && (
             <div className="flex items-center gap-2 p-3 rounded-lg border border-border bg-muted/20">
@@ -320,6 +265,24 @@ const GrowLanePage = () => {
     completedTasks: g.completed_tasks ?? 0,
   }));
   const [selectedCapital, setSelectedCapital] = useState<GrowCapitalType | null>(null);
+
+  if (!selectedClientId) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-semibold text-foreground">Grow Lane</h1>
+          <p className="text-muted-foreground mt-1 text-sm">Five capital types · Subcontractor partner model</p>
+        </div>
+        <div className="bg-card rounded-lg border border-border p-12 text-center">
+          <Network className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+          <h3 className="font-display text-lg font-semibold text-foreground mb-2">No grow engagements yet</h3>
+          <p className="text-sm text-muted-foreground max-w-md mx-auto">
+            Add your first client to begin managing their Grow Lane engagements across all five capital types.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
