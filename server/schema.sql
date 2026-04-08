@@ -122,9 +122,9 @@ CREATE TABLE IF NOT EXISTS prospects (
   company      TEXT,
   revenue      TEXT,
   source       TEXT,
-  status       TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'proposal', 'won', 'lost')),
+  status       TEXT NOT NULL DEFAULT 'intake' CHECK (status IN ('intake', 'discovery_scheduled', 'discovery_complete', 'fit_assessment', 'not_fit', 'fit', 'onboarding')),
   fit_score    INT CHECK (fit_score >= 0 AND fit_score <= 100),
-  fit_decision TEXT CHECK (fit_decision IN ('strong_fit', 'possible_fit', 'poor_fit', null)),
+  fit_decision TEXT CHECK (fit_decision IN ('fit', 'no_fit')),
   notes        TEXT,
   date         DATE DEFAULT CURRENT_DATE,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -274,3 +274,30 @@ CREATE TABLE IF NOT EXISTS activity_log (
 
 CREATE INDEX IF NOT EXISTS idx_activity_advisor ON activity_log(advisor_id);
 CREATE INDEX IF NOT EXISTS idx_activity_client ON activity_log(client_id);
+
+-- ============================================================
+-- Migrations for existing databases
+-- ============================================================
+
+-- Fix prospects status constraint (was wrong values)
+DO $$ BEGIN
+  ALTER TABLE prospects DROP CONSTRAINT IF EXISTS prospects_status_check;
+  ALTER TABLE prospects ADD CONSTRAINT prospects_status_check
+    CHECK (status IN ('intake', 'discovery_scheduled', 'discovery_complete', 'fit_assessment', 'not_fit', 'fit', 'onboarding'));
+  ALTER TABLE prospects ALTER COLUMN status SET DEFAULT 'intake';
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Fix prospects fit_decision constraint
+DO $$ BEGIN
+  ALTER TABLE prospects DROP CONSTRAINT IF EXISTS prospects_fit_decision_check;
+  ALTER TABLE prospects ADD CONSTRAINT prospects_fit_decision_check
+    CHECK (fit_decision IN ('fit', 'no_fit'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Add user_id column to clients if missing
+DO $$ BEGIN
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
