@@ -91,16 +91,33 @@ function toProspectShape(row: any) {
   };
 }
 
+// Pipeline flow: intake → discovery_scheduled → discovery_complete → fit_assessment → fit/not_fit → onboarding
+const NEXT_STATUS: Record<string, { status: string; label: string }> = {
+  intake: { status: "discovery_scheduled", label: "Schedule Discovery" },
+  discovery_scheduled: { status: "discovery_complete", label: "Complete Discovery" },
+  discovery_complete: { status: "fit_assessment", label: "Begin Fit Assessment" },
+  fit_assessment: { status: "fit", label: "Mark as Fit" },
+  fit: { status: "onboarding", label: "Begin Onboarding" },
+};
+
 const ProspectDetailDialog = ({
   prospect,
   onClose,
-  onBeginDiscovery,
+  onAdvance,
+  onMarkNotFit,
+  isPending,
 }: {
   prospect: ReturnType<typeof toProspectShape> | null;
   onClose: () => void;
-  onBeginDiscovery: (id: string) => void;
+  onAdvance: (id: string, newStatus: string) => void;
+  onMarkNotFit: (id: string) => void;
+  isPending: boolean;
 }) => {
   if (!prospect) return null;
+  const next = NEXT_STATUS[prospect.status];
+  const showNotFitButton = ["fit_assessment", "discovery_complete"].includes(prospect.status);
+  const isTerminal = ["not_fit", "onboarding"].includes(prospect.status);
+
   return (
     <Dialog open={!!prospect} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
@@ -153,13 +170,6 @@ const ProspectDetailDialog = ({
                 <span className="font-bold text-foreground">{prospect.fitScore}/100</span>
               </div>
               <Progress value={prospect.fitScore} className="h-2" />
-              <p className="text-[10px] text-muted-foreground">
-                {prospect.fitScore >= 75
-                  ? "Strong fit — recommend engagement"
-                  : prospect.fitScore >= 50
-                  ? "Moderate fit — further discovery recommended"
-                  : "Low fit — may not meet TFO criteria"}
-              </p>
             </div>
           )}
 
@@ -183,14 +193,32 @@ const ProspectDetailDialog = ({
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex gap-2">
           <Button variant="outline" onClick={onClose}>Close</Button>
-          <Button
-            onClick={() => onBeginDiscovery(prospect.id)}
-            className="gap-2"
-          >
-            <Users className="w-4 h-4" /> Begin Discovery
-          </Button>
+          {showNotFitButton && (
+            <Button
+              variant="destructive"
+              onClick={() => onMarkNotFit(prospect.id)}
+              disabled={isPending}
+              className="gap-2"
+            >
+              <XCircle className="w-4 h-4" /> Not a Fit
+            </Button>
+          )}
+          {next && !isTerminal && (
+            <Button
+              onClick={() => onAdvance(prospect.id, next.status)}
+              disabled={isPending}
+              className="gap-2"
+            >
+              {isPending ? "Updating..." : next.label}
+            </Button>
+          )}
+          {isTerminal && (
+            <span className="text-xs text-muted-foreground italic px-2">
+              {prospect.status === "onboarding" ? "Prospect is being onboarded" : "Prospect marked as not a fit"}
+            </span>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -275,15 +303,27 @@ const ProspectPipeline = () => {
   const [selectedProspect, setSelectedProspect] = useState<ReturnType<typeof toProspectShape> | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
-  const handleBeginDiscovery = async (id: string) => {
+  const handleAdvance = async (id: string, newStatus: string) => {
     try {
-      await updateProspect.mutateAsync({ id, status: "discovery_scheduled" });
-      toast.success("Discovery scheduled", {
-        description: "Prospect status updated to Discovery Scheduled.",
+      const updates: Record<string, unknown> = { id, status: newStatus };
+      if (newStatus === "fit") updates.fit_decision = "fit";
+      await updateProspect.mutateAsync(updates);
+      toast.success("Prospect updated", {
+        description: `Status changed to ${statusLabel[newStatus] || newStatus}.`,
       });
       setSelectedProspect(null);
     } catch {
-      toast.error("Failed to update prospect status");
+      toast.error("Failed to update prospect");
+    }
+  };
+
+  const handleMarkNotFit = async (id: string) => {
+    try {
+      await updateProspect.mutateAsync({ id, status: "not_fit", fit_decision: "no_fit" });
+      toast.success("Prospect marked as Not a Fit");
+      setSelectedProspect(null);
+    } catch {
+      toast.error("Failed to update prospect");
     }
   };
 
@@ -357,7 +397,9 @@ const ProspectPipeline = () => {
       <ProspectDetailDialog
         prospect={selectedProspect}
         onClose={() => setSelectedProspect(null)}
-        onBeginDiscovery={handleBeginDiscovery}
+        onAdvance={handleAdvance}
+        onMarkNotFit={handleMarkNotFit}
+        isPending={updateProspect.isPending}
       />
       <AddProspectDialog open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
