@@ -51,7 +51,7 @@ router.post("/", async (req, res) => {
         company ?? null,
         revenue ?? null,
         source ?? null,
-        status ?? "new",
+        status ?? "intake",
         fit_score ?? null,
         fit_decision ?? null,
         notes ?? null,
