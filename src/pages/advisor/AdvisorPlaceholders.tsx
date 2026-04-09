@@ -432,12 +432,17 @@ export const AdvisorDataRoom = () => {
           /* State B: files staged — show review + category panel */
           <div className="rounded-lg border border-border bg-card overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
-              <p className="text-sm font-medium text-foreground">
-                {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""} selected
-              </p>
+            <div className="flex items-start justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""} selected
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Choose a category for each file — this determines where it appears in the Data Room.
+                </p>
+              </div>
               <button
-                className="text-xs text-primary hover:underline"
+                className="text-xs text-primary hover:underline mt-0.5"
                 onClick={() => fileInputRef.current?.click()}
               >
                 + Add more
@@ -467,13 +472,13 @@ export const AdvisorDataRoom = () => {
                 <div key={pf.id} className="flex items-center gap-3 px-4 py-3">
                   <FileTypeIcon type={pf.type} />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{pf.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{pf.size}</p>
+                    <p className="text-sm font-medium text-foreground truncate">{pf.name}</p>
+                    <p className="text-xs text-muted-foreground">{pf.size}</p>
                   </div>
                   <select
                     value={pf.category}
                     onChange={(e) => updatePendingCategory(pf.id, e.target.value)}
-                    className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                   >
                     {["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"].map((c) => (
                       <option key={c} value={c}>{c}</option>
