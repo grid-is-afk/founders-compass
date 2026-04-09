@@ -6,7 +6,6 @@ import {
   UserPlus,
   ClipboardCheck,
   FolderOpen,
-  BarChart3,
   ShieldCheck,
   TrendingUp,
   FileText,
@@ -36,7 +35,6 @@ const navGroups = [
     items: [
       { to: "/advisor/assessments", icon: ClipboardCheck, label: "Assessments" },
       { to: "/advisor/data-room", icon: FolderOpen, label: "Data Room" },
-      { to: "/advisor/instruments", icon: BarChart3, label: "Instruments" },
     ],
   },
   {

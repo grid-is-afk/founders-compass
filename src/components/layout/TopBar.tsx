@@ -4,7 +4,6 @@ import { useAuth } from "@/lib/auth";
 import {
   Activity,
   AlertTriangle,
-  BarChart3,
   Bell,
   CalendarDays,
   ClipboardCheck,
@@ -59,7 +58,6 @@ const pages = [
   { name: "Clients", path: "/advisor/clients", icon: Users },
   { name: "Journey", path: "/advisor/journey", icon: GitBranch },
   { name: "Prospects", path: "/advisor/prospects", icon: UserPlus },
-  { name: "Instruments", path: "/advisor/instruments", icon: BarChart3 },
   { name: "Protection", path: "/advisor/protection", icon: ShieldCheck },
   { name: "Grow Lane", path: "/advisor/grow-lane", icon: TrendingUp },
   { name: "Quarterly Reviews", path: "/advisor/quarterly-review", icon: CalendarDays },

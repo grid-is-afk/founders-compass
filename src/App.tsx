@@ -16,7 +16,6 @@ import AdvisorDashboard from "./pages/advisor/AdvisorDashboard";
 import AdvisorClients from "./pages/advisor/AdvisorClients";
 import AdvisorJourney from "./pages/advisor/AdvisorJourney";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
-import InstrumentsPage from "./pages/advisor/InstrumentsPage";
 import GrowLanePage from "./pages/advisor/GrowLanePage";
 import ProtectionPage from "./pages/advisor/ProtectionPage";
 import QuarterlyReviewPage from "./pages/advisor/QuarterlyReviewPage";
@@ -82,7 +81,6 @@ const App = () => (
 
               {/* TFO pages */}
               <Route path="prospects" element={<ProspectPipeline />} />
-              <Route path="instruments" element={<InstrumentsPage />} />
               <Route path="grow-lane" element={<GrowLanePage />} />
               <Route path="protection" element={<ProtectionPage />} />
               <Route path="quarterly-review" element={<QuarterlyReviewPage />} />
