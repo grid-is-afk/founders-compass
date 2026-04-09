@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, Circle, AlertCircle, FileSpreadsheet,
   FileIcon, CheckSquare, ChevronDown, ChevronRight,
   Share2, Eye, ExternalLink, Zap, Edit3, Lock,
-  Send, Globe, Users, XCircle,
+  Send, Globe, Users, XCircle, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -251,6 +251,15 @@ export const AdvisorDataRoom = () => {
   const [dragging, setDragging] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document"; blob?: File }>>([]);
   const [previewDoc, setPreviewDoc] = useState<{ name: string; category: string; date: string } | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<Array<{
+    id: string;
+    file: File;
+    name: string;
+    size: string;
+    type: "pdf" | "spreadsheet" | "document";
+    category: string;
+  }>>([]);
+  const [bulkCategory, setBulkCategory] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getFileType = (name: string): "pdf" | "spreadsheet" | "document" => {
@@ -280,20 +289,48 @@ export const AdvisorDataRoom = () => {
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const now = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    const newDocs = Array.from(files).map((file, i) => ({
-      id: `upload-${Date.now()}-${i}`,
+    const staged = Array.from(files).map((file, i) => ({
+      id: `pending-${Date.now()}-${i}`,
+      file,
       name: file.name,
-      category: "Uploads",
-      date: now,
       size: formatFileSize(file.size),
       type: getFileType(file.name),
-      blob: file,
+      category: "Reports",
     }));
-    setUploadedFiles((prev) => [...newDocs, ...prev]);
-    toast(`${files.length} file${files.length > 1 ? "s" : ""} uploaded`, {
-      description: Array.from(files).map((f) => f.name).join(", "),
+    setPendingFiles((prev) => [...prev, ...staged]);
+  };
+
+  const updatePendingCategory = (id: string, category: string) => {
+    setPendingFiles((prev) => prev.map((p) => p.id === id ? { ...p, category } : p));
+  };
+
+  const applyBulkCategory = (category: string) => {
+    setBulkCategory(category);
+    setPendingFiles((prev) => prev.map((p) => ({ ...p, category })));
+  };
+
+  const removePendingFile = (id: string) => {
+    setPendingFiles((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  const handleConfirmUpload = () => {
+    if (pendingFiles.length === 0) return;
+    const now = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const confirmed = pendingFiles.map((p) => ({
+      id: `upload-${p.id}`,
+      name: p.name,
+      category: p.category,
+      date: now,
+      size: p.size,
+      type: p.type,
+      blob: p.file,
+    }));
+    setUploadedFiles((prev) => [...confirmed, ...prev]);
+    toast(`${confirmed.length} file${confirmed.length > 1 ? "s" : ""} added to Data Room`, {
+      description: confirmed.map((f) => f.name).join(", "),
     });
+    setPendingFiles([]);
+    setBulkCategory("");
   };
 
   const apiDocsMapped2 = (apiDocs as any[]).map((d) => ({
@@ -370,25 +407,103 @@ export const AdvisorDataRoom = () => {
 
       {/* Upload zone — toggleable */}
       {showUpload && (
-        <div
-          className={cn(
-            "rounded-lg border-2 border-dashed p-8 text-center transition-colors cursor-pointer",
-            dragging ? "border-primary bg-primary/5" : "border-border bg-muted/20"
-          )}
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
-          onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(false); }}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(false); handleFiles(e.dataTransfer.files); }}
-        >
-          <Upload className={cn("w-8 h-8 mx-auto mb-3", dragging ? "text-primary" : "text-muted-foreground")} />
-          <p className="text-sm font-medium text-foreground mb-1">
-            {dragging ? "Drop files to upload" : "Drag files here or click to browse"}
-          </p>
-          <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word — up to 50MB per file</p>
-          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
-            Browse Files
-          </Button>
-        </div>
+        pendingFiles.length === 0 ? (
+          /* State A: no pending files — show dropzone */
+          <div
+            className={cn(
+              "rounded-lg border-2 border-dashed p-8 text-center transition-colors cursor-pointer",
+              dragging ? "border-primary bg-primary/5" : "border-border bg-muted/20"
+            )}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
+            onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(false); }}
+            onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+          >
+            <Upload className={cn("w-8 h-8 mx-auto mb-3", dragging ? "text-primary" : "text-muted-foreground")} />
+            <p className="text-sm font-medium text-foreground mb-1">
+              {dragging ? "Drop files to upload" : "Drag files here or click to browse"}
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word — up to 50MB per file</p>
+            <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+              Browse Files
+            </Button>
+          </div>
+        ) : (
+          /* State B: files staged — show review + category panel */
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <p className="text-sm font-medium text-foreground">
+                {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""} selected
+              </p>
+              <button
+                className="text-xs text-primary hover:underline"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                + Add more
+              </button>
+            </div>
+
+            {/* Bulk category (only shown for 2+ files) */}
+            {pendingFiles.length > 1 && (
+              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/10">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Apply category to all:</span>
+                <select
+                  value={bulkCategory}
+                  onChange={(e) => applyBulkCategory(e.target.value)}
+                  className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="">— choose —</option>
+                  {["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* File list */}
+            <div className="divide-y divide-border/60">
+              {pendingFiles.map((pf) => (
+                <div key={pf.id} className="flex items-center gap-3 px-4 py-3">
+                  <FileTypeIcon type={pf.type} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-foreground truncate">{pf.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{pf.size}</p>
+                  </div>
+                  <select
+                    value={pf.category}
+                    onChange={(e) => updatePendingCategory(pf.id, e.target.value)}
+                    className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    {["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="text-muted-foreground hover:text-foreground transition-colors ml-1"
+                    onClick={() => removePendingFile(pf.id)}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-muted/10">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setPendingFiles([]); setBulkCategory(""); }}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" onClick={handleConfirmUpload}>
+                Add files to Data Room
+              </Button>
+            </div>
+          </div>
+        )
       )}
 
       {/* Stats bar */}
