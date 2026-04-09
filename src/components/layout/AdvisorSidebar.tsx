@@ -11,7 +11,6 @@ import {
   FileText,
   CalendarDays,
   Target,
-  Upload,
   Share2,
   Sparkles,
   ChevronLeft,
@@ -26,7 +25,6 @@ const navGroups = [
     items: [
       { to: "/advisor", icon: LayoutDashboard, label: "Dashboard" },
       { to: "/advisor/clients", icon: Users, label: "Clients" },
-      { to: "/advisor/journey", icon: GitBranch, label: "Journey" },
       { to: "/advisor/prospects", icon: UserPlus, label: "Prospects" },
     ],
   },
@@ -53,6 +51,7 @@ const navGroups = [
   {
     label: "Prove & Align",
     items: [
+      { to: "/advisor/journey", icon: GitBranch, label: "Journey" },
       { to: "/advisor/reports", icon: FileText, label: "Reports" },
       { to: "/advisor/quarterly-review", icon: CalendarDays, label: "Quarterly Reviews" },
       { to: "/advisor/sprints", icon: Target, label: "Sprints" },
@@ -62,7 +61,6 @@ const navGroups = [
     label: "Tools",
     items: [
       { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
-      { to: "/advisor/uploads", icon: Upload, label: "Uploads" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
     ],
   },
