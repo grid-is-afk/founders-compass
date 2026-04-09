@@ -13,6 +13,7 @@ import { useClientAssessments } from "@/hooks/useAssessmentsApi";
 import { adaptAssessments } from "@/lib/assessmentAdapter";
 import { Button } from "@/components/ui/button";
 import AssessmentForm from "@/components/assessments/AssessmentForm";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // ─── Display factor adapters ─────────────────────────────────────────────────
 
@@ -44,6 +45,8 @@ const AdvisorAssessmentsPage = () => {
   const { selectedClientId, selectedClient } = useClientContext();
   const { data: rawAssessments = [], isLoading } = useClientAssessments(selectedClientId);
   const [formOpen, setFormOpen] = useState(false);
+  const [improvementOpen, setImprovementOpen] = useState(false);
+  const [strengthsOpen, setStrengthsOpen] = useState(false);
 
   const clientAssessments = useMemo(
     () => adaptAssessments(rawAssessments, selectedClientId),
@@ -117,19 +120,42 @@ const AdvisorAssessmentsPage = () => {
       (personalReadiness?.factors.length ?? 0) +
       (valueFactors?.factors.length ?? 0);
 
-    const needsImprovement =
-      (businessAttractiveness?.factors.filter((f) => f.score <= 2).length ?? 0) +
-      (businessReadiness?.factors.filter((f) => f.score <= 2).length ?? 0) +
-      (personalReadiness?.factors.filter((f) => f.score <= 2).length ?? 0) +
-      (valueFactors?.factors.filter((f) => f.rating === "improvement").length ?? 0);
+    // Needs Improvement: scored factors ≤ 2, or value factors rated "improvement"
+    const improvementScored = toDisplayFactors([
+      ...(businessAttractiveness?.factors.filter((f) => f.score <= 2) ?? []),
+      ...(businessReadiness?.factors.filter((f) => f.score <= 2) ?? []),
+      ...(personalReadiness?.factors.filter((f) => f.score <= 2) ?? []),
+    ]);
+    const improvementQualitative = toDisplayFactors(
+      valueFactors?.factors.filter((f) => f.rating === "improvement") ?? []
+    );
+    const needsImprovement = improvementScored.length + improvementQualitative.length;
 
-    const topStrengths =
-      (businessAttractiveness?.factors.filter((f) => f.score >= 5).length ?? 0) +
-      (businessReadiness?.factors.filter((f) => f.score >= 5).length ?? 0) +
-      (personalReadiness?.factors.filter((f) => f.score >= 5).length ?? 0) +
-      (valueFactors?.factors.filter((f) => f.rating === "positive").length ?? 0);
+    // Top Strengths: scored factors ≥ 5 (sorted desc) + value factors rated "positive", capped at 5
+    const scoredStrengthsRaw = [
+      ...(businessAttractiveness?.factors.filter((f) => f.score >= 5) ?? []),
+      ...(businessReadiness?.factors.filter((f) => f.score >= 5) ?? []),
+      ...(personalReadiness?.factors.filter((f) => f.score >= 5) ?? []),
+    ].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    const qualitativeStrengthsRaw =
+      valueFactors?.factors.filter((f) => f.rating === "positive") ?? [];
+    const topStrengths = scoredStrengthsRaw.length + qualitativeStrengthsRaw.length;
 
-    return { totalFactors, needsImprovement, topStrengths };
+    // Cap display to 5 total: scored first, then qualitative to fill remaining slots
+    const cappedScored = toDisplayFactors(scoredStrengthsRaw.slice(0, 5));
+    const cappedQualitative = toDisplayFactors(
+      qualitativeStrengthsRaw.slice(0, Math.max(0, 5 - scoredStrengthsRaw.length))
+    );
+
+    return {
+      totalFactors,
+      needsImprovement,
+      topStrengths,
+      improvementScored,
+      improvementQualitative,
+      cappedScored,
+      cappedQualitative,
+    };
   }, [businessAttractiveness, businessReadiness, personalReadiness, valueFactors]);
 
   const hasNoAssessments =
@@ -239,6 +265,7 @@ const AdvisorAssessmentsPage = () => {
                 color: "text-foreground",
                 iconBg: "bg-muted",
                 iconColor: "text-muted-foreground",
+                onClick: undefined as (() => void) | undefined,
               },
               {
                 icon: AlertTriangle,
@@ -247,6 +274,7 @@ const AdvisorAssessmentsPage = () => {
                 color: "text-destructive",
                 iconBg: "bg-destructive/10",
                 iconColor: "text-destructive",
+                onClick: () => setImprovementOpen(true),
               },
               {
                 icon: Star,
@@ -255,6 +283,7 @@ const AdvisorAssessmentsPage = () => {
                 color: "text-primary",
                 iconBg: "bg-primary/10",
                 iconColor: "text-primary",
+                onClick: () => setStrengthsOpen(true),
               },
               {
                 icon: Calendar,
@@ -263,11 +292,13 @@ const AdvisorAssessmentsPage = () => {
                 color: "text-foreground",
                 iconBg: "bg-muted",
                 iconColor: "text-muted-foreground",
+                onClick: undefined as (() => void) | undefined,
               },
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="bg-card border border-border rounded-lg p-4 shadow-card flex items-center gap-3"
+                className={`bg-card border border-border rounded-lg p-4 shadow-card flex items-center gap-3 ${stat.onClick ? "cursor-pointer hover:shadow-md hover:border-border/60 transition-all" : ""}`}
+                onClick={stat.onClick}
               >
                 <div className={`w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 ${stat.iconBg}`}>
                   <stat.icon className={`w-4 h-4 ${stat.iconColor}`} />
@@ -389,6 +420,78 @@ const AdvisorAssessmentsPage = () => {
           clientName={selectedClient.name}
         />
       )}
+
+      {/* Needs Improvement detail dialog */}
+      <Dialog open={improvementOpen} onOpenChange={setImprovementOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-destructive" />
+              Needs Improvement
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full ml-1">
+                {summaryStats.needsImprovement} factor{summaryStats.needsImprovement !== 1 ? "s" : ""}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Factors scoring 2 or below, or rated For Improvement across all assessments.
+            </DialogDescription>
+          </DialogHeader>
+          {summaryStats.needsImprovement === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No factors currently need improvement.</p>
+          ) : (
+            <div className="space-y-4 mt-2">
+              {summaryStats.improvementScored.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scored Assessments</p>
+                  <AssessmentFactorTable factors={summaryStats.improvementScored} mode="scored" flat />
+                </div>
+              )}
+              {summaryStats.improvementQualitative.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Value Factors</p>
+                  <AssessmentFactorTable factors={summaryStats.improvementQualitative} mode="qualitative" flat />
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Top Strengths detail dialog */}
+      <Dialog open={strengthsOpen} onOpenChange={setStrengthsOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-primary" />
+              Top Strengths
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full ml-1">
+                {summaryStats.cappedScored.length + summaryStats.cappedQualitative.length} of {summaryStats.topStrengths} shown
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              Your highest-scoring factors across all assessments.
+            </DialogDescription>
+          </DialogHeader>
+          {summaryStats.topStrengths === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">No top-strength factors recorded yet.</p>
+          ) : (
+            <div className="space-y-4 mt-2">
+              {summaryStats.cappedScored.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scored Assessments</p>
+                  <AssessmentFactorTable factors={summaryStats.cappedScored} mode="scored" flat />
+                </div>
+              )}
+              {summaryStats.cappedQualitative.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Value Factors</p>
+                  <AssessmentFactorTable factors={summaryStats.cappedQualitative} mode="qualitative" flat />
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
