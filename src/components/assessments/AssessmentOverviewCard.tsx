@@ -9,6 +9,7 @@ interface AssessmentOverviewCardProps {
   title: string;
   scorePercentage: number;
   completedDate: string | null;
+  hasData: boolean;
   factorCount: number;
   lastModified: string;
   categories: CategorySegment[];
@@ -20,6 +21,7 @@ const AssessmentOverviewCard = ({
   title,
   scorePercentage,
   completedDate,
+  hasData,
   factorCount,
   lastModified,
   categories,
@@ -42,13 +44,17 @@ const AssessmentOverviewCard = ({
             <p className="text-[10px] text-muted-foreground mt-0.5">{factorCount} factors</p>
           </div>
         </div>
-        {completedDate ? (
+        {!hasData ? (
+          <Badge variant="outline" className="text-[10px] font-medium text-muted-foreground">
+            Not Started
+          </Badge>
+        ) : completedDate ? (
           <Badge variant="outline" className="text-[10px] font-medium text-primary border-primary/30 bg-primary/5">
             Complete
           </Badge>
         ) : (
-          <Badge variant="outline" className="text-[10px] font-medium text-muted-foreground">
-            Pending
+          <Badge variant="outline" className="text-[10px] font-medium text-amber-600 border-amber-300 bg-amber-50">
+            In Progress
           </Badge>
         )}
       </div>

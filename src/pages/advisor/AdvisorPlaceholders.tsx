@@ -251,6 +251,14 @@ const DATA_ROOM_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Lega
 const FILTER_CATEGORIES = ["All", "From Client", ...DATA_ROOM_CATEGORIES];
 const MAX_BYTES = 50 * 1024 * 1024;
 
+const REQUIRED_DOCS = [
+  { label: "Balance Sheets",                category: "Financials" },
+  { label: "Income Statements",             category: "Financials" },
+  { label: "Personal Financial Statements", category: "Financials" },
+  { label: "Asset Summary",                 category: "Financials" },
+  { label: "IP, Patents & Trademarks",      category: "Legal & Structure" },
+];
+
 function isDocNew(uploadedAt: string): boolean {
   return isAfter(new Date(uploadedAt), subHours(new Date(), 48));
 }
@@ -371,6 +379,10 @@ export const AdvisorDataRoom = () => {
   const lastUpdated = lastUpdatedDates.length > 0
     ? new Date(Math.max(...lastUpdatedDates)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "—";
+
+  const uploadedCategories = new Set((docs as any[]).map((d: any) => d.category));
+  const requiredStatus = REQUIRED_DOCS.map((r) => ({ ...r, uploaded: uploadedCategories.has(r.category) }));
+  const requiredCount = requiredStatus.filter((r) => r.uploaded).length;
 
   // No-client guard
   if (!clientId) {
@@ -549,6 +561,40 @@ export const AdvisorDataRoom = () => {
             <p className="text-xs text-muted-foreground mt-0.5">{s.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Required documents checklist */}
+      <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">Required Documents</p>
+          <Badge variant="outline" className="text-[10px]">{requiredCount} / {REQUIRED_DOCS.length}</Badge>
+        </div>
+        <div className="p-4 space-y-2.5">
+          {requiredStatus.map((doc) => (
+            <div key={doc.label} className="flex items-center gap-3">
+              {doc.uploaded ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              ) : (
+                <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+              )}
+              <span className={cn("text-xs", doc.uploaded ? "text-foreground" : "text-muted-foreground")}>
+                {doc.label}
+              </span>
+              <span className="ml-auto text-[10px] text-muted-foreground">{doc.category}</span>
+            </div>
+          ))}
+        </div>
+        <div className="px-4 pb-4">
+          <div className="w-full bg-muted rounded-full h-1.5">
+            <div
+              className="bg-emerald-500 h-1.5 rounded-full transition-all"
+              style={{ width: `${REQUIRED_DOCS.length > 0 ? Math.round((requiredCount / REQUIRED_DOCS.length) * 100) : 0}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1.5">
+            {requiredCount} of {REQUIRED_DOCS.length} required documents uploaded
+          </p>
+        </div>
       </div>
 
       {/* Filters + search */}

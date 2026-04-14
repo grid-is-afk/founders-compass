@@ -115,6 +115,7 @@ export const ClientQuestionnaires = () => {
       id: "ba",
       title: "Business Attractiveness",
       icon: TrendingUp,
+      hasData: !!businessAttractiveness,
       questionCount: businessAttractiveness?.factors.length ?? 25,
       completedDate: businessAttractiveness?.completedDate ?? null,
       scoreLabel: businessAttractiveness?.factors.length ? `${baScore.pct}%` : "0%",
@@ -127,6 +128,7 @@ export const ClientQuestionnaires = () => {
       id: "br",
       title: "Business Readiness",
       icon: BarChart3,
+      hasData: !!businessReadiness,
       questionCount: businessReadiness?.factors.length ?? 22,
       completedDate: businessReadiness?.completedDate ?? null,
       scoreLabel: businessReadiness?.factors.length ? `${brScore.pct}%` : "0%",
@@ -139,6 +141,7 @@ export const ClientQuestionnaires = () => {
       id: "pr",
       title: "Personal Readiness",
       icon: User,
+      hasData: !!personalReadiness,
       questionCount: personalReadiness?.factors.length ?? 11,
       completedDate: personalReadiness?.completedDate ?? null,
       scoreLabel: personalReadiness?.factors.length ? `${prScore.pct}%` : "0%",
@@ -151,6 +154,7 @@ export const ClientQuestionnaires = () => {
       id: "vf",
       title: "54 Value Factors",
       icon: Star,
+      hasData: !!valueFactors,
       questionCount: valueFactors?.factors.length ?? 54,
       completedDate: valueFactors?.completedDate ?? null,
       scoreLabel: valueFactors?.factors.length ? `${vfScore.positive} / ${vfScore.total} Positive` : "0 / 0 Positive",
@@ -209,17 +213,19 @@ export const ClientQuestionnaires = () => {
                     </p>
                   </div>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-[10px] font-semibold",
-                    isComplete
-                      ? "border-primary/40 text-primary bg-primary/5"
-                      : "border-muted text-muted-foreground"
-                  )}
-                >
-                  {isComplete ? "Complete" : "Pending"}
-                </Badge>
+                {!a.hasData ? (
+                  <Badge variant="outline" className="text-[10px] font-semibold border-muted text-muted-foreground">
+                    Not Started
+                  </Badge>
+                ) : isComplete ? (
+                  <Badge variant="outline" className="text-[10px] font-semibold border-primary/40 text-primary bg-primary/5">
+                    Complete
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] font-semibold border-amber-300 text-amber-600 bg-amber-50">
+                    In Progress
+                  </Badge>
+                )}
               </div>
 
               {isComplete && (
@@ -239,7 +245,7 @@ export const ClientQuestionnaires = () => {
                     variant="outline"
                     size="sm"
                     className="w-full text-xs mt-auto"
-                    disabled={!isComplete}
+                    disabled={!a.hasData}
                     onClick={() => setSelected(a.id)}
                   >
                     Review Answers
