@@ -24,6 +24,7 @@ import CapitalArchitecture from "./pages/advisor/CapitalArchitecture";
 import PerformanceEngine from "./pages/advisor/PerformanceEngine";
 import AdvisorAssessmentsPage from "./pages/advisor/AdvisorAssessmentsPage";
 import CopilotPage from "./pages/advisor/CopilotPage";
+import CapitalStrategyRoadmap from "./pages/advisor/CapitalStrategyRoadmap";
 import {
   AdvisorDataRoom,
   AdvisorSprints,
@@ -97,6 +98,7 @@ const App = () => (
               <Route path="reports" element={<AdvisorReports />} />
               <Route path="publish" element={<AdvisorPublish />} />
               <Route path="investor-share" element={<AdvisorInvestorShare />} />
+              <Route path="capital-strategy-roadmap" element={<CapitalStrategyRoadmap />} />
             </Route>
 
             {/* Protected Client Portal */}

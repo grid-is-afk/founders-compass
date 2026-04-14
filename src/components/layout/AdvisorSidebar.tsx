@@ -15,6 +15,7 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  Map,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ const navGroups = [
     items: [
       { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
+      { to: "/advisor/capital-strategy-roadmap", icon: Map, label: "Capital Strategy Architecture (Roadmap)" },
     ],
   },
 ];
