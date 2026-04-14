@@ -25,11 +25,18 @@ import {
   AlertCircle,
   Lock,
   Send,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClients } from "@/hooks/useClients";
 import { useClientTasks } from "@/hooks/useTasks";
-import { useClientDocuments } from "@/hooks/useDocuments";
+import {
+  useClientDocuments,
+  useClientStorage,
+  useUploadDocuments,
+  type StagedFile,
+} from "@/hooks/useDocuments";
+import { isAfter, subHours } from "date-fns";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
 import { useClientAssessments } from "@/hooks/useAssessmentsApi";
 import { adaptAssessments } from "@/lib/assessmentAdapter";
@@ -312,48 +319,83 @@ export const ClientQuestionnaires = () => {
 
 // ─── 2. CLIENT UPLOADS ────────────────────────────────────────────────────────
 
-const uploadDocStatuses: Record<string, { label: string; color: string }> = {
-  dr3: { label: "Approved", color: "border-primary/40 text-primary bg-primary/5" },
-  dr4: { label: "Approved", color: "border-primary/40 text-primary bg-primary/5" },
-  dr5: { label: "Under Review", color: "border-accent/40 text-accent bg-accent/5" },
-  dr6: { label: "Approved", color: "border-primary/40 text-primary bg-primary/5" },
-  dr8: { label: "Uploaded", color: "border-muted text-muted-foreground" },
-  dr9: { label: "Under Review", color: "border-accent/40 text-accent bg-accent/5" },
-};
+const UPLOAD_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"];
+const MAX_CLIENT_BYTES = 50 * 1024 * 1024;
 
-const clientDocIds = ["dr3", "dr4", "dr5", "dr6", "dr8", "dr9"];
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
-const requiredDocs = [
-  { name: "3 years of tax returns", status: "Pending" as const },
-  { name: "Operating agreement", status: "Uploaded" as const },
-  { name: "Customer revenue breakdown", status: "Uploaded" as const },
-  { name: "Management team overview", status: "Pending" as const },
-];
+function getFileType(name: string): "pdf" | "spreadsheet" | "document" {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf") return "pdf";
+  if (["xlsx", "xls", "csv"].includes(ext)) return "spreadsheet";
+  return "document";
+}
+
+function isDocNew(uploadedAt: string): boolean {
+  return isAfter(new Date(uploadedAt), subHours(new Date(), 48));
+}
 
 export const ClientUploads = () => {
   const { data: clients = [] } = useClients();
   const clientsArray = Array.isArray(clients) ? clients : [];
   const clientId = (clientsArray as any[])[0]?.id ?? "";
-  const { data: rawDocs = [] } = useClientDocuments(clientId);
-  const docsArray = Array.isArray(rawDocs) ? rawDocs : [];
-  const clientDocs = (docsArray as any[]).map((d) => ({
-    id: d.id,
-    name: d.name,
-    category: d.category ?? "Uploads",
-    date: d.uploaded_at
-      ? new Date(d.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-      : "—",
-    size: d.size ?? "—",
-    type: (d.type ?? "document") as "pdf" | "spreadsheet" | "document",
-  }));
 
+  const { data: rawDocs = [] } = useClientDocuments(clientId);
+  const { data: storage } = useClientStorage(clientId);
+  const uploadMutation = useUploadDocuments();
+
+  const [pendingFiles, setPendingFiles] = useState<StagedFile[]>([]);
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [dragging, setDragging] = useState(false);
+  const [fileProgress, setFileProgress] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const docs = Array.isArray(rawDocs) ? (rawDocs as any[]) : [];
+
+  const usedBytes = storage?.used_bytes ?? 0;
+  const usedPct = Math.min((usedBytes / MAX_CLIENT_BYTES) * 100, 100);
+  const isAtCap = usedBytes >= MAX_CLIENT_BYTES;
+  const storageColor = usedPct >= 95 ? "bg-destructive" : usedPct >= 80 ? "bg-amber-500" : "bg-primary";
+
   const handleFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    toast(`${files.length} file${files.length > 1 ? "s" : ""} uploaded`, {
-      description: Array.from(files).map((f) => f.name).join(", "),
-    });
+    if (!files || files.length === 0 || isAtCap) return;
+    const staged: StagedFile[] = Array.from(files).map((file, i) => ({
+      id: `pending-${Date.now()}-${i}`,
+      file,
+      category: "Reports",
+    }));
+    setPendingFiles((prev) => [...prev, ...staged]);
+  };
+
+  const handleConfirmUpload = async () => {
+    if (pendingFiles.length === 0 || !clientId) return;
+    const progressMap: Record<string, number> = {};
+    pendingFiles.forEach((pf) => { progressMap[pf.id] = 0; });
+    setFileProgress(progressMap);
+
+    try {
+      const results = await uploadMutation.mutateAsync({
+        clientId,
+        stagedFiles: pendingFiles,
+        uploadedByRole: "client",
+        onProgress: (idx, pct) => {
+          setFileProgress((prev) => ({ ...prev, [pendingFiles[idx].id]: pct }));
+        },
+      });
+      toast(`${results.length} file${results.length > 1 ? "s" : ""} uploaded successfully`, {
+        description: results.map((r) => r.name).join(", "),
+      });
+      setPendingFiles([]);
+      setBulkCategory("");
+      setFileProgress({});
+    } catch (err: any) {
+      toast("Upload failed", { description: err?.message ?? "An error occurred" });
+      setFileProgress({});
+    }
   };
 
   return (
@@ -361,8 +403,7 @@ export const ClientUploads = () => {
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
         <h1 className="text-3xl font-display font-semibold text-foreground">Document Uploads</h1>
         <p className="text-muted-foreground mt-1 text-sm">
-          Securely share documents with your advisor. All files are encrypted and stored in your
-          private data room.
+          Securely share documents with your advisor. All files are stored in your private data room.
         </p>
       </motion.div>
 
@@ -371,39 +412,154 @@ export const ClientUploads = () => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.ppt,.pptx,.txt,.jpg,.jpeg,.png"
+        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png"
         className="hidden"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
 
-      {/* Upload zone */}
-      <motion.div initial="hidden" animate="visible" custom={1} variants={fadeUp}>
-        <div
-          className="border-2 border-dashed border-border rounded-lg p-10 flex flex-col items-center text-center bg-muted/20 hover:bg-muted/30 hover:border-primary/30 transition-colors cursor-pointer group"
-          onClick={() => fileInputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); }}
-          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-        >
-          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-primary/10 transition-colors">
-            <Upload className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
-          </div>
-          <p className="text-sm font-medium text-foreground">Drag files here or click to browse</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Accepted: PDF, XLSX, DOCX, CSV, JPG, PNG — Max 50 MB per file
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-4 text-xs"
-            onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-          >
-            Browse Files
-          </Button>
+      {/* Storage bar */}
+      <motion.div initial="hidden" animate="visible" custom={1} variants={fadeUp} className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Your storage</span>
+          <span className={cn("text-xs font-medium", usedPct >= 95 ? "text-destructive" : usedPct >= 80 ? "text-amber-500" : "text-muted-foreground")}>
+            {formatBytes(usedBytes)} of {formatBytes(MAX_CLIENT_BYTES)} used
+          </span>
+        </div>
+        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+          <div className={cn("h-full rounded-full transition-all", storageColor)} style={{ width: `${usedPct}%` }} />
         </div>
       </motion.div>
 
-      {/* Uploaded documents table */}
+      {/* Upload zone or staging panel */}
       <motion.div initial="hidden" animate="visible" custom={2} variants={fadeUp}>
+        {isAtCap ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+            <p className="text-sm font-medium text-destructive">Storage limit reached</p>
+            <p className="text-xs text-muted-foreground mt-1">Contact your advisor to free up space.</p>
+          </div>
+        ) : pendingFiles.length === 0 ? (
+          <div
+            className={cn(
+              "border-2 border-dashed rounded-lg p-10 flex flex-col items-center text-center transition-colors cursor-pointer group",
+              dragging ? "border-primary bg-primary/5" : "border-border bg-muted/20 hover:bg-muted/30 hover:border-primary/30"
+            )}
+            onClick={() => fileInputRef.current?.click()}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }}
+          >
+            <div className={cn("w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3 transition-colors", dragging ? "bg-primary/10" : "group-hover:bg-primary/10")}>
+              <Upload className={cn("w-5 h-5 transition-colors", dragging ? "text-primary" : "text-muted-foreground group-hover:text-primary")} />
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              {dragging ? "Drop files to upload" : "Drag files here or click to browse"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Accepted: PDF, XLSX, DOCX, CSV, JPG, PNG — Max 25 MB per file
+            </p>
+            <Button variant="outline" size="sm" className="mt-4 text-xs" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+              Browse Files
+            </Button>
+          </div>
+        ) : (
+          /* Staging panel */
+          <div className="rounded-lg border border-border bg-card overflow-hidden">
+            <div className="flex items-start justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""} selected
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Choose a category for each file before confirming.
+                </p>
+              </div>
+              <button
+                className="text-xs text-primary hover:underline mt-0.5"
+                disabled={uploadMutation.isPending}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                + Add more
+              </button>
+            </div>
+
+            {pendingFiles.length > 1 && (
+              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/10">
+                <span className="text-xs text-muted-foreground whitespace-nowrap">Apply category to all:</span>
+                <select
+                  value={bulkCategory}
+                  disabled={uploadMutation.isPending}
+                  onChange={(e) => {
+                    setBulkCategory(e.target.value);
+                    setPendingFiles((prev) => prev.map((p) => ({ ...p, category: e.target.value })));
+                  }}
+                  className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                >
+                  <option value="">— choose —</option>
+                  {UPLOAD_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="divide-y divide-border/60">
+              {pendingFiles.map((pf) => {
+                const prog = fileProgress[pf.id];
+                const isUploading = prog !== undefined && prog < 100;
+                return (
+                  <div key={pf.id} className="flex items-center gap-3 px-4 py-3">
+                    <span>{docIcon[getFileType(pf.file.name)]}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{pf.file.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground">{formatBytes(pf.file.size)}</p>
+                        {isUploading && (
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${prog}%` }} />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">{prog}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <select
+                      value={pf.category}
+                      disabled={uploadMutation.isPending}
+                      onChange={(e) => setPendingFiles((prev) => prev.map((p) => p.id === pf.id ? { ...p, category: e.target.value } : p))}
+                      className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                    >
+                      {UPLOAD_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button
+                      className="text-muted-foreground hover:text-foreground transition-colors ml-1 disabled:opacity-30"
+                      disabled={uploadMutation.isPending}
+                      onClick={() => setPendingFiles((prev) => prev.filter((p) => p.id !== pf.id))}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-muted/10">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={uploadMutation.isPending}
+                onClick={() => { setPendingFiles([]); setBulkCategory(""); setFileProgress({}); }}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" disabled={uploadMutation.isPending} onClick={handleConfirmUpload}>
+                {uploadMutation.isPending ? "Uploading…" : "Confirm Upload"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Uploaded documents table */}
+      <motion.div initial="hidden" animate="visible" custom={3} variants={fadeUp}>
         <h2 className="text-lg font-display font-semibold text-foreground mb-3">
           Your Uploaded Documents
         </h2>
@@ -416,71 +572,43 @@ export const ClientUploads = () => {
             ))}
           </div>
           <div className="divide-y divide-border">
-            {clientDocs.map((doc, i) => {
-              const st = uploadDocStatuses[doc.id] ?? {
-                label: "Uploaded",
-                color: "border-muted text-muted-foreground",
-              };
-              return (
-                <motion.div
-                  key={doc.id}
-                  initial="hidden"
-                  animate="visible"
-                  custom={i + 3}
-                  variants={fadeUp}
-                  className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 items-center px-5 py-3.5 hover:bg-muted/20 transition-colors"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="shrink-0">{docIcon[doc.type]}</span>
-                    <span className="text-sm text-foreground truncate">{doc.name}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{doc.category}</span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{doc.date}</span>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{doc.size}</span>
-                  <Badge variant="outline" className={cn("text-[10px] whitespace-nowrap", st.color)}>
-                    {st.label}
-                  </Badge>
-                </motion.div>
-              );
-            })}
+            {docs.length === 0 ? (
+              <div className="px-5 py-8 text-center text-xs text-muted-foreground">
+                No documents uploaded yet
+              </div>
+            ) : (
+              docs.map((doc: any, i: number) => {
+                const isNew = isDocNew(doc.uploaded_at);
+                const dateLabel = doc.uploaded_at
+                  ? new Date(doc.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : "—";
+                return (
+                  <motion.div
+                    key={doc.id}
+                    initial="hidden"
+                    animate="visible"
+                    custom={i + 4}
+                    variants={fadeUp}
+                    className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 items-center px-5 py-3.5 hover:bg-muted/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="shrink-0">{docIcon[doc.type ?? "document"]}</span>
+                      <span className="text-sm text-foreground truncate">{doc.name}</span>
+                      {isNew && (
+                        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20 shrink-0">NEW</span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">{doc.category ?? "Uploads"}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">{dateLabel}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">{doc.size ?? "—"}</span>
+                    <Badge variant="outline" className="text-[10px] whitespace-nowrap border-primary/40 text-primary bg-primary/5">
+                      Uploaded
+                    </Badge>
+                  </motion.div>
+                );
+              })
+            )}
           </div>
-        </div>
-      </motion.div>
-
-      {/* Required documents checklist */}
-      <motion.div initial="hidden" animate="visible" custom={9} variants={fadeUp}>
-        <h2 className="text-lg font-display font-semibold text-foreground mb-3">
-          Required Documents
-        </h2>
-        <div className="bg-card rounded-lg border border-border divide-y divide-border">
-          {requiredDocs.map((doc) => (
-            <div key={doc.name} className="flex items-center gap-3 px-5 py-3.5">
-              {doc.status === "Uploaded" ? (
-                <CheckCircle2 className="w-4 h-4 text-primary shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0" />
-              )}
-              <span
-                className={cn(
-                  "text-sm flex-1",
-                  doc.status === "Uploaded" ? "text-muted-foreground" : "text-foreground"
-                )}
-              >
-                {doc.name}
-              </span>
-              <Badge
-                variant="outline"
-                className={cn(
-                  "text-[10px]",
-                  doc.status === "Uploaded"
-                    ? "border-primary/40 text-primary bg-primary/5"
-                    : "border-muted text-muted-foreground"
-                )}
-              >
-                {doc.status}
-              </Badge>
-            </div>
-          ))}
         </div>
       </motion.div>
     </div>

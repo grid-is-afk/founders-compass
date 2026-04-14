@@ -16,8 +16,10 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useClientContext } from "@/hooks/useClientContext";
+import { useClientDocuments } from "@/hooks/useDocuments";
 
 const navGroups = [
   {
@@ -66,9 +68,36 @@ const navGroups = [
   },
 ];
 
+const SEEN_TS_KEY = "tfo-data-room-seen-ts";
+
 const AdvisorSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const { selectedClient } = useClientContext();
+  const clientId = selectedClient?.id ?? "";
+
+  // Poll for client-uploaded docs every 30s — same interval as Data Room page
+  const { data: docs = [] } = useClientDocuments(clientId, 30_000) as any;
+
+  // Count client uploads newer than the last time the advisor visited the Data Room
+  const [seenTs, setSeenTs] = useState<number>(() => {
+    return parseInt(localStorage.getItem(SEEN_TS_KEY) ?? "0", 10);
+  });
+
+  // When advisor navigates to the Data Room, record the timestamp as "seen"
+  useEffect(() => {
+    if (location.pathname === "/advisor/data-room") {
+      const now = Date.now();
+      localStorage.setItem(SEEN_TS_KEY, String(now));
+      setSeenTs(now);
+    }
+  }, [location.pathname]);
+
+  const unseenCount = (docs as any[]).filter(
+    (d: any) =>
+      d.uploaded_by_role === "client" &&
+      new Date(d.uploaded_at).getTime() > seenTs
+  ).length;
 
   return (
     <aside
@@ -102,6 +131,8 @@ const AdvisorSidebar = () => {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive = location.pathname === item.to;
+                const isDataRoom = item.to === "/advisor/data-room";
+                const showBadge = isDataRoom && unseenCount > 0;
                 return (
                   <NavLink
                     key={`${item.to}-${item.label}`}
@@ -113,8 +144,25 @@ const AdvisorSidebar = () => {
                         : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
                     )}
                   >
-                    <item.icon className="w-4 h-4 flex-shrink-0" />
-                    {!collapsed && <span>{item.label}</span>}
+                    <div className="relative flex-shrink-0">
+                      <item.icon className="w-4 h-4" />
+                      {showBadge && (
+                        <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive" />
+                        </span>
+                      )}
+                    </div>
+                    {!collapsed && (
+                      <span className="flex-1 flex items-center justify-between">
+                        {item.label}
+                        {showBadge && (
+                          <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+                            {unseenCount}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </NavLink>
                 );
               })}

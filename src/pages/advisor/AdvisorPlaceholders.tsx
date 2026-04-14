@@ -18,7 +18,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { useClientDocuments } from "@/hooks/useDocuments";
+import {
+  useClientDocuments,
+  useClientStorage,
+  useUploadDocuments,
+  useDeleteDocument,
+  type StagedFile,
+} from "@/hooks/useDocuments";
+import { isAfter, subHours } from "date-fns";
 import { useClientTasks } from "@/hooks/useTasks";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
 import ShareInvestorPortal from "@/components/ShareInvestorPortal";
@@ -240,145 +247,141 @@ export const AdvisorUploads = () => {
 // AdvisorDataRoom — Data Room
 // ---------------------------------------------------------------------------
 
-const categories = ["All", "Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"];
+const DATA_ROOM_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"];
+const FILTER_CATEGORIES = ["All", "From Client", ...DATA_ROOM_CATEGORIES];
+const MAX_BYTES = 50 * 1024 * 1024;
+
+function isDocNew(uploadedAt: string): boolean {
+  return isAfter(new Date(uploadedAt), subHours(new Date(), 48));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export const AdvisorDataRoom = () => {
   const { selectedClient } = useClientContext();
-  const { data: apiDocs = [] } = useClientDocuments(selectedClient.id);
+  const clientId = selectedClient?.id ?? "";
+
+  // Live API data — poll every 30s so advisors see client uploads promptly
+  const { data: docs = [], previousData: prevDocs } = useClientDocuments(clientId, 30_000) as any;
+  const { data: storage } = useClientStorage(clientId);
+  const uploadMutation = useUploadDocuments();
+  const deleteMutation = useDeleteDocument();
+
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<Array<{ id: string; name: string; category: string; date: string; size: string; type: "pdf" | "spreadsheet" | "document"; blob?: File }>>([]);
-  const [previewDoc, setPreviewDoc] = useState<{ name: string; category: string; date: string } | null>(null);
-  const [pendingFiles, setPendingFiles] = useState<Array<{
-    id: string;
-    file: File;
-    name: string;
-    size: string;
-    type: "pdf" | "spreadsheet" | "document";
-    category: string;
-  }>>([]);
+  const [previewDoc, setPreviewDoc] = useState<{ name: string; category: string; date: string; file_url: string | null } | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<StagedFile[]>([]);
   const [bulkCategory, setBulkCategory] = useState("");
+  const [fileProgress, setFileProgress] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Toast when new client uploads arrive (poll-based)
+  const prevCountRef = useRef<number>(0);
+  const prevClientDocs = (prevDocs ?? []) as any[];
+  const currentClientDocs = (docs as any[]).filter((d: any) => d.uploaded_by_role === "client");
+  if (prevCountRef.current > 0 && currentClientDocs.length > prevCountRef.current) {
+    const newest = currentClientDocs[0];
+    toast(`New document from ${selectedClient?.name}`, { description: newest?.name });
+  }
+  prevCountRef.current = currentClientDocs.length;
+
   const getFileType = (name: string): "pdf" | "spreadsheet" | "document" => {
-    if (name.endsWith(".pdf")) return "pdf";
-    if (name.endsWith(".xlsx") || name.endsWith(".xls") || name.endsWith(".csv")) return "spreadsheet";
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    if (ext === "pdf") return "pdf";
+    if (["xlsx", "xls", "csv"].includes(ext)) return "spreadsheet";
     return "document";
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const handleDownload = (doc: { name: string; blob?: File }) => {
-    if (doc.blob) {
-      const url = URL.createObjectURL(doc.blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = doc.name;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      toast("File not available for download", { description: "This file was uploaded in a previous session." });
-    }
   };
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const staged = Array.from(files).map((file, i) => ({
+    const staged: StagedFile[] = Array.from(files).map((file, i) => ({
       id: `pending-${Date.now()}-${i}`,
       file,
-      name: file.name,
-      size: formatFileSize(file.size),
-      type: getFileType(file.name),
       category: "Reports",
     }));
     setPendingFiles((prev) => [...prev, ...staged]);
   };
 
-  const updatePendingCategory = (id: string, category: string) => {
-    setPendingFiles((prev) => prev.map((p) => p.id === id ? { ...p, category } : p));
+  const handleConfirmUpload = async () => {
+    if (pendingFiles.length === 0 || !clientId) return;
+    const progressMap: Record<string, number> = {};
+    pendingFiles.forEach((pf) => { progressMap[pf.id] = 0; });
+    setFileProgress(progressMap);
+
+    try {
+      const results = await uploadMutation.mutateAsync({
+        clientId,
+        stagedFiles: pendingFiles,
+        uploadedByRole: "advisor",
+        onProgress: (idx, pct) => {
+          setFileProgress((prev) => ({ ...prev, [pendingFiles[idx].id]: pct }));
+        },
+      });
+      toast(`${results.length} file${results.length > 1 ? "s" : ""} added to Data Room`, {
+        description: results.map((r) => r.name).join(", "),
+      });
+      setPendingFiles([]);
+      setBulkCategory("");
+      setFileProgress({});
+    } catch (err: any) {
+      toast("Upload failed", { description: err?.message ?? "An error occurred" });
+      setFileProgress({});
+    }
   };
 
-  const applyBulkCategory = (category: string) => {
-    setBulkCategory(category);
-    setPendingFiles((prev) => prev.map((p) => ({ ...p, category })));
+  const handleDownload = (doc: { name: string; file_url: string | null }) => {
+    if (doc.file_url) {
+      const a = document.createElement("a");
+      a.href = doc.file_url;
+      a.download = doc.name;
+      a.click();
+    } else {
+      toast("File not available for download");
+    }
   };
 
-  const removePendingFile = (id: string) => {
-    setPendingFiles((prev) => prev.filter((p) => p.id !== id));
+  const handleDelete = async (docId: string) => {
+    try {
+      await deleteMutation.mutateAsync({ id: docId, clientId });
+      toast("Document removed");
+    } catch {
+      toast("Failed to delete document");
+    }
   };
 
-  const handleConfirmUpload = () => {
-    if (pendingFiles.length === 0) return;
-    const now = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    const confirmed = pendingFiles.map((p) => ({
-      id: `upload-${p.id}`,
-      name: p.name,
-      category: p.category,
-      date: now,
-      size: p.size,
-      type: p.type,
-      blob: p.file,
-    }));
-    setUploadedFiles((prev) => [...confirmed, ...prev]);
-    toast(`${confirmed.length} file${confirmed.length > 1 ? "s" : ""} added to Data Room`, {
-      description: confirmed.map((f) => f.name).join(", "),
-    });
-    setPendingFiles([]);
-    setBulkCategory("");
-  };
+  const filtered = (docs as any[]).filter((doc: any) => {
+    if (activeCategory === "From Client") return doc.uploaded_by_role === "client";
+    if (activeCategory !== "All") return (doc.category ?? "Uploads") === activeCategory;
+    return true;
+  }).filter((doc: any) => doc.name.toLowerCase().includes(search.toLowerCase()));
 
-  const apiDocsMapped2 = (apiDocs as any[]).map((d) => ({
-    id: d.id,
-    name: d.name,
-    category: d.category ?? "Uploads",
-    date: d.uploaded_at
-      ? new Date(d.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-      : "—",
-    size: d.size ?? "—",
-    type: (d.type ?? "document") as "pdf" | "spreadsheet" | "document",
-  }));
-  const allDocs = [...uploadedFiles, ...apiDocsMapped2];
+  const usedBytes = storage?.used_bytes ?? 0;
+  const usedPct = Math.min((usedBytes / MAX_BYTES) * 100, 100);
+  const storageColor = usedPct >= 95 ? "bg-destructive" : usedPct >= 80 ? "bg-amber-500" : "bg-primary";
 
-  const filtered = allDocs.filter((doc) => {
-    const matchesCategory = activeCategory === "All" || doc.category === activeCategory;
-    const matchesSearch = doc.name.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-
-  const totalSizeBytes = allDocs.reduce((acc, doc) => {
-    if (!doc.size || doc.size === "—") return acc;
-    const match = doc.size.match(/^([\d.]+)\s*(B|KB|MB)$/i);
-    if (!match) return acc;
-    const n = parseFloat(match[1]);
-    const unit = match[2].toUpperCase();
-    if (unit === "MB") return acc + n * 1024 * 1024;
-    if (unit === "KB") return acc + n * 1024;
-    return acc + n;
-  }, 0);
-  const totalSize =
-    totalSizeBytes === 0
-      ? "—"
-      : totalSizeBytes < 1024 * 1024
-      ? `${(totalSizeBytes / 1024).toFixed(0)} KB`
-      : `${(totalSizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-
-  const apiDocDates = (apiDocs as any[])
+  const lastUpdatedDates = (docs as any[])
     .map((d: any) => (d.uploaded_at ? new Date(d.uploaded_at).getTime() : 0))
-    .filter((t) => t > 0);
-  const lastUpdated =
-    apiDocDates.length > 0
-      ? new Date(Math.max(...apiDocDates)).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
-      : "—";
+    .filter((t: number) => t > 0);
+  const lastUpdated = lastUpdatedDates.length > 0
+    ? new Date(Math.max(...lastUpdatedDates)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "—";
+
+  // No-client guard
+  if (!clientId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
+        <FolderOpen className="w-10 h-10 text-muted-foreground/30" />
+        <p className="text-sm font-medium text-foreground">No client selected</p>
+        <p className="text-xs text-muted-foreground">Select a client from the top bar to view their Data Room.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -400,7 +403,7 @@ export const AdvisorDataRoom = () => {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.ppt,.pptx,.txt"
+        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png"
         className="hidden"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
@@ -408,7 +411,6 @@ export const AdvisorDataRoom = () => {
       {/* Upload zone — toggleable */}
       {showUpload && (
         pendingFiles.length === 0 ? (
-          /* State A: no pending files — show dropzone */
           <div
             className={cn(
               "rounded-lg border-2 border-dashed p-8 text-center transition-colors cursor-pointer",
@@ -423,15 +425,13 @@ export const AdvisorDataRoom = () => {
             <p className="text-sm font-medium text-foreground mb-1">
               {dragging ? "Drop files to upload" : "Drag files here or click to browse"}
             </p>
-            <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word — up to 50MB per file</p>
+            <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word, JPG, PNG — up to 25 MB per file</p>
             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
               Browse Files
             </Button>
           </div>
         ) : (
-          /* State B: files staged — show review + category panel */
           <div className="rounded-lg border border-border bg-card overflow-hidden">
-            {/* Header */}
             <div className="flex items-start justify-between px-4 py-3 border-b border-border bg-muted/30">
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -449,73 +449,99 @@ export const AdvisorDataRoom = () => {
               </button>
             </div>
 
-            {/* Bulk category (only shown for 2+ files) */}
             {pendingFiles.length > 1 && (
               <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/10">
                 <span className="text-xs text-muted-foreground whitespace-nowrap">Apply category to all:</span>
                 <select
                   value={bulkCategory}
-                  onChange={(e) => applyBulkCategory(e.target.value)}
+                  onChange={(e) => {
+                    setBulkCategory(e.target.value);
+                    setPendingFiles((prev) => prev.map((p) => ({ ...p, category: e.target.value })));
+                  }}
                   className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 >
                   <option value="">— choose —</option>
-                  {["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
+                  {DATA_ROOM_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             )}
 
-            {/* File list */}
             <div className="divide-y divide-border/60">
-              {pendingFiles.map((pf) => (
-                <div key={pf.id} className="flex items-center gap-3 px-4 py-3">
-                  <FileTypeIcon type={pf.type} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{pf.name}</p>
-                    <p className="text-xs text-muted-foreground">{pf.size}</p>
+              {pendingFiles.map((pf) => {
+                const prog = fileProgress[pf.id];
+                const isUploading = prog !== undefined && prog < 100;
+                return (
+                  <div key={pf.id} className="flex items-center gap-3 px-4 py-3">
+                    <FileTypeIcon type={getFileType(pf.file.name)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{pf.file.name}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground">{formatBytes(pf.file.size)}</p>
+                        {isUploading && (
+                          <div className="flex items-center gap-1.5 flex-1">
+                            <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
+                              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${prog}%` }} />
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">{prog}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <select
+                      value={pf.category}
+                      onChange={(e) => setPendingFiles((prev) => prev.map((p) => p.id === pf.id ? { ...p, category: e.target.value } : p))}
+                      disabled={uploadMutation.isPending}
+                      className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                    >
+                      {DATA_ROOM_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <button
+                      className="text-muted-foreground hover:text-foreground transition-colors ml-1 disabled:opacity-30"
+                      disabled={uploadMutation.isPending}
+                      onClick={() => setPendingFiles((prev) => prev.filter((p) => p.id !== pf.id))}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <select
-                    value={pf.category}
-                    onChange={(e) => updatePendingCategory(pf.id, e.target.value)}
-                    className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                  >
-                    {["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                  <button
-                    className="text-muted-foreground hover:text-foreground transition-colors ml-1"
-                    onClick={() => removePendingFile(pf.id)}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Footer actions */}
             <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-muted/10">
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => { setPendingFiles([]); setBulkCategory(""); }}
+                disabled={uploadMutation.isPending}
+                onClick={() => { setPendingFiles([]); setBulkCategory(""); setFileProgress({}); }}
               >
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleConfirmUpload}>
-                Add files to Data Room
+              <Button size="sm" disabled={uploadMutation.isPending} onClick={handleConfirmUpload}>
+                {uploadMutation.isPending ? "Uploading…" : "Add files to Data Room"}
               </Button>
             </div>
           </div>
         )
       )}
 
+      {/* Storage usage bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Storage</span>
+          <span className={cn("text-xs font-medium", usedPct >= 95 ? "text-destructive" : usedPct >= 80 ? "text-amber-500" : "text-muted-foreground")}>
+            {formatBytes(usedBytes)} of {formatBytes(MAX_BYTES)} used
+          </span>
+        </div>
+        <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+          <div className={cn("h-full rounded-full transition-all", storageColor)} style={{ width: `${usedPct}%` }} />
+        </div>
+      </div>
+
       {/* Stats bar */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Total Documents", value: String(allDocs.length) },
-          { label: "Total Size", value: totalSize },
+          { label: "Total Documents", value: String((docs as any[]).length) },
+          { label: "From Client", value: String(currentClientDocs.length) },
           { label: "Last Updated", value: lastUpdated },
         ].map((s) => (
           <div key={s.label} className="bg-card rounded-lg border border-border px-5 py-3">
@@ -537,7 +563,7 @@ export const AdvisorDataRoom = () => {
           />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {categories.map((cat) => (
+          {FILTER_CATEGORIES.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
@@ -549,6 +575,11 @@ export const AdvisorDataRoom = () => {
               )}
             >
               {cat}
+              {cat === "From Client" && currentClientDocs.length > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary/20 text-primary text-[9px] font-bold">
+                  {currentClientDocs.length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -561,6 +592,7 @@ export const AdvisorDataRoom = () => {
             <tr className="border-b border-border bg-muted/40">
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Category</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Uploaded by</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Date</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Size</th>
               <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">Actions</th>
@@ -569,42 +601,67 @@ export const AdvisorDataRoom = () => {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-xs text-muted-foreground">
-                  No documents match your filters
+                <td colSpan={6} className="px-4 py-10 text-center text-xs text-muted-foreground">
+                  {(docs as any[]).length === 0 ? "No documents yet — upload files above" : "No documents match your filters"}
                 </td>
               </tr>
             ) : (
-              filtered.map((doc) => (
-                <tr key={doc.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <FileTypeIcon type={doc.type} />
-                      <span className="text-foreground font-medium text-xs">{doc.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="outline" className="text-[10px] px-2 py-0">{doc.category}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{doc.date}</td>
-                  <td className="px-4 py-3 text-xs text-muted-foreground">{doc.size}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <button
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => setPreviewDoc({ name: doc.name, category: doc.category, date: doc.date })}
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        className="text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => handleDownload(doc)}
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+              (filtered as any[]).map((doc: any) => {
+                const isNew = isDocNew(doc.uploaded_at);
+                const dateLabel = doc.uploaded_at
+                  ? new Date(doc.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : "—";
+                return (
+                  <tr key={doc.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <FileTypeIcon type={doc.type ?? "document"} />
+                        <span className="text-foreground font-medium text-xs">{doc.name}</span>
+                        {isNew && (
+                          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20">NEW</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge variant="outline" className="text-[10px] px-2 py-0">{doc.category ?? "Uploads"}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border",
+                        doc.uploaded_by_role === "client"
+                          ? "bg-accent/10 text-accent border-accent/20"
+                          : "bg-muted text-muted-foreground border-border"
+                      )}>
+                        {doc.uploaded_by_role === "client" ? "Client" : "Advisor"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{dateLabel}</td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{doc.size ?? "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => setPreviewDoc({ name: doc.name, category: doc.category ?? "Uploads", date: dateLabel, file_url: doc.file_url })}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => handleDownload(doc)}
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          onClick={() => handleDelete(doc.id)}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -628,12 +685,12 @@ export const AdvisorDataRoom = () => {
               Document preview for <span className="font-medium text-foreground">{previewDoc?.name}</span>
             </p>
             <p className="text-xs text-muted-foreground text-center">
-              This document is stored securely in the {selectedClient.name} data room and is available for download or sharing.
+              This document is stored securely in the {selectedClient.name} data room.
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreviewDoc(null)}>Close</Button>
-            <Button onClick={() => { if (previewDoc) handleDownload(previewDoc as any); setPreviewDoc(null); }} className="gap-2">
+            <Button onClick={() => { if (previewDoc) handleDownload(previewDoc); setPreviewDoc(null); }} className="gap-2">
               <Download className="w-4 h-4" /> Download
             </Button>
           </DialogFooter>

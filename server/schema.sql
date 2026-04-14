@@ -301,3 +301,15 @@ DO $$ BEGIN
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
+
+-- Add uploaded_by_role to documents (tracks advisor vs client uploads)
+DO $$ BEGIN
+  ALTER TABLE documents ADD COLUMN IF NOT EXISTS uploaded_by_role TEXT NOT NULL DEFAULT 'advisor';
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Add size_bytes to documents (numeric bytes for 50MB cap enforcement)
+DO $$ BEGIN
+  ALTER TABLE documents ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
