@@ -26,6 +26,7 @@ import {
   Lock,
   Send,
   X,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClients } from "@/hooks/useClients";
@@ -34,8 +35,20 @@ import {
   useClientDocuments,
   useClientStorage,
   useUploadDocuments,
+  useDeleteDocument,
   type StagedFile,
 } from "@/hooks/useDocuments";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { REQUIRED_DOCS } from "@/lib/documentConstants";
 import { isAfter, subHours } from "date-fns";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
 import { useClientAssessments } from "@/hooks/useAssessmentsApi";
@@ -350,17 +363,42 @@ export const ClientUploads = () => {
   const clientsArray = Array.isArray(clients) ? clients : [];
   const clientId = (clientsArray as any[])[0]?.id ?? "";
 
-  const { data: rawDocs = [] } = useClientDocuments(clientId);
+  const { data: rawDocs = [] } = useClientDocuments(clientId, 30_000);
   const { data: storage } = useClientStorage(clientId);
   const uploadMutation = useUploadDocuments();
+  const deleteMutation = useDeleteDocument();
 
   const [pendingFiles, setPendingFiles] = useState<StagedFile[]>([]);
   const [bulkCategory, setBulkCategory] = useState("");
   const [dragging, setDragging] = useState(false);
   const [fileProgress, setFileProgress] = useState<Record<string, number>>({});
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const prevDocIdsRef = useRef<Set<string>>(new Set());
+  const docNameMapRef = useRef<Map<string, string>>(new Map());
 
   const docs = Array.isArray(rawDocs) ? (rawDocs as any[]) : [];
+
+  // Keep name map current (needed after a doc is removed and we need its name for the toast)
+  docs.forEach((d: any) => docNameMapRef.current.set(d.id as string, d.name as string));
+
+  // Detect documents removed by the advisor (poll-based)
+  const currentDocIds = new Set(docs.map((d: any) => d.id as string));
+  if (prevDocIdsRef.current.size > 0) {
+    prevDocIdsRef.current.forEach((prevId) => {
+      if (!currentDocIds.has(prevId)) {
+        toast("A document was removed from your file", {
+          description: docNameMapRef.current.get(prevId) ?? "Unknown file",
+        });
+      }
+    });
+  }
+  prevDocIdsRef.current = currentDocIds;
+
+  // Required docs checklist
+  const uploadedCategories = new Set(docs.map((d: any) => d.category as string));
+  const requiredStatus = REQUIRED_DOCS.map((r) => ({ ...r, uploaded: uploadedCategories.has(r.category) }));
+  const requiredCount = requiredStatus.filter((r) => r.uploaded).length;
 
   const usedBytes = storage?.used_bytes ?? 0;
   const usedPct = Math.min((usedBytes / MAX_CLIENT_BYTES) * 100, 100);
@@ -404,6 +442,18 @@ export const ClientUploads = () => {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteId || !clientId) return;
+    const docId = pendingDeleteId;
+    setPendingDeleteId(null);
+    try {
+      await deleteMutation.mutateAsync({ id: docId, clientId });
+      toast("Document removed");
+    } catch {
+      toast("Failed to delete document");
+    }
+  };
+
   return (
     <div className="space-y-8">
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
@@ -436,8 +486,44 @@ export const ClientUploads = () => {
         </div>
       </motion.div>
 
-      {/* Upload zone or staging panel */}
+      {/* Required documents checklist */}
       <motion.div initial="hidden" animate="visible" custom={2} variants={fadeUp}>
+        <div className="bg-card rounded-lg border border-border overflow-hidden">
+          <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">Required Documents</p>
+            <Badge variant="outline" className="text-[10px]">
+              {requiredCount} / {REQUIRED_DOCS.length}
+            </Badge>
+          </div>
+          <div className="p-4 space-y-2.5">
+            {requiredStatus.map((doc) => (
+              <div key={doc.label} className="flex items-center gap-3">
+                {doc.uploaded
+                  ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                  : <Circle className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+                <span className={cn("text-xs", doc.uploaded ? "text-foreground" : "text-muted-foreground")}>
+                  {doc.label}
+                </span>
+                <span className="ml-auto text-[10px] text-muted-foreground">{doc.category}</span>
+              </div>
+            ))}
+          </div>
+          <div className="px-4 pb-4">
+            <div className="w-full bg-muted rounded-full h-1.5">
+              <div
+                className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                style={{ width: `${Math.round((requiredCount / REQUIRED_DOCS.length) * 100)}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-1.5">
+              {requiredCount} of {REQUIRED_DOCS.length} required documents uploaded
+            </p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Upload zone or staging panel */}
+      <motion.div initial="hidden" animate="visible" custom={3} variants={fadeUp}>
         {isAtCap ? (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
             <p className="text-sm font-medium text-destructive">Storage limit reached</p>
@@ -565,13 +651,13 @@ export const ClientUploads = () => {
       </motion.div>
 
       {/* Uploaded documents table */}
-      <motion.div initial="hidden" animate="visible" custom={3} variants={fadeUp}>
+      <motion.div initial="hidden" animate="visible" custom={4} variants={fadeUp}>
         <h2 className="text-lg font-display font-semibold text-foreground mb-3">
           Your Uploaded Documents
         </h2>
         <div className="bg-card rounded-lg border border-border overflow-hidden">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 px-5 py-2.5 border-b border-border bg-muted/30">
-            {["Document Name", "Category", "Upload Date", "Size", "Status"].map((h) => (
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-5 py-2.5 border-b border-border bg-muted/30">
+            {["Document Name", "Category", "Upload Date", "Size", "Status", ""].map((h) => (
               <p key={h} className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
                 {h}
               </p>
@@ -593,9 +679,9 @@ export const ClientUploads = () => {
                     key={doc.id}
                     initial="hidden"
                     animate="visible"
-                    custom={i + 4}
+                    custom={i + 5}
                     variants={fadeUp}
-                    className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 items-center px-5 py-3.5 hover:bg-muted/20 transition-colors"
+                    className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 items-center px-5 py-3.5 hover:bg-muted/20 transition-colors"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <span className="shrink-0">{docIcon[doc.type ?? "document"]}</span>
@@ -610,6 +696,14 @@ export const ClientUploads = () => {
                     <Badge variant="outline" className="text-[10px] whitespace-nowrap border-primary/40 text-primary bg-primary/5">
                       Uploaded
                     </Badge>
+                    <button
+                      className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30"
+                      disabled={deleteMutation.isPending && pendingDeleteId === doc.id}
+                      onClick={() => setPendingDeleteId(doc.id)}
+                      aria-label={`Delete ${doc.name}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </motion.div>
                 );
               })
@@ -617,6 +711,26 @@ export const ClientUploads = () => {
           </div>
         </div>
       </motion.div>
+
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this document? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleConfirmDelete}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

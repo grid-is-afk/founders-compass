@@ -4,7 +4,7 @@ import {
   CheckCircle2, Clock, Circle, AlertCircle, FileSpreadsheet,
   FileIcon, CheckSquare, ChevronDown, ChevronRight,
   Share2, Eye, ExternalLink, Zap, Edit3, Lock,
-  Send, Globe, Users, XCircle, X,
+  Send, Globe, Users, XCircle, X, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,17 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { REQUIRED_DOCS } from "@/lib/documentConstants";
 import {
   useClientDocuments,
   useClientStorage,
@@ -251,13 +262,6 @@ const DATA_ROOM_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Lega
 const FILTER_CATEGORIES = ["All", "From Client", ...DATA_ROOM_CATEGORIES];
 const MAX_BYTES = 50 * 1024 * 1024;
 
-const REQUIRED_DOCS = [
-  { label: "Balance Sheets",                category: "Financials" },
-  { label: "Income Statements",             category: "Financials" },
-  { label: "Personal Financial Statements", category: "Financials" },
-  { label: "Asset Summary",                 category: "Financials" },
-  { label: "IP, Patents & Trademarks",      category: "Legal & Structure" },
-];
 
 function isDocNew(uploadedAt: string): boolean {
   return isAfter(new Date(uploadedAt), subHours(new Date(), 48));
@@ -287,6 +291,7 @@ export const AdvisorDataRoom = () => {
   const [pendingFiles, setPendingFiles] = useState<StagedFile[]>([]);
   const [bulkCategory, setBulkCategory] = useState("");
   const [fileProgress, setFileProgress] = useState<Record<string, number>>({});
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Toast when new client uploads arrive (poll-based)
@@ -354,7 +359,10 @@ export const AdvisorDataRoom = () => {
     }
   };
 
-  const handleDelete = async (docId: string) => {
+  const handleConfirmDelete = async () => {
+    if (!pendingDeleteId) return;
+    const docId = pendingDeleteId;
+    setPendingDeleteId(null);
     try {
       await deleteMutation.mutateAsync({ id: docId, clientId });
       toast("Document removed");
@@ -699,9 +707,9 @@ export const AdvisorDataRoom = () => {
                         </button>
                         <button
                           className="text-muted-foreground hover:text-destructive transition-colors"
-                          onClick={() => handleDelete(doc.id)}
+                          onClick={() => setPendingDeleteId(doc.id)}
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -742,6 +750,26 @@ export const AdvisorDataRoom = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!pendingDeleteId} onOpenChange={(open) => { if (!open) setPendingDeleteId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove this document? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleConfirmDelete}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
