@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./systemPrompt.js";
@@ -172,8 +173,14 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
 });
 
 // ============================================================
-// Static frontend + SPA fallback — MUST stay at the bottom
+// Static file serving — uploads and frontend
 // ============================================================
+
+// Ensure uploads directory exists on startup
+const uploadsPath = path.join(__dirname, "uploads");
+fs.mkdirSync(uploadsPath, { recursive: true });
+app.use("/uploads", express.static(uploadsPath));
+
 const distPath = path.join(__dirname, "..", "dist");
 app.use(express.static(distPath));
 

@@ -7,15 +7,17 @@ import { useClientAssessments } from "@/hooks/useAssessmentsApi";
 import { adaptAssessments } from "@/lib/assessmentAdapter";
 import { useMemo } from "react";
 
+type AssessmentStatus = "not_started" | "in_progress" | "complete";
+
 interface PulseSegmentProps {
   icon: React.ElementType;
   label: string;
   percentage: number;
-  isComplete: boolean;
+  status: AssessmentStatus;
   isLast?: boolean;
 }
 
-const PulseSegment = ({ icon: Icon, label, percentage, isComplete, isLast }: PulseSegmentProps) => {
+const PulseSegment = ({ icon: Icon, label, percentage, status, isLast }: PulseSegmentProps) => {
   const dotColor = getScoreColor(percentage);
   const textColor = getScoreTextColor(percentage);
   const barColor = getScoreColor(percentage);
@@ -50,12 +52,20 @@ const PulseSegment = ({ icon: Icon, label, percentage, isComplete, isLast }: Pul
       </div>
 
       {/* Completion badge */}
-      <span className={cn("text-[10px] font-medium", isComplete ? "text-primary" : "text-muted-foreground")}>
-        {isComplete ? "Complete" : "In Progress"}
+      <span className={cn(
+        "text-[10px] font-medium",
+        status === "complete" ? "text-primary" : status === "in_progress" ? "text-amber-600" : "text-muted-foreground"
+      )}>
+        {status === "complete" ? "Complete" : status === "in_progress" ? "In Progress" : "Not Started"}
       </span>
     </div>
   );
 };
+
+function toStatus(a: { completedDate: string | null } | null): AssessmentStatus {
+  if (!a) return "not_started";
+  return a.completedDate ? "complete" : "in_progress";
+}
 
 const AssessmentPulse = () => {
   const { selectedClientId, selectedClient } = useClientContext();
@@ -81,25 +91,25 @@ const AssessmentPulse = () => {
           icon={TrendingUp}
           label="Business Attractiveness"
           percentage={baScore}
-          isComplete={!!businessAttractiveness?.completedDate}
+          status={toStatus(businessAttractiveness)}
         />
         <PulseSegment
           icon={Shield}
           label="Business Readiness"
           percentage={brScore}
-          isComplete={!!businessReadiness?.completedDate}
+          status={toStatus(businessReadiness)}
         />
         <PulseSegment
           icon={User}
           label="Personal Readiness"
           percentage={prScore}
-          isComplete={!!personalReadiness?.completedDate}
+          status={toStatus(personalReadiness)}
         />
         <PulseSegment
           icon={LayoutGrid}
           label="54 Value Factors"
           percentage={vfScore}
-          isComplete={!!valueFactors?.completedDate}
+          status={toStatus(valueFactors)}
           isLast
         />
       </div>
