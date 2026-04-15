@@ -2,7 +2,6 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
-  GitBranch,
   UserPlus,
   ClipboardCheck,
   FolderOpen,
@@ -10,7 +9,6 @@ import {
   TrendingUp,
   FileText,
   CalendarDays,
-  Target,
   Share2,
   Sparkles,
   ChevronLeft,
@@ -54,10 +52,8 @@ const navGroups = [
   {
     label: "Prove & Align",
     items: [
-      { to: "/advisor/journey", icon: GitBranch, label: "Journey" },
       { to: "/advisor/reports", icon: FileText, label: "Reports" },
       { to: "/advisor/quarterly-review", icon: CalendarDays, label: "Quarterly Reviews" },
-      { to: "/advisor/sprints", icon: Target, label: "Sprints" },
     ],
   },
   {

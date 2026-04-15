@@ -3,6 +3,7 @@ import {
   Map,
   Plus,
   Trash2,
+  Pencil,
   ChevronRight,
   ChevronDown,
   Zap,
@@ -99,6 +100,7 @@ const CapitalStrategyRoadmap = () => {
   const [activeFilter, setActiveFilter] = useState<DomainFilter>("All");
   const [actionsOpen, setActionsOpen] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<RoadmapTask | null>(null);
 
   // Add task form state
   const [newTitle, setNewTitle] = useState("");
@@ -106,6 +108,13 @@ const CapitalStrategyRoadmap = () => {
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
   const [newAssignee, setNewAssignee] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
+
+  // Edit task form state
+  const [editTitle, setEditTitle] = useState("");
+  const [editDomain, setEditDomain] = useState<Domain>("Discover");
+  const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
+  const [editAssignee, setEditAssignee] = useState("");
+  const [editDueDate, setEditDueDate] = useState("");
 
   // ---------------------------------------------------------------------------
   // Derived data
@@ -185,6 +194,36 @@ const CapitalStrategyRoadmap = () => {
           setNewStatus("todo");
           setNewAssignee("");
           setNewDueDate("");
+        },
+      }
+    );
+  };
+
+  const handleOpenEdit = (task: RoadmapTask) => {
+    setEditingTask(task);
+    setEditTitle(task.title);
+    setEditDomain((task.phase ?? "Discover") as Domain);
+    setEditStatus(task.status);
+    setEditAssignee(task.assignee ?? "");
+    setEditDueDate(task.due_date ?? "");
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingTask || !editTitle.trim()) return;
+    updateTask.mutate(
+      {
+        id:       editingTask.id,
+        clientId: selectedClientId,
+        title:    editTitle.trim(),
+        phase:    editDomain,
+        status:   editStatus,
+        assignee: editAssignee.trim() || null,
+        due_date: editDueDate || null,
+      },
+      {
+        onSuccess: () => {
+          toast("Task updated");
+          setEditingTask(null);
         },
       }
     );
@@ -425,6 +464,13 @@ const CapitalStrategyRoadmap = () => {
                           <ChevronRight className="w-3.5 h-3.5" />
                         </button>
                         <button
+                          onClick={() => handleOpenEdit(task)}
+                          title="Edit task"
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => handleDelete(task)}
                           title="Delete task"
                           className="text-muted-foreground hover:text-destructive transition-colors"
@@ -571,6 +617,94 @@ const CapitalStrategyRoadmap = () => {
               disabled={!newTitle.trim() || createTask.isPending}
             >
               {createTask.isPending ? "Creating..." : "Create Task"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Task Dialog ──────────────────────────────────────────────── */}
+      <Dialog open={!!editingTask} onOpenChange={(open) => !open && setEditingTask(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Task</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Title */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">
+                Title <span className="text-destructive">*</span>
+              </label>
+              <Input
+                placeholder="Task title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSaveEdit()}
+              />
+            </div>
+
+            {/* Domain */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Domain</label>
+              <Select value={editDomain} onValueChange={(v) => setEditDomain(v as Domain)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Discover">Discover</SelectItem>
+                  <SelectItem value="Protect">Protect</SelectItem>
+                  <SelectItem value="Grow">Grow</SelectItem>
+                  <SelectItem value="Prove & Align">Prove &amp; Align</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Status */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Status</label>
+              <Select value={editStatus} onValueChange={(v) => setEditStatus(v as TaskStatus)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todo">To Do</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="done">Done</SelectItem>
+                  <SelectItem value="blocked">Blocked</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Assignee */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Assignee</label>
+              <Input
+                placeholder="Name or email"
+                value={editAssignee}
+                onChange={(e) => setEditAssignee(e.target.value)}
+              />
+            </div>
+
+            {/* Due Date */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Due Date</label>
+              <Input
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTask(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={!editTitle.trim() || updateTask.isPending}
+            >
+              {updateTask.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

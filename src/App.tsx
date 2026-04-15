@@ -14,7 +14,6 @@ import NotFound from "./pages/NotFound";
 import AdvisorLayout from "./components/layout/AdvisorLayout";
 import AdvisorDashboard from "./pages/advisor/AdvisorDashboard";
 import AdvisorClients from "./pages/advisor/AdvisorClients";
-import AdvisorJourney from "./pages/advisor/AdvisorJourney";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
 import GrowLanePage from "./pages/advisor/GrowLanePage";
 import ProtectionPage from "./pages/advisor/ProtectionPage";
@@ -27,7 +26,6 @@ import CopilotPage from "./pages/advisor/CopilotPage";
 import CapitalStrategyRoadmap from "./pages/advisor/CapitalStrategyRoadmap";
 import {
   AdvisorDataRoom,
-  AdvisorSprints,
   AdvisorReports,
   AdvisorPublish,
   AdvisorInvestorShare,
@@ -72,13 +70,6 @@ const App = () => (
               <Route index element={<AdvisorDashboard />} />
               <Route path="clients" element={<AdvisorClients />} />
 
-              {/* Journey */}
-              <Route path="journey" element={<AdvisorJourney />} />
-              <Route
-                path="workflow"
-                element={<Navigate to="/advisor/journey" replace />}
-              />
-
               {/* TFO pages */}
               <Route path="prospects" element={<ProspectPipeline />} />
               <Route path="grow-lane" element={<GrowLanePage />} />
@@ -94,7 +85,6 @@ const App = () => (
               <Route path="uploads" element={<Navigate to="/advisor/data-room" replace />} />
               <Route path="data-room" element={<AdvisorDataRoom />} />
               <Route path="copilot" element={<CopilotPage />} />
-              <Route path="sprints" element={<AdvisorSprints />} />
               <Route path="reports" element={<AdvisorReports />} />
               <Route path="publish" element={<AdvisorPublish />} />
               <Route path="investor-share" element={<AdvisorInvestorShare />} />
