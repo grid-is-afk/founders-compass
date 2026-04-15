@@ -56,6 +56,7 @@ interface RoadmapTask {
   due_date: string | null;
   phase: Domain | null;
   priority: string;
+  notes: string | null;
 }
 
 const DOMAIN_FILTERS = ["All", "Discover", "Protect", "Grow", "Prove & Align"] as const;
@@ -108,6 +109,7 @@ const CapitalStrategyRoadmap = () => {
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
   const [newAssignee, setNewAssignee] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
+  const [newNotes, setNewNotes] = useState("");
 
   // Edit task form state
   const [editTitle, setEditTitle] = useState("");
@@ -115,6 +117,7 @@ const CapitalStrategyRoadmap = () => {
   const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
   const [editAssignee, setEditAssignee] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
+  const [editNotes, setEditNotes] = useState("");
 
   // ---------------------------------------------------------------------------
   // Derived data
@@ -128,6 +131,7 @@ const CapitalStrategyRoadmap = () => {
     due_date: t.due_date ?? null,
     phase:    (t.phase ?? null) as Domain | null,
     priority: t.priority ?? "medium",
+    notes:    t.notes ?? null,
   }));
 
   const total       = tasks.length;
@@ -184,6 +188,7 @@ const CapitalStrategyRoadmap = () => {
         status:    newStatus,
         assignee:  newAssignee.trim() || null,
         due_date:  newDueDate || null,
+        notes:     newNotes.trim() || null,
       },
       {
         onSuccess: () => {
@@ -194,6 +199,7 @@ const CapitalStrategyRoadmap = () => {
           setNewStatus("todo");
           setNewAssignee("");
           setNewDueDate("");
+          setNewNotes("");
         },
       }
     );
@@ -206,6 +212,7 @@ const CapitalStrategyRoadmap = () => {
     setEditStatus(task.status);
     setEditAssignee(task.assignee ?? "");
     setEditDueDate(task.due_date ?? "");
+    setEditNotes(task.notes ?? "");
   };
 
   const handleSaveEdit = () => {
@@ -219,6 +226,7 @@ const CapitalStrategyRoadmap = () => {
         status:   editStatus,
         assignee: editAssignee.trim() || null,
         due_date: editDueDate || null,
+        notes:    editNotes.trim() || null,
       },
       {
         onSuccess: () => {
@@ -411,6 +419,11 @@ const CapitalStrategyRoadmap = () => {
                     {/* Title */}
                     <td className="px-4 py-3 font-medium text-foreground text-xs max-w-[200px]">
                       <span className="truncate block">{task.title}</span>
+                      {task.notes && (
+                        <span className="truncate block text-muted-foreground font-normal mt-0.5">
+                          {task.notes}
+                        </span>
+                      )}
                     </td>
 
                     {/* Domain */}
@@ -606,6 +619,17 @@ const CapitalStrategyRoadmap = () => {
                 onChange={(e) => setNewDueDate(e.target.value)}
               />
             </div>
+
+            {/* Notes */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Notes</label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                placeholder="Add context, blockers, or anything relevant..."
+                value={newNotes}
+                onChange={(e) => setNewNotes(e.target.value)}
+              />
+            </div>
           </div>
 
           <DialogFooter>
@@ -692,6 +716,17 @@ const CapitalStrategyRoadmap = () => {
                 type="date"
                 value={editDueDate}
                 onChange={(e) => setEditDueDate(e.target.value)}
+              />
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Notes</label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-none"
+                placeholder="Add context, blockers, or anything relevant..."
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
               />
             </div>
           </div>

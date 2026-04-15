@@ -10,6 +10,7 @@ const ALLOWED_COLUMNS = new Set([
   "priority",
   "due_date",
   "phase",
+  "notes",
 ]);
 
 // Helper: verify client belongs to the requesting user (advisor or client-role)
@@ -58,7 +59,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/tasks
 router.post("/", async (req, res) => {
-  const { client_id, title, assignee, status, priority, due_date, phase, subtasks } =
+  const { client_id, title, assignee, status, priority, due_date, phase, notes, subtasks } =
     req.body;
 
   if (!client_id || !title) {
@@ -71,8 +72,8 @@ router.post("/", async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO tasks (client_id, title, assignee, status, priority, due_date, phase)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO tasks (client_id, title, assignee, status, priority, due_date, phase, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
         client_id,
@@ -82,6 +83,7 @@ router.post("/", async (req, res) => {
         priority ?? "medium",
         due_date ?? null,
         phase ?? null,
+        notes ?? null,
       ]
     );
     const task = result.rows[0];

@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority   TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
   due_date   DATE,
   phase      TEXT,
+  notes      TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
