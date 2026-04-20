@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS prospects (
   company      TEXT,
   revenue      TEXT,
   source       TEXT,
-  status       TEXT NOT NULL DEFAULT 'intake' CHECK (status IN ('intake', 'discovery_scheduled', 'discovery_complete', 'fit_assessment', 'not_fit', 'fit', 'onboarding')),
+  status       TEXT NOT NULL DEFAULT 'intake' CHECK (status IN ('intake', 'discovery_scheduled', 'discovery_complete', 'fit_assessment', 'not_fit', 'fit', 'onboarding', 'nurture_call', 'kept_in_loop', 'flagged_follow_up')),
   fit_score    INT CHECK (fit_score >= 0 AND fit_score <= 100),
   fit_decision TEXT CHECK (fit_decision IN ('fit', 'no_fit')),
   notes        TEXT,
@@ -314,3 +314,51 @@ DO $$ BEGIN
   ALTER TABLE documents ADD COLUMN IF NOT EXISTS size_bytes BIGINT NOT NULL DEFAULT 0;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
+
+-- ============================================================
+-- Prospect Pipeline Redesign — new statuses + exposure index
+-- ============================================================
+
+-- Expand prospect status constraint to include off-pipeline statuses
+DO $$ BEGIN
+  ALTER TABLE prospects DROP CONSTRAINT IF EXISTS prospects_status_check;
+  ALTER TABLE prospects ADD CONSTRAINT prospects_status_check
+    CHECK (status IN (
+      'intake', 'discovery_scheduled', 'discovery_complete',
+      'fit_assessment', 'not_fit', 'fit', 'onboarding',
+      'nurture_call', 'kept_in_loop', 'flagged_follow_up'
+    ));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- Founder Exposure Index™ assessment table
+CREATE TABLE IF NOT EXISTS prospect_exposure_index (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id     UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  advisor_id      UUID NOT NULL REFERENCES users(id),
+  responses       JSONB NOT NULL DEFAULT '{}',
+  category_scores JSONB,
+  ai_summary      TEXT,
+  completed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_exposure_index_prospect ON prospect_exposure_index(prospect_id);
+CREATE INDEX IF NOT EXISTS idx_exposure_index_advisor  ON prospect_exposure_index(advisor_id);
+
+-- Six C's Framework™ assessment table
+CREATE TABLE IF NOT EXISTS prospect_six_cs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  prospect_id  UUID NOT NULL REFERENCES prospects(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  scores       JSONB NOT NULL DEFAULT '{}',
+  total_score  INT,
+  notes        TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_six_cs_prospect ON prospect_six_cs(prospect_id);
+CREATE INDEX IF NOT EXISTS idx_six_cs_advisor  ON prospect_six_cs(advisor_id);

@@ -25,6 +25,8 @@ import documentRoutes from "./routes/documents.js";
 import quarterlyPlanRoutes from "./routes/quarterly-plans.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import activityRoutes from "./routes/activity.js";
+import exposureIndexRoutes from "./routes/exposureIndex.js";
+import sixCsRoutes from "./routes/sixCs.js";
 
 dotenv.config();
 
@@ -38,7 +40,7 @@ for (const v of requiredEnvVars) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-app.use(cors());
+app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "http://localhost:5173" }));
 app.use(express.json());
 
 const anthropic = new Anthropic({
@@ -56,6 +58,10 @@ app.use("/api/auth", authRoutes);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);
+// Exposure index and Six C's must be registered before the generic prospects
+// router so bulk-map routes are not swallowed by GET /:id.
+app.use("/api/prospects", authMiddleware, exposureIndexRoutes);
+app.use("/api/prospects", authMiddleware, sixCsRoutes);
 app.use("/api/prospects", authMiddleware, prospectRoutes);
 app.use("/api/instruments", authMiddleware, instrumentRoutes);
 app.use("/api/protection", authMiddleware, protectionRoutes);

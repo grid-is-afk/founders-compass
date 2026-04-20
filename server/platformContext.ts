@@ -52,6 +52,23 @@ export async function buildPlatformContext(advisorId: string): Promise<string> {
     );
     const prospects = prospectsResult.rows;
 
+    // Fetch exposure index data for all prospects that have completed it
+    const exposureResult = await query(
+      `SELECT DISTINCT ON (pei.prospect_id)
+         pei.prospect_id, pei.category_scores, pei.completed_at
+       FROM prospect_exposure_index pei
+       INNER JOIN prospects p ON p.id = pei.prospect_id
+       WHERE p.advisor_id = $1
+       ORDER BY pei.prospect_id, pei.completed_at DESC`,
+      [advisorId]
+    );
+    const exposureMap = new Map<string, Record<string, number>>();
+    for (const row of exposureResult.rows) {
+      if (row.category_scores) {
+        exposureMap.set(String(row.prospect_id), row.category_scores as Record<string, number>);
+      }
+    }
+
     // --- Build context string ---
 
     let ctx = "## CLIENT PORTFOLIO\n\n";
@@ -139,9 +156,22 @@ export async function buildPlatformContext(advisorId: string): Promise<string> {
       ctx += "## PRE-CLIENT PIPELINE (Prospects)\n";
       ctx += `Total: ${prospects.length} prospects\n\n`;
       prospects.forEach((p) => {
-        ctx += `- ${p.name} — ${p.contact_name ?? "No contact"} — ${p.revenue ?? "Revenue unknown"} — Status: ${p.status ?? "intake"}`;
+        ctx += `- ${p.name} — ${p.contact ?? "No contact"} — ${p.revenue ?? "Revenue unknown"} — Status: ${p.status ?? "intake"}`;
         if (p.fit_score != null) ctx += ` — Fit Score: ${p.fit_score}`;
         if (p.fit_decision) ctx += ` — ${p.fit_decision.toUpperCase()}`;
+
+        // Attach Founder Exposure Index summary if available
+        const exposure = exposureMap.get(String(p.id));
+        if (exposure) {
+          const exposureLevels = Object.entries(exposure)
+            .map(([cat, score]) => {
+              const level = (score as number) >= 7 ? "Low" : (score as number) >= 4 ? "Medium" : "High";
+              return `${cat}:${score}/9(${level})`;
+            })
+            .join(", ");
+          ctx += ` — Exposure Index: [${exposureLevels}]`;
+        }
+
         ctx += "\n";
       });
       ctx += "\n";

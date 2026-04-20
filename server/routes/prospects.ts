@@ -15,6 +15,19 @@ const ALLOWED_COLUMNS = new Set([
   "notes",
 ]);
 
+const VALID_STATUSES = new Set([
+  "intake",
+  "discovery_scheduled",
+  "discovery_complete",
+  "fit_assessment",
+  "not_fit",
+  "fit",
+  "onboarding",
+  "nurture_call",
+  "kept_in_loop",
+  "flagged_follow_up",
+]);
+
 // GET /api/prospects
 router.get("/", async (req, res) => {
   try {
@@ -92,6 +105,11 @@ router.patch("/:id", async (req, res) => {
   const keys = Object.keys(fields);
   if (keys.length === 0) {
     return res.status(400).json({ error: "No valid fields to update" });
+  }
+
+  // Validate status value if provided
+  if (fields.status !== undefined && !VALID_STATUSES.has(fields.status as string)) {
+    return res.status(400).json({ error: "Invalid status value" });
   }
 
   try {

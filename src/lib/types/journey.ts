@@ -25,7 +25,11 @@ export type ProspectStatus =
   | "fit_assessment"
   | "not_fit"
   | "fit"
-  | "onboarding";
+  | "onboarding"
+  // Off-pipeline statuses
+  | "nurture_call"
+  | "kept_in_loop"
+  | "flagged_follow_up";
 
 export type GrowCapitalType =
   | "human_capital"
