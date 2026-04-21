@@ -1,6 +1,9 @@
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from "recharts";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Loader2, Zap, Clock } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { useClientIpdMetrics, type IpdAxisPoint } from "@/hooks/useClientIpdMetrics";
+import { useAnalyzeDataRoom } from "@/hooks/useAnalyzeDataRoom";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,12 +57,48 @@ function IpdRadarChart({ axes, label }: { axes: IpdAxisPoint[]; label: string })
   );
 }
 
+function LastAnalyzed({ timestamp }: { timestamp: string | null }) {
+  if (!timestamp) return null;
+  const date = new Date(timestamp);
+  const formatted = date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    + " at "
+    + date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return (
+    <p className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground/60">
+      <Clock className="w-3 h-3" />
+      Last analyzed {formatted}
+    </p>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
 export function InvestmentProbabilitySection({ clientId }: InvestmentProbabilitySectionProps) {
   const { data: record, isLoading } = useClientIpdMetrics(clientId || null);
+  const { mutate, isPending, progress } = useAnalyzeDataRoom(clientId);
+
+  function handleAnalyze() {
+    mutate({
+      onSuccess: (result) => {
+        const sections = result.updated.length > 0 ? result.updated.join(", ") : "dashboard";
+        toast("Dashboard updated from Data Room", {
+          description: `Updated: ${sections} (${result.documentsAnalyzed}/${result.totalDocuments} docs analyzed)`,
+        });
+      },
+      onError: (msg) => toast(msg),
+    });
+  }
+
+  function progressLabel(): string {
+    if (!progress) return "Reading all documents…";
+    if (progress.stage === "synthesizing") return "Synthesizing results…";
+    if (progress.stage === "analyzing") return `Analyzing batch…`;
+    if (progress.fileName)
+      return `Reading file ${progress.current} of ${progress.total}: ${progress.fileName}`;
+    return "Starting…";
+  }
 
   if (isLoading) {
     return <div className="h-48 rounded-lg bg-muted/30 animate-pulse" />;
@@ -80,8 +119,26 @@ export function InvestmentProbabilitySection({ clientId }: InvestmentProbability
             <RadarPlaceholder label="Confidence in Solution" />
           </div>
           <p className="text-xs text-muted-foreground text-center">
-            Complete Data Room in Prove phase to generate Investment Probability Dashboard
+            Upload financial statements, contracts, and business documents to the Data Room, then click Analyze with QB.
           </p>
+          <div className="flex flex-col items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-2 max-w-sm"
+              onClick={handleAnalyze}
+              disabled={isPending}
+            >
+              {isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              ) : (
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span className="truncate">
+                {isPending ? progressLabel() : "Analyze with QB"}
+              </span>
+            </Button>
+            <LastAnalyzed timestamp={record?.last_generated_at ?? null} />
+          </div>
         </div>
       </div>
     );
@@ -121,6 +178,7 @@ export function InvestmentProbabilitySection({ clientId }: InvestmentProbability
             <p className="text-xs text-muted-foreground">{label}</p>
           </div>
         )}
+        <LastAnalyzed timestamp={record.last_generated_at} />
       </div>
     </div>
   );

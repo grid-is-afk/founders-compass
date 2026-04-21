@@ -4,8 +4,9 @@ import {
   CheckCircle2, Clock, Circle, AlertCircle, FileSpreadsheet,
   FileIcon, CheckSquare, ChevronDown, ChevronRight,
   Share2, Eye, ExternalLink, Zap, Edit3, Lock,
-  Send, Globe, Users, XCircle, X, Trash2,
+  Send, Globe, Users, XCircle, X, Trash2, Loader2,
 } from "lucide-react";
+import { useAnalyzeDataRoom } from "@/hooks/useAnalyzeDataRoom";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -285,6 +286,19 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
   const { data: storage } = useClientStorage(clientId);
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
+  const { mutate: analyzeDataRoom, isPending: isAnalyzing, progress: analyzeProgress } = useAnalyzeDataRoom(clientId);
+
+  function handleAnalyzeDataRoom() {
+    analyzeDataRoom({
+      onSuccess: (result) => {
+        const sections = result.updated.length > 0 ? result.updated.join(", ") : "dashboard";
+        toast("Dashboard updated from Data Room", {
+          description: `Updated: ${sections} (${result.documentsAnalyzed}/${result.totalDocuments} docs analyzed)`,
+        });
+      },
+      onError: (msg) => toast(msg),
+    });
+  }
 
   const [activeCategory, setActiveCategory] = useState("All");
   const [search, setSearch] = useState("");
@@ -414,6 +428,28 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
           <p className="text-muted-foreground mt-1 text-sm">{selectedClient.name} — upload and manage capital readiness materials</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleAnalyzeDataRoom}
+            disabled={isAnalyzing}
+          >
+            {isAnalyzing ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+            ) : (
+              <Zap className="w-3.5 h-3.5 shrink-0" />
+            )}
+            <span className="truncate max-w-[200px]">
+              {isAnalyzing && analyzeProgress?.stage === "reading" && analyzeProgress.fileName
+                ? `File ${analyzeProgress.current} of ${analyzeProgress.total}`
+                : isAnalyzing && analyzeProgress?.stage === "synthesizing"
+                ? "Synthesizing…"
+                : isAnalyzing
+                ? "Analyzing…"
+                : "Analyze with QB"}
+            </span>
+          </Button>
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowUpload(!showUpload)}>
             <Upload className="w-3.5 h-3.5" />{showUpload ? "Hide Upload" : "Upload Files"}
           </Button>
@@ -703,24 +739,27 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
                     <td className="px-4 py-3 text-xs text-muted-foreground">{dateLabel}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{doc.size ?? "—"}</td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-1">
                         <button
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                           onClick={() => setPreviewDoc({ name: doc.name, category: doc.category ?? "Uploads", date: dateLabel, file_url: doc.file_url })}
                         >
                           <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
                         </button>
                         <button
-                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                           onClick={() => handleDownload(doc)}
                         >
                           <Download className="w-3.5 h-3.5" />
+                          <span>Download</span>
                         </button>
                         <button
-                          className="text-muted-foreground hover:text-destructive transition-colors"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                           onClick={() => setPendingDeleteId(doc.id)}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
                         </button>
                       </div>
                     </td>
@@ -734,7 +773,7 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
 
       {/* Document preview dialog */}
       <Dialog open={!!previewDoc} onOpenChange={(v) => !v && setPreviewDoc(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <FileText className="w-4 h-4 text-red-500" />
@@ -744,15 +783,46 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
               {previewDoc?.category} · Uploaded {previewDoc?.date}
             </DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
-            <FileText className="w-12 h-12 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground text-center">
-              Document preview for <span className="font-medium text-foreground">{previewDoc?.name}</span>
-            </p>
-            <p className="text-xs text-muted-foreground text-center">
-              This document is stored securely in the {selectedClient.name} data room.
-            </p>
-          </div>
+          {previewDoc && (() => {
+            const ext = previewDoc.name.split(".").pop()?.toLowerCase() ?? "";
+            const url = previewDoc.file_url;
+            if (!url) {
+              return (
+                <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
+                  <FileText className="w-12 h-12 text-muted-foreground/40" />
+                  <p className="text-xs text-muted-foreground text-center">
+                    Preview unavailable for this file type. Download to view.
+                  </p>
+                </div>
+              );
+            }
+            if (ext === "pdf") {
+              return (
+                <iframe
+                  src={url}
+                  className="w-full h-[500px] rounded border border-border"
+                  title={previewDoc.name}
+                />
+              );
+            }
+            if (["jpg", "jpeg", "png"].includes(ext)) {
+              return (
+                <img
+                  src={url}
+                  alt={previewDoc.name}
+                  className="max-h-[500px] w-full object-contain rounded"
+                />
+              );
+            }
+            return (
+              <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
+                <FileText className="w-12 h-12 text-muted-foreground/40" />
+                <p className="text-xs text-muted-foreground text-center">
+                  Preview unavailable for this file type. Download to view.
+                </p>
+              </div>
+            );
+          })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreviewDoc(null)}>Close</Button>
             <Button onClick={() => { if (previewDoc) handleDownload(previewDoc); setPreviewDoc(null); }} className="gap-2">

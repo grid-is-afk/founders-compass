@@ -36,6 +36,7 @@ import clientSixKeysRoutes from "./routes/clientSixKeys.js";
 import clientCapitalOptionalityRoutes from "./routes/clientCapitalOptionality.js";
 import clientMultiplesRoutes from "./routes/clientMultiples.js";
 import clientIpdMetricsRoutes from "./routes/clientIpdMetrics.js";
+import analyzeDataRoomRouter from "./routes/analyzeDataRoom.js";
 
 dotenv.config();
 
@@ -73,6 +74,7 @@ app.use("/api/clients", authMiddleware, clientSixKeysRoutes);
 app.use("/api/clients", authMiddleware, clientCapitalOptionalityRoutes);
 app.use("/api/clients", authMiddleware, clientMultiplesRoutes);
 app.use("/api/clients", authMiddleware, clientIpdMetricsRoutes);
+app.use("/api/clients", authMiddleware, analyzeDataRoomRouter);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);

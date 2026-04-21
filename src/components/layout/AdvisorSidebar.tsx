@@ -22,15 +22,15 @@ const navGroups = [
     ],
   },
   {
-    label: "Clients",
-    items: [
-      { to: "/advisor/clients-list", icon: Users, label: "Clients" },
-    ],
-  },
-  {
     label: "Prospects",
     items: [
       { to: "/advisor/prospects", icon: UserPlus, label: "Prospects" },
+    ],
+  },
+  {
+    label: "Clients",
+    items: [
+      { to: "/advisor/clients-list", icon: Users, label: "Clients" },
     ],
   },
   {
