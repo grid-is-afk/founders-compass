@@ -161,16 +161,60 @@ const PRIORITY_FILTERS = [
   { label: "Low", value: "low" },
 ];
 
+// ---------------------------------------------------------------------------
+// Sort helpers
+// ---------------------------------------------------------------------------
+
+const PRIORITY_RANK: Record<AdvisorTask["priority"], number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function sortTasks(tasks: AdvisorTask[]): AdvisorTask[] {
+  return [...tasks].sort((a, b) => {
+    const aOverdue = a.due_date && a.status !== "done" && isPast(parseISO(a.due_date));
+    const bOverdue = b.due_date && b.status !== "done" && isPast(parseISO(b.due_date));
+
+    // Tier 1: overdue + urgent
+    const aTier1 = aOverdue && a.priority === "urgent";
+    const bTier1 = bOverdue && b.priority === "urgent";
+    if (aTier1 !== bTier1) return aTier1 ? -1 : 1;
+
+    // Tier 2: overdue (any priority)
+    if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+
+    // Tier 3: priority rank
+    const rankDiff = PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+    if (rankDiff !== 0) return rankDiff;
+
+    // Tier 4: due date ascending, nulls last
+    if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+    if (a.due_date) return -1;
+    if (b.due_date) return 1;
+    return 0;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Panel
+// ---------------------------------------------------------------------------
+
 export default function AdvisorTasksPanel() {
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
   const [clientFilter, setClientFilter] = useState("");
 
+  // Filtered tasks for display
   const { data: tasks = [], isLoading } = useAdvisorTasks({
     status: statusFilter || undefined,
     priority: priorityFilter || undefined,
     clientId: clientFilter || undefined,
   });
+
+  // Unfiltered tasks for computing global stats
+  const { data: allTasks = [] } = useAdvisorTasks();
 
   const updateTask = useUpdateAdvisorTask();
 
@@ -182,15 +226,45 @@ export default function AdvisorTasksPanel() {
     }
   };
 
-  // Derive unique clients from task list for client filter dropdown
+  // Derive unique clients from full task list for client filter dropdown
   const uniqueClients = Array.from(
-    new Map(tasks.map((t) => [t.client_id, t.client_name])).entries()
+    new Map(allTasks.map((t) => [t.client_id, t.client_name])).entries()
   ).map(([id, name]) => ({ id, name }));
+
+  // Global stats from unfiltered tasks
+  const urgentCount = allTasks.filter(
+    (t) => t.priority === "urgent" && t.status !== "done"
+  ).length;
+  const overdueCount = allTasks.filter(
+    (t) => t.due_date && t.status !== "done" && isPast(parseISO(t.due_date))
+  ).length;
+  const inProgressCount = allTasks.filter((t) => t.status === "in_progress").length;
+
+  const sortedTasks = sortTasks(tasks);
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h2 className="text-lg font-display font-semibold text-foreground">All Tasks</h2>
+        <div className="flex items-center gap-4 flex-wrap">
+          <h2 className="text-lg font-display font-semibold text-foreground">All Tasks</h2>
+          {/* Stats bar */}
+          {allTasks.length > 0 && (
+            <div className="flex items-center gap-3 text-xs">
+              {urgentCount > 0 && (
+                <span className="text-destructive font-medium">{urgentCount} urgent</span>
+              )}
+              {overdueCount > 0 && (
+                <span className="text-amber-600 font-medium">{overdueCount} overdue</span>
+              )}
+              {inProgressCount > 0 && (
+                <span className="text-blue-600 font-medium">{inProgressCount} in progress</span>
+              )}
+              {urgentCount === 0 && overdueCount === 0 && inProgressCount === 0 && (
+                <span className="text-muted-foreground">All clear</span>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Client filter */}
@@ -233,7 +307,7 @@ export default function AdvisorTasksPanel() {
       <div className="bg-card rounded-lg border border-border overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-sm text-muted-foreground">Loading tasks...</div>
-        ) : tasks.length === 0 ? (
+        ) : sortedTasks.length === 0 ? (
           <div className="p-10 text-center">
             <CheckCircle2 className="w-7 h-7 text-muted-foreground/30 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No tasks match the current filters</p>
@@ -250,7 +324,7 @@ export default function AdvisorTasksPanel() {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((task) => (
+              {sortedTasks.map((task) => (
                 <TaskRow key={task.id} task={task} onStatusChange={handleStatusChange} />
               ))}
             </tbody>

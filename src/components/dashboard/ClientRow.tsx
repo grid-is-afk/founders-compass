@@ -32,9 +32,9 @@ function formatActivity(updatedAt: string): string {
   return `${days}d ago`;
 }
 
-const ClientRow = ({ client }: { client: Client }) => {
+const ClientRow = ({ client, onClick }: { client: Client; onClick?: () => void }) => {
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer">
+    <tr onClick={onClick} className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer">
       <td className="px-4 py-3">
         <p className="font-medium text-foreground">{client.name}</p>
         <p className="text-xs text-muted-foreground">{client.contact_name ?? "—"}</p>

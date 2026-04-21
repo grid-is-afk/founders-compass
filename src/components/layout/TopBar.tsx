@@ -23,13 +23,6 @@ import {
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useActivity } from "@/hooks/useActivity";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -98,13 +91,16 @@ const TopBar = () => {
       <Popover open={searchOpen} onOpenChange={setSearchOpen}>
         <PopoverTrigger asChild>
           <div
-            className="flex items-center gap-3 w-full max-w-md cursor-text"
+            className="flex items-center gap-3 w-full max-w-lg cursor-text border border-border bg-muted/40 hover:bg-muted/60 rounded-md px-3 py-1.5 transition-colors"
             onClick={() => setSearchOpen(true)}
           >
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="text-sm text-muted-foreground/60 select-none">
+            <span className="text-sm text-muted-foreground/70 select-none flex-1">
               Search clients, reports, tasks...
             </span>
+            <kbd className="hidden sm:inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground/60 bg-muted border border-border rounded px-1.5 py-0.5 shrink-0">
+              ⌘K
+            </kbd>
           </div>
         </PopoverTrigger>
 
@@ -175,27 +171,6 @@ const TopBar = () => {
           </Command>
         </PopoverContent>
       </Popover>
-
-      {/* Client selector */}
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-muted/30 flex-shrink-0">
-        <Users className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-        {clients.length === 0 ? (
-          <span className="text-sm text-muted-foreground">No clients</span>
-        ) : (
-          <Select value={selectedClientId} onValueChange={setSelectedClientId}>
-            <SelectTrigger className="border-0 bg-transparent shadow-none h-auto p-0 text-sm font-medium text-foreground w-auto min-w-[140px] focus:ring-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(clients as any[]).map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
 
       {/* Right-hand controls */}
       <div className="flex items-center gap-4">

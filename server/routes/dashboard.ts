@@ -44,7 +44,7 @@ router.get("/", async (req, res) => {
 
     // Recent activity
     const activityResult = await query(
-      `SELECT al.*, c.name AS client_name
+      `SELECT al.id, al.text AS action, al.created_at, c.name AS client_name
        FROM activity_log al
        LEFT JOIN clients c ON c.id = al.client_id
        WHERE al.advisor_id = $1
