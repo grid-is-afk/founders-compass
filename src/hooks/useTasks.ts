@@ -9,6 +9,40 @@ export function useClientTasks(clientId: string) {
   });
 }
 
+export interface AdvisorTask {
+  id: string;
+  client_id: string;
+  client_name: string;
+  title: string;
+  status: "todo" | "in_progress" | "done" | "blocked";
+  priority: "low" | "medium" | "high" | "urgent";
+  due_date: string | null;
+  assignee: string | null;
+  phase: string | null;
+  notes: string | null;
+}
+
+export function useAdvisorTasks(filters: { status?: string; priority?: string; clientId?: string } = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.clientId) params.set("client_id", filters.clientId);
+  const qs = params.toString();
+  return useQuery<AdvisorTask[]>({
+    queryKey: ["advisor-tasks", filters],
+    queryFn: () => api.get(`/tasks/advisor${qs ? `?${qs}` : ""}`),
+  });
+}
+
+export function useUpdateAdvisorTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+      api.patch(`/tasks/${id}`, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["advisor-tasks"] }),
+  });
+}
+
 export function useCreateTask() {
   const qc = useQueryClient();
   return useMutation({

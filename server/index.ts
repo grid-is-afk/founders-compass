@@ -27,6 +27,15 @@ import dashboardRoutes from "./routes/dashboard.js";
 import activityRoutes from "./routes/activity.js";
 import exposureIndexRoutes from "./routes/exposureIndex.js";
 import sixCsRoutes from "./routes/sixCs.js";
+import clientExposureIndexRoutes from "./routes/clientExposureIndex.js";
+import clientFounderMatrixRoutes from "./routes/clientFounderMatrix.js";
+import clientFounderSnapshotRoutes from "./routes/clientFounderSnapshot.js";
+import clientOptionalityFrameworkRoutes from "./routes/clientOptionalityFramework.js";
+import clientSixCsBaselineRoutes from "./routes/clientSixCsBaseline.js";
+import clientSixKeysRoutes from "./routes/clientSixKeys.js";
+import clientCapitalOptionalityRoutes from "./routes/clientCapitalOptionality.js";
+import clientMultiplesRoutes from "./routes/clientMultiples.js";
+import clientIpdMetricsRoutes from "./routes/clientIpdMetrics.js";
 
 dotenv.config();
 
@@ -55,6 +64,15 @@ app.use("/api/auth", authRoutes);
 // ============================================================
 // Protected API routes — all require a valid JWT
 // ============================================================
+app.use("/api/clients", authMiddleware, clientExposureIndexRoutes);
+app.use("/api/clients", authMiddleware, clientFounderMatrixRoutes);
+app.use("/api/clients", authMiddleware, clientFounderSnapshotRoutes);
+app.use("/api/clients", authMiddleware, clientOptionalityFrameworkRoutes);
+app.use("/api/clients", authMiddleware, clientSixCsBaselineRoutes);
+app.use("/api/clients", authMiddleware, clientSixKeysRoutes);
+app.use("/api/clients", authMiddleware, clientCapitalOptionalityRoutes);
+app.use("/api/clients", authMiddleware, clientMultiplesRoutes);
+app.use("/api/clients", authMiddleware, clientIpdMetricsRoutes);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);
@@ -73,6 +91,21 @@ app.use("/api/documents", authMiddleware, documentRoutes);
 app.use("/api/quarterly-plans", authMiddleware, quarterlyPlanRoutes);
 app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
+
+// ---------------------------------------------------------------------------
+// GET /api/q1-phase-config — public config for the Gantt chart
+// ---------------------------------------------------------------------------
+app.get("/api/q1-phase-config", authMiddleware, async (req, res) => {
+  try {
+    const result = await query(
+      "SELECT phase, day_start, day_end, label FROM q1_phase_config ORDER BY day_start"
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /api/q1-phase-config error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // ============================================================
 // Copilot chat — protected

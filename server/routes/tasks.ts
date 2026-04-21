@@ -57,6 +57,36 @@ router.get("/", async (req, res) => {
   }
 });
 
+// GET /api/tasks/advisor — all tasks across the advisor's clients
+router.get("/advisor", async (req, res) => {
+  const { status, priority, client_id } = req.query;
+  try {
+    const result = await query(
+      `SELECT t.*, c.name AS client_name
+       FROM tasks t
+       JOIN clients c ON c.id = t.client_id
+       WHERE c.advisor_id = $1
+         AND ($2::text IS NULL OR t.status = $2)
+         AND ($3::text IS NULL OR t.priority = $3)
+         AND ($4::uuid IS NULL OR t.client_id = $4::uuid)
+       ORDER BY
+         CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+         t.due_date ASC NULLS LAST,
+         t.created_at DESC`,
+      [
+        req.user!.id,
+        (status as string) || null,
+        (priority as string) || null,
+        (client_id as string) || null,
+      ]
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /tasks/advisor error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /api/tasks
 router.post("/", async (req, res) => {
   const { client_id, title, assignee, status, priority, due_date, phase, notes, subtasks } =

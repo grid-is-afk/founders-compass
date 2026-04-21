@@ -3,12 +3,6 @@ import {
   LayoutDashboard,
   Users,
   UserPlus,
-  ClipboardCheck,
-  FolderOpen,
-  ShieldCheck,
-  TrendingUp,
-  FileText,
-  CalendarDays,
   Share2,
   Sparkles,
   ChevronLeft,
@@ -25,35 +19,18 @@ const navGroups = [
     label: "Overview",
     items: [
       { to: "/advisor", icon: LayoutDashboard, label: "Dashboard" },
-      { to: "/advisor/clients", icon: Users, label: "Clients" },
+    ],
+  },
+  {
+    label: "Clients",
+    items: [
+      { to: "/advisor/clients-list", icon: Users, label: "Clients" },
+    ],
+  },
+  {
+    label: "Prospects",
+    items: [
       { to: "/advisor/prospects", icon: UserPlus, label: "Prospects" },
-    ],
-  },
-  {
-    label: "Discover",
-    items: [
-      { to: "/advisor/assessments", icon: ClipboardCheck, label: "Assessments" },
-      { to: "/advisor/data-room", icon: FolderOpen, label: "Data Room" },
-    ],
-  },
-  {
-    label: "Protect",
-    items: [
-      { to: "/advisor/protection", icon: ShieldCheck, label: "Protection" },
-    ],
-  },
-  {
-    label: "Grow",
-    items: [
-      { to: "/advisor/grow-lane", icon: TrendingUp, label: "Grow Lane" },
-      { to: "/advisor/customer-capital", icon: TrendingUp, label: "Customer Capital" },
-    ],
-  },
-  {
-    label: "Prove & Align",
-    items: [
-      { to: "/advisor/reports", icon: FileText, label: "Reports" },
-      { to: "/advisor/quarterly-review", icon: CalendarDays, label: "Quarterly Reviews" },
     ],
   },
   {
@@ -128,7 +105,12 @@ const AdvisorSidebar = () => {
             )}
             <div className="space-y-0.5">
               {group.items.map((item) => {
-                const isActive = location.pathname === item.to;
+                // Clients nav item should be active for both /clients-list and /clients/:id workspace
+                const isActive =
+                  item.to === "/advisor/clients-list"
+                    ? location.pathname === item.to ||
+                      location.pathname.startsWith("/advisor/clients/")
+                    : location.pathname === item.to;
                 const isDataRoom = item.to === "/advisor/data-room";
                 const showBadge = isDataRoom && unseenCount > 0;
                 return (

@@ -14,6 +14,16 @@ import NotFound from "./pages/NotFound";
 import AdvisorLayout from "./components/layout/AdvisorLayout";
 import AdvisorDashboard from "./pages/advisor/AdvisorDashboard";
 import AdvisorClients from "./pages/advisor/AdvisorClients";
+import ClientListPage from "./pages/advisor/ClientListPage";
+import ClientWorkspace from "./pages/advisor/ClientWorkspace";
+import Q1DiscoverPage from "./pages/advisor/Q1DiscoverPage";
+import ClientDashboardTab from "./pages/advisor/ClientDashboardTab";
+import ClientDataRoomTab from "./pages/advisor/ClientDataRoomTab";
+import {
+  ClientProtectPage,
+  ClientGrowPage,
+  ClientProvePage,
+} from "./pages/advisor/ClientWorkspacePlaceholders";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
 import GrowLanePage from "./pages/advisor/GrowLanePage";
 import ProtectionPage from "./pages/advisor/ProtectionPage";
@@ -69,6 +79,18 @@ const App = () => (
             >
               <Route index element={<AdvisorDashboard />} />
               <Route path="clients" element={<AdvisorClients />} />
+
+              {/* Q1 Client Workspace */}
+              <Route path="clients-list" element={<ClientListPage />} />
+              <Route path="clients/:id" element={<ClientWorkspace />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<ClientDashboardTab />} />
+                <Route path="discover" element={<Q1DiscoverPage />} />
+                <Route path="protect" element={<ClientProtectPage />} />
+                <Route path="grow" element={<ClientGrowPage />} />
+                <Route path="prove" element={<ClientProvePage />} />
+                <Route path="data-room" element={<ClientDataRoomTab />} />
+              </Route>
 
               {/* TFO pages */}
               <Route path="prospects" element={<ProspectPipeline />} />

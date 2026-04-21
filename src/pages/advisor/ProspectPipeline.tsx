@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { ChevronRight, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, BookOpen } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ChevronRight, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2 } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
+import { useClients, useCreateClient } from "@/hooks/useClients";
+import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
 import { useExposureIndexMap, useProspectExposureIndex } from "@/hooks/useProspectExposureIndex";
 import { useSixCsMap } from "@/hooks/useProspectSixCs";
 import ProspectCard from "@/components/dashboard/ProspectCard";
-import { ExposureIndexStrip } from "@/components/prospects/ExposureIndexStrip";
-import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
-import { SixCsStrip } from "@/components/prospects/SixCsStrip";
+import { ProspectAssessmentBlock } from "@/components/prospects/ProspectAssessmentBlock";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -177,6 +178,7 @@ interface DetailDialogProps {
   onClose: () => void;
   onAdvance: (id: string, newStatus: string) => void;
   onMarkNotFit: (id: string, source: string) => void;
+  onOpenInvestmentDashboard: (prospectId: string) => void;
   isPending: boolean;
 }
 
@@ -185,6 +187,7 @@ function ProspectDetailDialog({
   onClose,
   onAdvance,
   onMarkNotFit,
+  onOpenInvestmentDashboard,
   isPending,
 }: DetailDialogProps) {
   const [retakeOpen, setRetakeOpen] = useState(false);
@@ -393,9 +396,7 @@ function ProspectDetailDialog({
               <Button
                 variant="outline"
                 className="gap-2 border-primary/30 text-primary hover:bg-primary/5"
-                onClick={() =>
-                  toast.info("Investment Probability Dashboard — coming soon")
-                }
+                onClick={() => onOpenInvestmentDashboard(prospect.id)}
               >
                 <TrendingUp className="w-4 h-4" />
                 Investment Probability Dashboard
@@ -552,16 +553,120 @@ function AddProspectDialog({ open, onClose }: { open: boolean; onClose: () => vo
 }
 
 // ---------------------------------------------------------------------------
+// Enroll Client Dialog
+// ---------------------------------------------------------------------------
+
+interface EnrollClientDialogProps {
+  prospect: ProspectShape | null;
+  onClose: () => void;
+  onConfirm: (email: string, entityType: "corp" | "llc") => Promise<void>;
+  isPending: boolean;
+}
+
+function EnrollClientDialog({ prospect, onClose, onConfirm, isPending }: EnrollClientDialogProps) {
+  const [email, setEmail] = useState(() =>
+    prospect?.contact?.includes("@") ? prospect.contact : ""
+  );
+  const [entityType, setEntityType] = useState<"corp" | "llc">("corp");
+
+  const handleSubmit = async () => {
+    if (!email.trim() || !email.includes("@")) {
+      toast.error("A valid email address is required");
+      return;
+    }
+    await onConfirm(email.trim(), entityType);
+  };
+
+  return (
+    <Dialog open={!!prospect} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display">Enroll as Client</DialogTitle>
+          <DialogDescription>
+            Create a client portal login for {prospect?.name}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">
+              Client Email <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="founder@company.com"
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Used for the client portal login. Shown once after enrollment.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-foreground">Entity Type</label>
+            <Select value={entityType} onValueChange={(v) => setEntityType(v as "corp" | "llc")}>
+              <SelectTrigger className="h-9 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="corp">Corporation</SelectItem>
+                <SelectItem value="llc">LLC</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isPending}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+          >
+            {isPending ? (
+              <><Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Enrolling...</>
+            ) : (
+              <><CheckCircle2 className="w-3.5 h-3.5 mr-2" /> Enroll Client</>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
 
 const ProspectPipeline = () => {
+  const navigate = useNavigate();
   const { data: rawProspects = [], isLoading } = useProspects();
+  const { data: rawClients = [] } = useClients();
   const updateProspect = useUpdateProspect();
+  const createClient = useCreateClient();
   const { data: exposureMap } = useExposureIndexMap("fit_assessment");
   const { data: sixCsMap } = useSixCsMap("fit_assessment");
   const [selectedProspect, setSelectedProspect] = useState<ProspectShape | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [enrollTarget, setEnrollTarget] = useState<ProspectShape | null>(null);
+  const [enrollingId, setEnrollingId] = useState<string | null>(null);
+
+  const clients = rawClients as Array<{ id: string; source_prospect_id: string | null }>;
+
+  const handleOpenInvestmentDashboard = (prospectId: string) => {
+    const client = clients.find((c) => c.source_prospect_id === prospectId);
+    if (client) {
+      navigate(`/advisor/clients/${client.id}/dashboard`);
+    } else {
+      navigate("/advisor/clients-list");
+      toast.info("Open the client record to view the Investment Probability Dashboard");
+    }
+  };
 
   const prospects = (rawProspects as Record<string, unknown>[]).map(toProspectShape);
 
@@ -617,6 +722,37 @@ const ProspectPipeline = () => {
       toast.success("Flagged for Follow-Up");
     } catch {
       toast.error("Failed to update prospect");
+    }
+  };
+
+  const handleEnrollAsClient = (prospect: ProspectShape) => {
+    setEnrollTarget(prospect);
+  };
+
+  const handleEnrollConfirm = async (email: string, entityType: "corp" | "llc") => {
+    if (!enrollTarget) return;
+    setEnrollingId(enrollTarget.id);
+    try {
+      const newClient = await createClient.mutateAsync({
+        name: enrollTarget.name,
+        contact_name: enrollTarget.contact,
+        contact_email: email,
+        revenue: enrollTarget.revenue,
+        source_prospect_id: enrollTarget.id,
+        entity_type: entityType,
+        onboarded_at: new Date().toISOString(),
+        q1_phase: "kickoff",
+      });
+      toast.success("Client enrolled — Q1 started", {
+        description: `Portal login created for ${email}`,
+      });
+      setEnrollTarget(null);
+      navigate(`/advisor/clients/${(newClient as { id: string }).id}/dashboard`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Enrollment failed — try again";
+      toast.error(msg);
+    } finally {
+      setEnrollingId(null);
     }
   };
 
@@ -716,7 +852,7 @@ const ProspectPipeline = () => {
                           </div>
                         )}
                         {colProspects.map((prospect) => (
-                          <div key={prospect.id} className="space-y-1.5">
+                          <div key={prospect.id} className="rounded-lg border border-amber-400/40 bg-card p-2 space-y-1.5">
                             <div
                               onClick={() => setSelectedProspect(prospect)}
                               className="cursor-pointer"
@@ -725,43 +861,44 @@ const ProspectPipeline = () => {
                             </div>
                             {/* Assessment tools — fit_assessment column */}
                             {col.id === "fit_assessment" && (
-                              <>
-                                <ExposureIndexStrip
-                                  prospect={prospect as Prospect}
-                                  summary={exposureMap?.[prospect.id] ?? null}
-                                />
+                              <ProspectAssessmentBlock
+                                prospect={prospect as Prospect}
+                                exposureSummary={exposureMap?.[prospect.id] ?? null}
+                                sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                              />
+                            )}
+                            {/* Onboarding column actions */}
+                            {col.id === "onboarding" && (
+                              <div className="space-y-1.5">
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  disabled
-                                  className="w-full h-8 text-xs gap-1.5 opacity-50 cursor-not-allowed"
-                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenInvestmentDashboard(prospect.id);
+                                  }}
                                 >
-                                  <BookOpen className="w-3.5 h-3.5" />
-                                  Why.OS — Coming Soon
+                                  <TrendingUp className="w-3.5 h-3.5" />
+                                  Investment Probability Dashboard
                                 </Button>
-                                <SixCsStrip
-                                  prospect={prospect as Prospect}
-                                  record={sixCsMap?.[prospect.id] ?? null}
-                                />
-                              </>
-                            )}
-                            {/* Investment Probability Dashboard — onboarding column */}
-                            {col.id === "onboarding" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toast.info(
-                                    "Investment Probability Dashboard — coming soon"
-                                  );
-                                }}
-                              >
-                                <TrendingUp className="w-3.5 h-3.5" />
-                                Investment Probability Dashboard
-                              </Button>
+                                <Button
+                                  size="sm"
+                                  className="w-full h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEnrollAsClient(prospect);
+                                  }}
+                                  disabled={enrollingId === prospect.id}
+                                >
+                                  {enrollingId === prospect.id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  )}
+                                  {enrollingId === prospect.id ? "Enrolling..." : "Enroll as Client"}
+                                </Button>
+                              </div>
                             )}
                           </div>
                         ))}
@@ -816,7 +953,7 @@ const ProspectPipeline = () => {
                         </div>
                       )}
                       {colProspects.map((prospect) => (
-                        <div key={prospect.id} className="space-y-1.5">
+                        <div key={prospect.id} className="rounded-lg border border-amber-400/40 bg-card p-2 space-y-1.5">
                           <div
                             onClick={() => setSelectedProspect(prospect)}
                             className="cursor-pointer"
@@ -824,42 +961,43 @@ const ProspectPipeline = () => {
                             <ProspectCard prospect={prospect as Prospect} />
                           </div>
                           {col.id === "fit_assessment" && (
-                            <>
-                              <ExposureIndexStrip
-                                prospect={prospect as Prospect}
-                                summary={exposureMap?.[prospect.id] ?? null}
-                              />
+                            <ProspectAssessmentBlock
+                              prospect={prospect as Prospect}
+                              exposureSummary={exposureMap?.[prospect.id] ?? null}
+                              sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                            />
+                          )}
+                          {col.id === "onboarding" && (
+                            <div className="space-y-1.5">
                               <Button
                                 variant="outline"
                                 size="sm"
-                                disabled
-                                className="w-full h-8 text-xs gap-1.5 opacity-50 cursor-not-allowed"
-                                onClick={(e) => e.stopPropagation()}
+                                className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenInvestmentDashboard(prospect.id);
+                                }}
                               >
-                                <BookOpen className="w-3.5 h-3.5" />
-                                Why.OS — Coming Soon
+                                <TrendingUp className="w-3.5 h-3.5" />
+                                Investment Probability Dashboard
                               </Button>
-                              <SixCsStrip
-                                prospect={prospect as Prospect}
-                                record={sixCsMap?.[prospect.id] ?? null}
-                              />
-                            </>
-                          )}
-                          {col.id === "onboarding" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toast.info(
-                                  "Investment Probability Dashboard — coming soon"
-                                );
-                              }}
-                            >
-                              <TrendingUp className="w-3.5 h-3.5" />
-                              Investment Probability Dashboard
-                            </Button>
+                              <Button
+                                size="sm"
+                                className="w-full h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEnrollAsClient(prospect);
+                                }}
+                                disabled={enrollingId === prospect.id}
+                              >
+                                {enrollingId === prospect.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                )}
+                                {enrollingId === prospect.id ? "Enrolling..." : "Enroll as Client"}
+                              </Button>
+                            </div>
                           )}
                         </div>
                       ))}
@@ -937,11 +1075,10 @@ const ProspectPipeline = () => {
                               variant="outline"
                               size="sm"
                               className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                              onClick={() => handleScheduleNurtureCall(prospect.id)}
-                              disabled={updateProspect.isPending || prospect.status === "nurture_call"}
+                              onClick={() => toast.info("Calendar scheduling — coming soon")}
                             >
                               <Phone className="w-3 h-3" />
-                              {prospect.status === "nurture_call" ? "Nurture Call Scheduled" : "Schedule Nurture Call"}
+                              Schedule Nurture Call
                             </Button>
                           )}
                           {col.id === "other_not_fit" && (
@@ -992,9 +1129,16 @@ const ProspectPipeline = () => {
         onClose={() => setSelectedProspect(null)}
         onAdvance={handleAdvance}
         onMarkNotFit={handleMarkNotFit}
+        onOpenInvestmentDashboard={handleOpenInvestmentDashboard}
         isPending={updateProspect.isPending}
       />
       <AddProspectDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <EnrollClientDialog
+        prospect={enrollTarget}
+        onClose={() => setEnrollTarget(null)}
+        onConfirm={handleEnrollConfirm}
+        isPending={createClient.isPending}
+      />
     </div>
   );
 };

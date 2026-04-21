@@ -362,3 +362,156 @@ CREATE TABLE IF NOT EXISTS prospect_six_cs (
 
 CREATE INDEX IF NOT EXISTS idx_six_cs_prospect ON prospect_six_cs(prospect_id);
 CREATE INDEX IF NOT EXISTS idx_six_cs_advisor  ON prospect_six_cs(advisor_id);
+
+-- ============================================================
+-- Q1 Discover Phase — Client Workspace
+-- ============================================================
+
+-- Client-scoped Exposure Index
+CREATE TABLE IF NOT EXISTS client_exposure_index (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id      UUID NOT NULL REFERENCES users(id),
+  responses       JSONB NOT NULL DEFAULT '{}',
+  category_scores JSONB,
+  ai_summary      TEXT,
+  completed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_exposure_index ON client_exposure_index(client_id);
+
+-- Founder Matrix (Corp or LLC intake)
+CREATE TABLE IF NOT EXISTS client_founder_matrix (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  entity_type  TEXT NOT NULL CHECK (entity_type IN ('corp', 'llc')),
+  responses    JSONB NOT NULL DEFAULT '{}',
+  ai_summary   TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_founder_matrix ON client_founder_matrix(client_id);
+
+-- Founder Snapshot (5 dimensions)
+CREATE TABLE IF NOT EXISTS client_founder_snapshot (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  responses    JSONB NOT NULL DEFAULT '{}',
+  ai_summary   TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_founder_snapshot ON client_founder_snapshot(client_id);
+
+-- Founder's Optionality Framework (3 conditions)
+CREATE TABLE IF NOT EXISTS client_optionality_framework (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  responses    JSONB NOT NULL DEFAULT '{}',
+  ai_summary   TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_optionality_framework ON client_optionality_framework(client_id);
+
+-- Phase duration config (configurable without code changes)
+CREATE TABLE IF NOT EXISTS q1_phase_config (
+  id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phase     TEXT NOT NULL UNIQUE,
+  day_start INT NOT NULL,
+  day_end   INT NOT NULL,
+  label     TEXT NOT NULL
+);
+INSERT INTO q1_phase_config (phase, day_start, day_end, label) VALUES
+  ('kickoff',         1,   7,  'Project Kickoff'),
+  ('prove',           8,  28,  'Prove'),
+  ('diagnose',       29,  49,  'Diagnose'),
+  ('design_tfo',     50,  70,  'Design TFO'),
+  ('design_outside', 71,  87,  'Design (outside TFO)'),
+  ('review',         88,  90,  'Review & Wrap')
+ON CONFLICT (phase) DO NOTHING;
+
+-- Migrations for existing clients table
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS entity_type TEXT CHECK (entity_type IN ('corp', 'llc'));
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS q1_phase TEXT DEFAULT 'kickoff';
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS source_prospect_id UUID REFERENCES prospects(id) ON DELETE SET NULL;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarded_at TIMESTAMPTZ;
+
+-- Add q1_phase and entity_type to ALLOWED_COLUMNS via migration note (update server/routes/clients.ts separately)
+-- These columns are updatable via PATCH /api/clients/:id
+
+-- ============================================================
+-- Client Dashboard — Six Keys, Capital Optionality, Multiples, IPD
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS client_six_keys (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id  UUID NOT NULL REFERENCES users(id),
+  clarity     INT CHECK (clarity >= 0 AND clarity <= 100),
+  alignment   INT CHECK (alignment >= 0 AND alignment <= 100),
+  structure   INT CHECK (structure >= 0 AND structure <= 100),
+  stewardship INT CHECK (stewardship >= 0 AND stewardship <= 100),
+  velocity    INT CHECK (velocity >= 0 AND velocity <= 100),
+  legacy      INT CHECK (legacy >= 0 AND legacy <= 100),
+  notes       TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_six_keys ON client_six_keys(client_id);
+
+CREATE TABLE IF NOT EXISTS client_capital_optionality (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id            UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id           UUID NOT NULL REFERENCES users(id),
+  minority_recap_pct   INT DEFAULT 0 CHECK (minority_recap_pct >= 0 AND minority_recap_pct <= 100),
+  minority_recap_label TEXT DEFAULT 'Explore',
+  strategic_acq_pct    INT DEFAULT 0 CHECK (strategic_acq_pct >= 0 AND strategic_acq_pct <= 100),
+  strategic_acq_label  TEXT DEFAULT 'Explore',
+  esop_pct             INT DEFAULT 0 CHECK (esop_pct >= 0 AND esop_pct <= 100),
+  esop_label           TEXT DEFAULT 'Explore',
+  full_exit_pct        INT DEFAULT 0 CHECK (full_exit_pct >= 0 AND full_exit_pct <= 100),
+  full_exit_label      TEXT DEFAULT 'Explore',
+  notes                TEXT,
+  completed_at         TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_capital_optionality ON client_capital_optionality(client_id);
+
+CREATE TABLE IF NOT EXISTS client_multiples (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id        UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id       UUID NOT NULL REFERENCES users(id),
+  initial_multiple NUMERIC(10,2),
+  current_multiple NUMERIC(10,2),
+  best_in_class    NUMERIC(10,2),
+  goal_multiple    NUMERIC(10,2),
+  notes            TEXT,
+  updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_multiples ON client_multiples(client_id);
+
+CREATE TABLE IF NOT EXISTS client_ipd_metrics (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id                 UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  persuasiveness_of_problem NUMERIC(4,2),
+  confidence_in_solution    NUMERIC(4,2),
+  combined_index            NUMERIC(4,2),
+  probability_label         TEXT,
+  problem_axes              JSONB,
+  solution_axes             JSONB,
+  generated_from_data_room  BOOLEAN DEFAULT FALSE,
+  last_generated_at         TIMESTAMPTZ,
+  created_at                TIMESTAMPTZ DEFAULT NOW(),
+  updated_at                TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_ipd_metrics ON client_ipd_metrics(client_id);

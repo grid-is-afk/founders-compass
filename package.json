@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "tsx server/seed.ts"
+    "seed": "tsx server/seed.ts",
+    "migrate": "tsx server/migrate.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

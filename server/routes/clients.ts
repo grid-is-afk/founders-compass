@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcryptjs from "bcryptjs";
 import { query } from "../db.js";
+import { requireClientOwnership } from "../lib/clientAuth.js";
 
 const router = Router();
 
@@ -15,6 +16,10 @@ const ALLOWED_COLUMNS = new Set([
   "capital_readiness",
   "customer_capital",
   "performance_score",
+  "entity_type",
+  "q1_phase",
+  "source_prospect_id",
+  "onboarded_at",
 ]);
 
 /** Generate a readable 10-char password — no ambiguous chars (0/O, 1/l/I) */
@@ -63,6 +68,10 @@ router.post("/", async (req, res) => {
     capital_readiness,
     customer_capital,
     performance_score,
+    entity_type,
+    q1_phase,
+    onboarded_at,
+    source_prospect_id,
   } = req.body;
 
   if (!name) {
@@ -102,8 +111,9 @@ router.post("/", async (req, res) => {
     const clientResult = await query(
       `INSERT INTO clients
          (advisor_id, user_id, name, contact_name, contact_email, revenue, stage,
-          current_quarter, current_year, capital_readiness, customer_capital, performance_score)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          current_quarter, current_year, capital_readiness, customer_capital, performance_score,
+          entity_type, q1_phase, onboarded_at, source_prospect_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         req.user!.id,
@@ -118,6 +128,10 @@ router.post("/", async (req, res) => {
         capital_readiness ?? 0,
         customer_capital ?? 0,
         performance_score ?? 0,
+        entity_type ?? null,
+        q1_phase ?? "kickoff",
+        onboarded_at ?? new Date().toISOString(),
+        source_prospect_id ?? null,
       ]
     );
 
@@ -194,6 +208,17 @@ router.patch("/:id", async (req, res) => {
   }
 
   try {
+    // FIX-2B: If source_prospect_id is being set, verify the prospect belongs to this advisor.
+    if ("source_prospect_id" in fields && fields.source_prospect_id != null) {
+      const prospectCheck = await query(
+        "SELECT id FROM prospects WHERE id = $1 AND advisor_id = $2",
+        [fields.source_prospect_id, req.user!.id]
+      );
+      if (prospectCheck.rows.length === 0) {
+        return res.status(403).json({ error: "Prospect not found or access denied" });
+      }
+    }
+
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
 

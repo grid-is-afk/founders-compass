@@ -9,12 +9,11 @@ import {
   exposureLevel,
   type CategoryId,
 } from "@/lib/exposureIndexQuestions";
-import type { ExposureIndexSummary } from "@/hooks/useProspectExposureIndex";
-import { ExposureIndexModal } from "./ExposureIndexModal";
-import type { Prospect } from "@/lib/types/journey";
+import type { ClientExposureIndexRecord } from "@/hooks/useClientExposureIndex";
+import { ClientExposureIndexModal } from "./ClientExposureIndexModal";
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Helpers (identical to prospect version)
 // ---------------------------------------------------------------------------
 
 function exposureDotClass(score: number): string {
@@ -50,39 +49,41 @@ function totalExposureScore(scores: Record<string, number>): number {
 // Props
 // ---------------------------------------------------------------------------
 
-interface ExposureIndexStripProps {
-  prospect: Prospect;
-  summary: ExposureIndexSummary | null | undefined;
+interface ClientExposureIndexStripProps {
+  clientId: string;
+  clientName: string;
+  record: ClientExposureIndexRecord | null | undefined;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProps) {
+export function ClientExposureIndexStrip({
+  clientId,
+  clientName,
+  record,
+}: ClientExposureIndexStripProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
-  if (!summary) {
+  if (!record) {
     return (
       <>
         <Button
           variant="outline"
           size="sm"
           className="w-full text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground hover:border-border gap-1.5"
-          onClick={(e) => {
-            e.stopPropagation();
-            setModalOpen(true);
-          }}
+          onClick={() => setModalOpen(true)}
         >
           <Activity className="w-3.5 h-3.5" />
           Run Exposure Index
         </Button>
         {modalOpen && (
-          <ExposureIndexModal
+          <ClientExposureIndexModal
             open={modalOpen}
             onClose={() => setModalOpen(false)}
-            prospectId={prospect.id}
-            prospectName={prospect.name}
+            clientId={clientId}
+            clientName={clientName}
             existingRecord={null}
           />
         )}
@@ -90,8 +91,9 @@ export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProp
     );
   }
 
-  if (!summary.category_scores) return null;
-  const scores = summary.category_scores as Record<CategoryId, number>;
+  if (!record.category_scores) return null;
+
+  const scores = record.category_scores as Record<CategoryId, number>;
   const total = totalExposureScore(scores);
   const max = EXPOSURE_CATEGORIES.length * 9;
   const overall = overallExposureLevel(scores);
@@ -103,7 +105,6 @@ export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProp
           <button
             type="button"
             className="w-full rounded-md border border-border/60 bg-muted/20 px-3 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors"
-            onClick={(e) => e.stopPropagation()}
           >
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               Founder Exposure Index™
@@ -116,12 +117,7 @@ export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProp
             </div>
           </button>
         </PopoverTrigger>
-        <PopoverContent
-          className="w-64 p-3 space-y-2"
-          align="start"
-          side="right"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <PopoverContent className="w-64 p-3 space-y-2" align="start" side="bottom">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               Founder Exposure Index™
@@ -135,9 +131,7 @@ export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProp
               const score = scores[cat.id as CategoryId] ?? 0;
               return (
                 <div key={cat.id} className="flex items-center gap-1.5">
-                  <span
-                    className={cn("w-2 h-2 rounded-full flex-shrink-0", exposureDotClass(score))}
-                  />
+                  <span className={cn("w-2 h-2 rounded-full flex-shrink-0", exposureDotClass(score))} />
                   <span className="text-[10px] text-muted-foreground truncate">
                     {CATEGORY_SHORT_LABELS[cat.id as CategoryId]}
                   </span>
@@ -159,12 +153,12 @@ export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProp
       </Popover>
 
       {modalOpen && (
-        <ExposureIndexModal
+        <ClientExposureIndexModal
           open={modalOpen}
           onClose={() => setModalOpen(false)}
-          prospectId={prospect.id}
-          prospectName={prospect.name}
-          existingRecord={summary}
+          clientId={clientId}
+          clientName={clientName}
+          existingRecord={record}
         />
       )}
     </>

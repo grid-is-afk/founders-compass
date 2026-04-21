@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { SixCsModal, SIX_CS, MAX_SIX_CS_SCORE } from "./SixCsModal";
 import type { SixCsSummary } from "@/hooks/useProspectSixCs";
@@ -56,7 +57,6 @@ export function SixCsStrip({ prospect, record }: SixCsStripProps) {
           <BarChart3 className="w-3.5 h-3.5" />
           Run Six C's
         </Button>
-
         {modalOpen && (
           <SixCsModal
             open={modalOpen}
@@ -75,52 +75,61 @@ export function SixCsStrip({ prospect, record }: SixCsStripProps) {
 
   return (
     <>
-      <div
-        className="rounded-md border border-border/60 bg-muted/20 px-3 py-2 space-y-2"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            Six C's
-          </span>
-          <span className={cn("text-[10px] font-semibold", rating.color)}>
-            {record.total_score}/{MAX_SIX_CS_SCORE} · {rating.label}
-          </span>
-        </div>
-
-        {/* Score grid — 3 columns, 2 rows */}
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
-          {SIX_CS.map((c) => {
-            const score = scores[c.id] ?? 0;
-            return (
-              <div key={c.id} className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "w-2 h-2 rounded-full flex-shrink-0",
-                    scoreDotClass(score)
-                  )}
-                />
-                <span className="text-[10px] text-muted-foreground truncate">
-                  {c.label}
-                </span>
-                <span className="text-[10px] font-semibold tabular-nums text-foreground ml-auto">
-                  {score}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Retake link */}
-        <button
-          type="button"
-          className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          onClick={() => setModalOpen(true)}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="w-full rounded-md border border-border/60 bg-muted/20 px-3 py-2 flex items-center justify-between hover:bg-muted/30 transition-colors"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Six C's
+            </span>
+            <div className="flex items-center gap-1.5">
+              <span className={cn("text-[10px] font-semibold", rating.color)}>
+                {record.total_score}/{MAX_SIX_CS_SCORE} · {rating.label}
+              </span>
+              <ChevronRight className="w-3 h-3 text-muted-foreground/50" />
+            </div>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-64 p-3 space-y-2"
+          align="start"
+          side="right"
+          onClick={(e) => e.stopPropagation()}
         >
-          Retake Assessment
-        </button>
-      </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Six C's
+            </span>
+            <span className={cn("text-[10px] font-semibold", rating.color)}>
+              {record.total_score}/{MAX_SIX_CS_SCORE} · {rating.label}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+            {SIX_CS.map((c) => {
+              const score = scores[c.id] ?? 0;
+              return (
+                <div key={c.id} className="flex items-center gap-1.5">
+                  <span className={cn("w-2 h-2 rounded-full flex-shrink-0", scoreDotClass(score))} />
+                  <span className="text-[10px] text-muted-foreground truncate">{c.label}</span>
+                  <span className="text-[10px] font-semibold tabular-nums text-foreground ml-auto">
+                    {score}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            className="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            onClick={() => setModalOpen(true)}
+          >
+            Retake Assessment
+          </button>
+        </PopoverContent>
+      </Popover>
 
       {modalOpen && (
         <SixCsModal

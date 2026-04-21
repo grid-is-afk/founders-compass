@@ -41,6 +41,8 @@ import { useClientTasks } from "@/hooks/useTasks";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
 import ShareInvestorPortal from "@/components/ShareInvestorPortal";
 import { useClientContext } from "@/hooks/useClientContext";
+import { SixKeysScoreGrid } from "@/components/clients/dashboard/SixKeysScoreGrid";
+import { CapitalOptionalityPanel } from "@/components/clients/dashboard/CapitalOptionalityPanel";
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -273,8 +275,9 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const AdvisorDataRoom = () => {
-  const { selectedClient } = useClientContext();
+export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: string; name: string } } = {}) => {
+  const { selectedClient: ctxClient } = useClientContext();
+  const selectedClient = clientOverride ?? ctxClient;
   const clientId = selectedClient?.id ?? "";
 
   // Live API data — poll every 30s so advisors see client uploads promptly
@@ -555,6 +558,14 @@ export const AdvisorDataRoom = () => {
         <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
           <div className={cn("h-full rounded-full transition-all", storageColor)} style={{ width: `${usedPct}%` }} />
         </div>
+      </div>
+
+      {/* Six Keys of Capital — shown at top of Data Room */}
+      <div className="space-y-2">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Six Keys of Capital
+        </p>
+        <SixKeysScoreGrid clientId={clientId} />
       </div>
 
       {/* Stats bar */}
@@ -1189,9 +1200,25 @@ This draft requires sign-off from the client before publication. Please confirm 
         )}
       </div>
 
-      {/* Published reports */}
+      {/* Six Keys + Capital Optionality side-by-side in Published Reports section */}
       <div>
         <h2 className="text-base font-display font-semibold text-foreground mb-3">Published Reports</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="bg-card rounded-lg border border-border p-4 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Six Keys of Capital
+            </p>
+            <SixKeysScoreGrid clientId={selectedClient?.id ?? ""} />
+          </div>
+          <div className="bg-card rounded-lg border border-border p-4">
+            <CapitalOptionalityPanel clientId={selectedClient?.id ?? ""} />
+          </div>
+        </div>
+      </div>
+
+      {/* Published reports table */}
+      <div>
+        <h2 className="text-base font-display font-semibold text-foreground mb-3">Published Documents</h2>
         {publishedReports.length === 0 ? (
           <div className="bg-card rounded-lg border border-border p-8 text-center">
             <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
