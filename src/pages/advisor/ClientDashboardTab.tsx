@@ -6,6 +6,7 @@ import { ClientRoadmapWidget } from "@/components/clients/dashboard/ClientRoadma
 import { QuarterbackActionsPanel } from "@/components/clients/dashboard/QuarterbackActionsPanel";
 import { SixKeysScoreGrid } from "@/components/clients/dashboard/SixKeysScoreGrid";
 import { CapitalOptionalityPanel } from "@/components/clients/dashboard/CapitalOptionalityPanel";
+import { AssessmentHistoryWidget } from "@/components/clients/AssessmentHistoryWidget";
 
 // ---------------------------------------------------------------------------
 // Types (match ClientWorkspace outlet context)
@@ -71,6 +72,8 @@ export default function ClientDashboardTab() {
       ================================================================ */}
       <div className="space-y-6">
         <QuarterbackActionsPanel clientId={client.id} clientName={client.name} />
+
+        <AssessmentHistoryWidget clientId={client.id} />
 
         <div>
           <div className="relative flex items-center pt-1 pb-3">

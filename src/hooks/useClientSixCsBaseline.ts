@@ -7,7 +7,8 @@ import { api } from "@/lib/api";
 
 export interface SixCsBaselineSummary {
   id: string;
-  prospect_id: string;
+  prospect_id?: string;  // set when baseline came from prospect pipeline
+  client_id?: string;    // set when baseline was run directly on the client
   scores: Record<string, number>;
   total_score: number;
   completed_at: string;

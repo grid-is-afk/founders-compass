@@ -11,6 +11,7 @@ const ALLOWED_COLUMNS = new Set([
   "due_date",
   "phase",
   "notes",
+  "document_id",
 ]);
 
 // Helper: verify client belongs to the requesting user (advisor or client-role)

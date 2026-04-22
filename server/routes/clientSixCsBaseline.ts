@@ -112,8 +112,34 @@ router.get("/:clientId/six-cs-baseline", async (req, res) => {
       source_prospect_id: string | null;
     };
 
+    // Check for a client-level Six C's first (for clients who skipped the prospect phase)
+    const clientSixCsResult = await query(
+      `SELECT id, client_id, scores, total_score, completed_at
+       FROM client_six_cs
+       WHERE client_id = $1
+       ORDER BY completed_at DESC
+       LIMIT 1`,
+      [clientId]
+    );
+
+    if (clientSixCsResult.rows.length > 0) {
+      const row = clientSixCsResult.rows[0];
+      const scores = row.scores as Record<string, number>;
+      return res.json({
+        six_cs: {
+          id: row.id,
+          client_id: row.client_id,
+          scores,
+          total_score: row.total_score,
+          completed_at: row.completed_at,
+        },
+        document_checklist: generateDocumentChecklist(scores),
+        has_baseline: true,
+      });
+    }
+
     if (!source_prospect_id) {
-      // No linked prospect — return static fallback
+      // No linked prospect and no client-level assessment — return static fallback
       return res.json({
         six_cs: null,
         document_checklist: STATIC_FALLBACK_DOCS,

@@ -46,12 +46,12 @@ const PHASE_ORDER: Q1PhaseId[] = [
 
 function phaseStatus(
   phaseId: Q1PhaseId,
-  activePhase: Q1PhaseId
+  reachedPhase: Q1PhaseId
 ): "complete" | "in_progress" | "not_started" {
   const phaseIdx = PHASE_ORDER.indexOf(phaseId);
-  const activeIdx = PHASE_ORDER.indexOf(activePhase);
-  if (phaseIdx < activeIdx) return "complete";
-  if (phaseIdx === activeIdx) return "in_progress";
+  const reachedIdx = PHASE_ORDER.indexOf(reachedPhase);
+  if (phaseIdx < reachedIdx) return "complete";
+  if (phaseIdx === reachedIdx) return "in_progress";
   return "not_started";
 }
 
@@ -66,7 +66,10 @@ function statusDotClass(status: "complete" | "in_progress" | "not_started"): str
 // ---------------------------------------------------------------------------
 
 interface PhaseTrackerProps {
+  /** The phase currently being viewed (controls which step is highlighted). */
   activePhase: Q1PhaseId;
+  /** The highest phase the client has actually reached (controls complete/locked visual states). */
+  reachedPhase: Q1PhaseId;
   onPhaseClick: (phase: Q1PhaseId) => void;
 }
 
@@ -74,19 +77,19 @@ interface PhaseTrackerProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function PhaseTracker({ activePhase, onPhaseClick }: PhaseTrackerProps) {
-  const activePhaseIdx = PHASE_ORDER.indexOf(activePhase);
+export function PhaseTracker({ activePhase, reachedPhase, onPhaseClick }: PhaseTrackerProps) {
+  const reachedPhaseIdx = PHASE_ORDER.indexOf(reachedPhase);
 
   return (
     <div className="w-full overflow-x-auto">
       <div className="flex items-center min-w-max gap-0">
         {PHASES.map((phase, idx) => {
-          const status = phaseStatus(phase.id, activePhase);
+          const status = phaseStatus(phase.id, reachedPhase);
           const isActive = phase.id === activePhase;
           const isLast = idx === PHASES.length - 1;
-          // FIX-11: Only allow navigation to completed phases or the current phase.
-          // Future phases are locked until they are reached in sequence.
-          const isFuture = idx > activePhaseIdx;
+          // Only allow navigation to phases the client has actually reached.
+          // Future phases are locked until reached in sequence.
+          const isFuture = idx > reachedPhaseIdx;
 
           return (
             <div key={phase.id} className="flex items-center">
@@ -157,7 +160,7 @@ export function PhaseTracker({ activePhase, onPhaseClick }: PhaseTrackerProps) {
                 <div
                   className={cn(
                     "h-0.5 w-6 flex-shrink-0 mx-0.5 rounded-full",
-                    PHASE_ORDER.indexOf(phase.id) < PHASE_ORDER.indexOf(activePhase)
+                    PHASE_ORDER.indexOf(phase.id) < PHASE_ORDER.indexOf(reachedPhase)
                       ? "bg-emerald-400"
                       : "bg-border/60"
                   )}
