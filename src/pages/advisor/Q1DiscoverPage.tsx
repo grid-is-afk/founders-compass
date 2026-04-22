@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Pencil } from "lucide-react";
+import { Pencil, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
 import { PhaseTracker, type Q1PhaseId } from "@/components/clients/PhaseTracker";
 import { Q1TimelineChart } from "@/components/clients/Q1TimelineChart";
 import { useUpdateClient } from "@/hooks/useClients";
@@ -124,6 +124,8 @@ export default function Q1DiscoverPage() {
     }
   }
 
+  const [showGantt, setShowGantt] = useState(false);
+
   const days = daysRemaining(client.onboarded_at);
 
   // Format onboarded_at for <input type="date"> — expects YYYY-MM-DD
@@ -163,31 +165,45 @@ export default function Q1DiscoverPage() {
         {client.onboarded_at && (
           <>
             <span className="text-muted-foreground/40 text-sm">|</span>
-            <div
+            <button
+              type="button"
+              onClick={() => setShowGantt((v) => !v)}
               className={cn(
-                "flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                "flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold transition-opacity hover:opacity-80",
                 countdownChipClass(days)
               )}
+              title={showGantt ? "Hide timeline" : "Show timeline"}
             >
               {days === null
                 ? "No start date"
                 : days <= 0
                 ? "Q1 Complete"
                 : `${days}d remaining`}
-            </div>
+              {showGantt ? (
+                <ChevronDown className="w-3 h-3 opacity-70" />
+              ) : (
+                <ChevronRightIcon className="w-3 h-3 opacity-70" />
+              )}
+            </button>
           </>
         )}
       </div>
 
       {/* Phase stepper */}
-      <PhaseTracker activePhase={activePhase} onPhaseClick={setActivePhase} />
-
-      {/* Gantt chart */}
-      <Q1TimelineChart
-        onboardedAt={client.onboarded_at}
+      <PhaseTracker
         activePhase={activePhase}
-        hasProspectHistory={!!client.source_prospect_id}
+        reachedPhase={(client.q1_phase as Q1PhaseId) ?? "kickoff"}
+        onPhaseClick={setActivePhase}
       />
+
+      {/* Gantt chart — toggled by clicking the days-remaining pill */}
+      {showGantt && (
+        <Q1TimelineChart
+          onboardedAt={client.onboarded_at}
+          activePhase={activePhase}
+          hasProspectHistory={!!client.source_prospect_id}
+        />
+      )}
 
       {/* Divider */}
       <div className="border-t border-border/60" />

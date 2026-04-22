@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef } from "react";
-import { FolderOpen, CheckSquare, Square, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FolderOpen, ChevronRight, Loader2, AlertCircle, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ClientSixCsStrip } from "./ClientSixCsStrip";
+import { ChecklistItem, type SubtaskItem } from "./ChecklistItem";
+import { SixCsModal } from "@/components/prospects/SixCsModal";
 import { useClientSixCsBaseline } from "@/hooks/useClientSixCsBaseline";
+import { useUpsertClientSixCs } from "@/hooks/useClientSixCs";
 import { useClientTasks, useCreateTask, useUpdateTask } from "@/hooks/useTasks";
+import { useClientDocuments } from "@/hooks/useDocuments";
 import { useUpdateClient } from "@/hooks/useClients";
-import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -26,23 +29,39 @@ interface ProvePanelProps {
 
 export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelProps) {
   const navigate = useNavigate();
+  const [sixCsOpen, setSixCsOpen] = useState(false);
+
   const { data: baseline, isLoading: baselineLoading } = useClientSixCsBaseline(clientId);
   const { data: tasksRaw = [], isLoading: tasksLoading } = useClientTasks(clientId);
+  const { data: documents = [] } = useClientDocuments(clientId);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const updateClient = useUpdateClient();
+  const upsertClientSixCs = useUpsertClientSixCs(clientId);
 
   // Prove-phase tasks (document checklist)
   const proveTasks = useMemo(() => {
-    return (tasksRaw as Array<{ id: string; title: string; phase: string; status: string }>).filter(
-      (t) => t.phase === "prove"
-    );
+    return (
+      tasksRaw as Array<{
+        id: string;
+        title: string;
+        phase: string;
+        status: string;
+        subtasks: SubtaskItem[];
+        document_id: string | null;
+      }>
+    ).filter((t) => t.phase === "prove");
   }, [tasksRaw]);
 
   const taskMap = useMemo(() => {
-    const map: Record<string, { id: string; done: boolean }> = {};
+    const map: Record<string, { id: string; done: boolean; subtasks: SubtaskItem[]; document_id: string | null }> = {};
     for (const t of proveTasks) {
-      map[t.title] = { id: t.id, done: t.status === "done" };
+      map[t.title] = {
+        id: t.id,
+        done: t.status === "done",
+        subtasks: t.subtasks ?? [],
+        document_id: t.document_id ?? null,
+      };
     }
     return map;
   }, [proveTasks]);
@@ -86,6 +105,36 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
     }
   };
 
+  const handleSubtasksChange = async (label: string, subtasks: SubtaskItem[]) => {
+    const task = taskMap[label];
+    if (!task) return;
+    try {
+      await updateTask.mutateAsync({ id: task.id, clientId, subtasks });
+    } catch {
+      toast.error("Failed to update subtasks");
+    }
+  };
+
+  const handleLinkDocument = async (label: string, documentId: string) => {
+    const task = taskMap[label];
+    if (!task) return;
+    try {
+      await updateTask.mutateAsync({ id: task.id, clientId, document_id: documentId, status: "done" });
+    } catch {
+      toast.error("Failed to link document");
+    }
+  };
+
+  const handleUnlinkDocument = async (label: string) => {
+    const task = taskMap[label];
+    if (!task) return;
+    try {
+      await updateTask.mutateAsync({ id: task.id, clientId, document_id: null });
+    } catch {
+      toast.error("Failed to unlink document");
+    }
+  };
+
   const handleMarkComplete = async () => {
     if (!allDone || !nextPhase) return;
     try {
@@ -99,6 +148,15 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
 
   const isLoading = baselineLoading || tasksLoading;
 
+  // Build a lookup map for linked document names
+  const documentNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const doc of documents) {
+      map[doc.id] = doc.name;
+    }
+    return map;
+  }, [documents]);
+
   return (
     <div className="space-y-6">
       <div>
@@ -108,10 +166,10 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
         </p>
       </div>
 
-      {/* Data Room link */}
+      {/* Data Room link — navigates to client-scoped tab so the tab bar stays visible */}
       <button
         type="button"
-        onClick={() => navigate("/advisor/data-room")}
+        onClick={() => navigate(`/advisor/clients/${clientId}/data-room`)}
         className="w-full rounded-md border border-primary/30 bg-primary/5 px-4 py-3 flex items-center justify-between hover:bg-primary/10 transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -126,7 +184,23 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Six C's Baseline
         </p>
-        <ClientSixCsStrip baseline={baseline} isLoading={baselineLoading} />
+        <ClientSixCsStrip
+          baseline={baseline}
+          isLoading={baselineLoading}
+          onRetake={() => setSixCsOpen(true)}
+        />
+
+        {/* Run Six C's assessment for clients who skipped the prospect phase */}
+        {!baseline?.has_baseline && !baselineLoading && (
+          <button
+            type="button"
+            onClick={() => setSixCsOpen(true)}
+            className="w-full flex items-center gap-2 rounded-md border border-dashed border-accent/40 bg-accent/5 px-3 py-2.5 text-left hover:bg-accent/10 transition-colors"
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+            <span className="text-xs font-medium text-accent">Run Six C's Assessment</span>
+          </button>
+        )}
       </div>
 
       {/* Document Checklist */}
@@ -135,7 +209,11 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
           Document Checklist
         </p>
 
-        {!baseline?.has_baseline && !baselineLoading && (
+        {baseline?.has_baseline && !baselineLoading ? (
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            This checklist is generated directly from the Six C's assessment. Each document targets a dimension where the founder scored weak or adequate — so wherever there's a gap, this is the proof needed to close it.
+          </p>
+        ) : !baselineLoading && (
           <div className="rounded-md border border-dashed border-amber-400/40 bg-amber-50/10 px-3 py-2 flex items-start gap-2">
             <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className="text-[11px] text-amber-700">
@@ -152,36 +230,23 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
           <div className="rounded-lg border border-border bg-card divide-y divide-border/60">
             {docItems.map((doc) => {
               const task = taskMap[doc.label];
-              const isDone = task?.done ?? false;
-
+              const linkedDocId = task?.document_id ?? null;
               return (
-                <button
+                <ChecklistItem
                   key={`${doc.category}-${doc.label}`}
-                  type="button"
-                  disabled={updateTask.isPending}
-                  onClick={() => handleToggle(doc.label)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20",
-                    updateTask.isPending && "opacity-60 cursor-not-allowed"
-                  )}
-                >
-                  {isDone ? (
-                    <CheckSquare className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  ) : (
-                    <Square className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className={cn(
-                        "text-sm truncate",
-                        isDone ? "line-through text-muted-foreground" : "text-foreground"
-                      )}
-                    >
-                      {doc.label}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60">{doc.category}</p>
-                  </div>
-                </button>
+                  label={doc.label}
+                  category={doc.category}
+                  isDone={task?.done ?? false}
+                  subtasks={task?.subtasks ?? []}
+                  isPending={updateTask.isPending}
+                  onToggle={() => handleToggle(doc.label)}
+                  onSubtasksChange={(subtasks) => handleSubtasksChange(doc.label, subtasks)}
+                  documents={documents.map((d) => ({ id: d.id, name: d.name, category: d.category ?? null }))}
+                  linkedDocumentId={linkedDocId}
+                  linkedDocumentName={linkedDocId ? documentNameMap[linkedDocId] ?? null : null}
+                  onLinkDocument={(docId) => handleLinkDocument(doc.label, docId)}
+                  onUnlinkDocument={() => handleUnlinkDocument(doc.label)}
+                />
               );
             })}
           </div>
@@ -214,6 +279,17 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
           </Button>
         </div>
       )}
+
+      {/* Six C's Modal — client mode (run first time or retake) */}
+      <SixCsModal
+        open={sixCsOpen}
+        onClose={() => setSixCsOpen(false)}
+        prospectName="Client Assessment"
+        existingRecord={baseline?.six_cs as never ?? null}
+        onSave={async (payload) => {
+          await upsertClientSixCs.mutateAsync(payload);
+        }}
+      />
     </div>
   );
 }

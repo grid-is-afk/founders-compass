@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { BarChart3 } from "lucide-react";
+
 import {
   Dialog,
   DialogContent,
@@ -84,9 +85,12 @@ export const MAX_SIX_CS_SCORE = TOTAL_SIX_CS * 3; // 18
 interface SixCsModalProps {
   open: boolean;
   onClose: () => void;
-  prospectId: string;
+  /** Required when saving to a prospect. Omit when using onSave override. */
+  prospectId?: string;
   prospectName: string;
   existingRecord?: SixCsRecord | null;
+  /** When provided, called instead of the prospect mutation. Use for client-mode saves. */
+  onSave?: (payload: { scores: Record<string, number>; total_score: number }) => Promise<void>;
 }
 
 export function SixCsModal({
@@ -95,18 +99,22 @@ export function SixCsModal({
   prospectId,
   prospectName,
   existingRecord,
+  onSave,
 }: SixCsModalProps) {
   const [scores, setScores] = useState<Record<string, number>>(() => {
     if (existingRecord?.scores) return { ...existingRecord.scores };
     return {};
   });
+  const [externalSaving, setExternalSaving] = useState(false);
 
-  const upsertMutation = useUpsertSixCs(prospectId);
+  const upsertMutation = useUpsertSixCs(prospectId ?? "");
 
   const answeredCount = Object.keys(scores).length;
   const allAnswered = answeredCount === TOTAL_SIX_CS;
   const progressPct = Math.round((answeredCount / TOTAL_SIX_CS) * 100);
   const totalScore = Object.values(scores).reduce((s, v) => s + v, 0);
+
+  const isPending = onSave ? externalSaving : upsertMutation.isPending;
 
   const handleScore = useCallback((cId: string, score: number) => {
     setScores((prev) => ({ ...prev, [cId]: score }));
@@ -115,18 +123,25 @@ export function SixCsModal({
   const handleSubmit = async () => {
     if (!allAnswered) return;
     try {
-      await upsertMutation.mutateAsync({ scores, total_score: totalScore });
+      if (onSave) {
+        setExternalSaving(true);
+        await onSave({ scores, total_score: totalScore });
+        setExternalSaving(false);
+      } else {
+        await upsertMutation.mutateAsync({ scores, total_score: totalScore });
+      }
       toast.success("Six C's assessment saved", {
         description: `Assessment saved for ${prospectName}. Total: ${totalScore}/${MAX_SIX_CS_SCORE}`,
       });
       onClose();
     } catch {
+      setExternalSaving(false);
       toast.error("Failed to save assessment. Please try again.");
     }
   };
 
   const handleOpenChange = (v: boolean) => {
-    if (!v && !upsertMutation.isPending) onClose();
+    if (!v && !isPending) onClose();
   };
 
   return (
@@ -231,15 +246,15 @@ export function SixCsModal({
             <Button
               variant="outline"
               onClick={onClose}
-              disabled={upsertMutation.isPending}
+              disabled={isPending}
             >
               Cancel
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={!allAnswered || upsertMutation.isPending}
+              disabled={!allAnswered || isPending}
             >
-              {upsertMutation.isPending
+              {isPending
                 ? "Saving..."
                 : existingRecord
                 ? "Save Retake"

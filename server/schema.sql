@@ -515,3 +515,26 @@ CREATE TABLE IF NOT EXISTS client_ipd_metrics (
   updated_at                TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_client_ipd_metrics ON client_ipd_metrics(client_id);
+
+-- ============================================================
+-- Client-level Six C's (for clients who skipped prospect phase)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS client_six_cs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  scores       JSONB NOT NULL DEFAULT '{}',
+  total_score  INT,
+  notes        TEXT,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_six_cs ON client_six_cs(client_id);
+
+-- ============================================================
+-- Document linking on tasks (file mapped to checklist item)
+-- ============================================================
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES documents(id) ON DELETE SET NULL;

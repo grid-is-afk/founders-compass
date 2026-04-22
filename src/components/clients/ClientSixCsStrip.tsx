@@ -1,4 +1,4 @@
-import { BarChart3, ChevronRight, AlertCircle } from "lucide-react";
+import { BarChart3, ChevronRight, AlertCircle, RefreshCw } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { SIX_CS, MAX_SIX_CS_SCORE } from "@/components/prospects/SixCsModal";
@@ -30,13 +30,14 @@ function overallRating(total: number): { label: string; color: string } {
 interface ClientSixCsStripProps {
   baseline: ClientSixCsBaselineResult | null | undefined;
   isLoading: boolean;
+  onRetake?: () => void;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ClientSixCsStrip({ baseline, isLoading }: ClientSixCsStripProps) {
+export function ClientSixCsStrip({ baseline, isLoading, onRetake }: ClientSixCsStripProps) {
   if (isLoading) {
     return <div className="h-9 rounded-md bg-muted/30 animate-pulse" />;
   }
@@ -54,6 +55,7 @@ export function ClientSixCsStrip({ baseline, isLoading }: ClientSixCsStripProps)
 
   const { scores, total_score } = baseline.six_cs;
   const rating = overallRating(total_score);
+  const fromProspect = !!baseline.six_cs.prospect_id;
 
   return (
     <Popover>
@@ -67,7 +69,9 @@ export function ClientSixCsStrip({ baseline, isLoading }: ClientSixCsStripProps)
             <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
               Six C's Baseline
             </span>
-            <span className="text-[10px] text-muted-foreground/60 ml-1">(read-only)</span>
+            {fromProspect && (
+              <span className="text-[10px] text-muted-foreground/50 ml-0.5">(prospect)</span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <span className={cn("text-[10px] font-semibold", rating.color)}>
@@ -100,9 +104,21 @@ export function ClientSixCsStrip({ baseline, isLoading }: ClientSixCsStripProps)
             );
           })}
         </div>
-        <p className="text-[10px] text-muted-foreground italic">
-          Carried over from prospect assessment. Retake in the Prospect Pipeline to update.
-        </p>
+        {fromProspect && (
+          <p className="text-[10px] text-muted-foreground/60 italic">
+            Carried over from prospect assessment.
+          </p>
+        )}
+        {onRetake && (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 transition-colors"
+            onClick={onRetake}
+          >
+            <RefreshCw className="w-3 h-3" />
+            Retake Assessment
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   );

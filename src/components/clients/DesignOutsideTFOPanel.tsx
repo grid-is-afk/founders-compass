@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef } from "react";
-import { CheckSquare, Square, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ChecklistItem, type SubtaskItem } from "./ChecklistItem";
 import { useClientTasks, useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import { useUpdateClient } from "@/hooks/useClients";
-import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
 // Checklist definition
@@ -66,15 +66,15 @@ export function DesignOutsideTFOPanel({
   const updateClient = useUpdateClient();
 
   const designOutsideTasks = useMemo(() => {
-    return (tasksRaw as Array<{ id: string; title: string; phase: string; status: string }>).filter(
-      (t) => t.phase === "design_outside"
-    );
+    return (
+      tasksRaw as Array<{ id: string; title: string; phase: string; status: string; subtasks: SubtaskItem[] }>
+    ).filter((t) => t.phase === "design_outside");
   }, [tasksRaw]);
 
   const taskMap = useMemo(() => {
-    const map: Record<string, { id: string; done: boolean }> = {};
+    const map: Record<string, { id: string; done: boolean; subtasks: SubtaskItem[] }> = {};
     for (const t of designOutsideTasks) {
-      map[t.title] = { id: t.id, done: t.status === "done" };
+      map[t.title] = { id: t.id, done: t.status === "done", subtasks: t.subtasks ?? [] };
     }
     return map;
   }, [designOutsideTasks]);
@@ -110,13 +110,19 @@ export function DesignOutsideTFOPanel({
     const task = taskMap[title];
     if (!task) return;
     try {
-      await updateTask.mutateAsync({
-        id: task.id,
-        clientId,
-        status: task.done ? "todo" : "done",
-      });
+      await updateTask.mutateAsync({ id: task.id, clientId, status: task.done ? "todo" : "done" });
     } catch {
       toast.error("Failed to update checklist item");
+    }
+  };
+
+  const handleSubtasksChange = async (title: string, subtasks: SubtaskItem[]) => {
+    const task = taskMap[title];
+    if (!task) return;
+    try {
+      await updateTask.mutateAsync({ id: task.id, clientId, subtasks });
+    } catch {
+      toast.error("Failed to update subtasks");
     }
   };
 
@@ -149,27 +155,16 @@ export function DesignOutsideTFOPanel({
             {section.items.map((item) => {
               const title = taskTitle(section.title, item.label);
               const task = taskMap[title];
-              const isDone = task?.done ?? false;
               return (
-                <button
+                <ChecklistItem
                   key={item.key}
-                  type="button"
-                  disabled={updateTask.isPending}
-                  onClick={() => handleToggle(title)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/20",
-                    updateTask.isPending && "opacity-60 cursor-not-allowed"
-                  )}
-                >
-                  {isDone ? (
-                    <CheckSquare className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  ) : (
-                    <Square className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
-                  )}
-                  <span className={cn("text-sm flex-1", isDone ? "line-through text-muted-foreground" : "text-foreground")}>
-                    {item.label}
-                  </span>
-                </button>
+                  label={item.label}
+                  isDone={task?.done ?? false}
+                  subtasks={task?.subtasks ?? []}
+                  isPending={updateTask.isPending}
+                  onToggle={() => handleToggle(title)}
+                  onSubtasksChange={(subtasks) => handleSubtasksChange(title, subtasks)}
+                />
               );
             })}
           </div>

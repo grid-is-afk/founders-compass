@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ClientExposureIndexStrip } from "./ClientExposureIndexStrip";
 import { FounderMatrixStrip } from "./FounderMatrixStrip";
 import { FounderSnapshotStrip } from "./FounderSnapshotStrip";
+import { DiagnoseActionPlan } from "./DiagnoseActionPlan";
 import { useClientExposureIndex } from "@/hooks/useClientExposureIndex";
 import { useClientFounderMatrix } from "@/hooks/useClientFounderMatrix";
 import { useClientFounderSnapshot } from "@/hooks/useClientFounderSnapshot";
@@ -91,6 +92,14 @@ export function DiagnosePanel({
             record={snapshotRecord ?? null}
           />
         </div>
+      )}
+
+      {/* QB AI Action Plan — only when all 3 assessments are complete */}
+      {!isLoading && (
+        <DiagnoseActionPlan
+          clientId={clientId}
+          allAssessmentsComplete={allComplete}
+        />
       )}
 
       {/* Phase completion — hidden if this is the last phase (nextPhase === null) */}

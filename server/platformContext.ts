@@ -52,6 +52,70 @@ export async function buildPlatformContext(advisorId: string): Promise<string> {
     );
     const prospects = prospectsResult.rows;
 
+    // Fetch diagnostic results for all clients
+    const [
+      clientEiResult,
+      clientMatrixResult,
+      clientSnapshotResult,
+      clientSixCsResult,
+      diagnoseTasksResult,
+    ] = await Promise.all([
+      query(
+        `SELECT DISTINCT ON (client_id) client_id, category_scores, completed_at
+         FROM client_exposure_index
+         WHERE client_id = ANY($1::uuid[])
+         ORDER BY client_id, completed_at DESC`,
+        [clientIds]
+      ),
+      query(
+        `SELECT DISTINCT ON (client_id) client_id, entity_type, completed_at
+         FROM client_founder_matrix
+         WHERE client_id = ANY($1::uuid[])
+         ORDER BY client_id, completed_at DESC`,
+        [clientIds]
+      ),
+      query(
+        `SELECT DISTINCT ON (client_id) client_id, responses, completed_at
+         FROM client_founder_snapshot
+         WHERE client_id = ANY($1::uuid[])
+         ORDER BY client_id, completed_at DESC`,
+        [clientIds]
+      ),
+      query(
+        `SELECT DISTINCT ON (client_id) client_id, total_score, scores, completed_at
+         FROM client_six_cs
+         WHERE client_id = ANY($1::uuid[])
+         ORDER BY client_id, completed_at DESC`,
+        [clientIds]
+      ),
+      query(
+        `SELECT client_id,
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE status = 'done') AS done
+         FROM tasks
+         WHERE client_id = ANY($1::uuid[]) AND phase = 'diagnose'
+         GROUP BY client_id`,
+        [clientIds]
+      ),
+    ]);
+
+    // Build diagnostic maps
+    const clientEiMap = new Map(
+      clientEiResult.rows.map((r) => [String(r.client_id), r])
+    );
+    const clientMatrixMap = new Map(
+      clientMatrixResult.rows.map((r) => [String(r.client_id), r])
+    );
+    const clientSnapshotMap = new Map(
+      clientSnapshotResult.rows.map((r) => [String(r.client_id), r])
+    );
+    const clientSixCsMap = new Map(
+      clientSixCsResult.rows.map((r) => [String(r.client_id), r])
+    );
+    const diagnoseTasksMap = new Map(
+      diagnoseTasksResult.rows.map((r) => [String(r.client_id), r])
+    );
+
     // Fetch exposure index data for all prospects that have completed it
     const exposureResult = await query(
       `SELECT DISTINCT ON (pei.prospect_id)
@@ -96,6 +160,58 @@ export async function buildPlatformContext(advisorId: string): Promise<string> {
             : `${Math.floor(mins / 1440)}d ago`;
         ctx += `- Last Activity: ${display}\n`;
       }
+
+      // Append diagnostic results if any exist for this client
+      const eiRecord = clientEiMap.get(String(client.id));
+      const matrixRecord = clientMatrixMap.get(String(client.id));
+      const snapshotRecord = clientSnapshotMap.get(String(client.id));
+      const sixCsRecord = clientSixCsMap.get(String(client.id));
+      const diTasks = diagnoseTasksMap.get(String(client.id));
+
+      if (
+        eiRecord?.category_scores ||
+        matrixRecord ||
+        snapshotRecord ||
+        sixCsRecord
+      ) {
+        ctx += "  Diagnostics:\n";
+        if (sixCsRecord?.scores) {
+          ctx += `    Six C's: ${sixCsRecord.total_score}/18\n`;
+        }
+        if (eiRecord?.category_scores) {
+          const total = Object.values(
+            eiRecord.category_scores as Record<string, number>
+          ).reduce((a, b) => a + b, 0);
+          const level =
+            total >= 43
+              ? "Low Exposure"
+              : total >= 27
+              ? "Moderate Exposure"
+              : "High Exposure";
+          ctx += `    Exposure Index: ${total}/54 · ${level}\n`;
+        }
+        if (matrixRecord?.completed_at) {
+          ctx += `    Founder Matrix: ${
+            (matrixRecord.entity_type as string | undefined)?.toUpperCase() ??
+            "Unknown"
+          } — Complete\n`;
+        }
+        if (snapshotRecord?.responses) {
+          const dims = Object.values(
+            snapshotRecord.responses as Record<string, { signal: string }>
+          );
+          const urgent = dims.filter((d) => d.signal === "urgent").length;
+          const weakening = dims.filter(
+            (d) => d.signal === "weakening"
+          ).length;
+          const strong = dims.filter((d) => d.signal === "strong").length;
+          ctx += `    Founder Snapshot: ${dims.length}/5 — ${urgent} urgent, ${weakening} weakening, ${strong} strong\n`;
+        }
+        if (diTasks) {
+          ctx += `    Diagnose Action Items: ${diTasks.done}/${diTasks.total} complete\n`;
+        }
+      }
+
       ctx += "\n";
     }
 
