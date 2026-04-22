@@ -126,16 +126,6 @@ router.get("/:clientId/assessment-summary", async (req, res) => {
           )
         : Promise.resolve({ rows: [] }),
 
-      // Fallback Six C's from client_six_cs (used when client skipped prospect pipeline)
-      query(
-        `SELECT total_score, scores, completed_at
-         FROM client_six_cs
-         WHERE client_id = $1
-         ORDER BY completed_at DESC
-         LIMIT 1`,
-        [clientId]
-      ),
-
       sourceProspectId
         ? query(
             `SELECT category_scores, completed_at
@@ -146,6 +136,17 @@ router.get("/:clientId/assessment-summary", async (req, res) => {
             [sourceProspectId]
           )
         : Promise.resolve({ rows: [] }),
+
+      // Fallback Six C's from client_six_cs (used when client skipped prospect pipeline
+      // or took Six C's directly during the Prove step)
+      query(
+        `SELECT total_score, scores, completed_at
+         FROM client_six_cs
+         WHERE client_id = $1
+         ORDER BY completed_at DESC
+         LIMIT 1`,
+        [clientId]
+      ),
 
       // Q1 Discover assessments
       query(
@@ -246,11 +247,14 @@ router.get("/:clientId/assessment-summary", async (req, res) => {
       const r = prospectEiResult.rows[0];
       const catScores = (r.category_scores as Record<string, number>) ?? {};
       const total = Object.values(catScores).reduce((acc, v) => acc + v, 0);
-      prospectEi = {
-        total,
-        category_scores: catScores,
-        completed_at: r.completed_at as string,
-      };
+      // Only show if the record has actual scores — skip empty/partial submissions
+      if (Object.keys(catScores).length > 0) {
+        prospectEi = {
+          total,
+          category_scores: catScores,
+          completed_at: r.completed_at as string,
+        };
+      }
     }
 
     // ---------------------------------------------------------------------------
