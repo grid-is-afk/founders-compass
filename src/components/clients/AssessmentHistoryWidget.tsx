@@ -221,7 +221,7 @@ export function AssessmentHistoryWidget({
                 );
                 return (
                   <AssessmentRow
-                    label="Exposure Index"
+                    label="Risk Exposure Index"
                     valueNode={
                       <span className="flex items-center gap-1.5">
                         <span
@@ -241,7 +241,7 @@ export function AssessmentHistoryWidget({
                 );
               })()
             ) : (
-              <AssessmentRow label="Exposure Index" notRun />
+              <AssessmentRow label="Risk Exposure Index" notRun />
             )}
           </div>
 
@@ -259,7 +259,7 @@ export function AssessmentHistoryWidget({
                 );
                 return (
                   <AssessmentRow
-                    label="Exposure Index"
+                    label="Founder Exposure Index"
                     valueNode={
                       <span className="flex items-center gap-1.5">
                         <span
@@ -279,7 +279,7 @@ export function AssessmentHistoryWidget({
                 );
               })()
             ) : (
-              <AssessmentRow label="Exposure Index" notRun />
+              <AssessmentRow label="Founder Exposure Index" notRun />
             )}
 
             {/* Founder Matrix */}
