@@ -28,7 +28,7 @@ export function QuarterbackActionsPanel({ clientName }: QuarterbackActionsPanelP
     <div className="rounded-lg border border-border bg-sidebar p-4 space-y-4">
       <div className="flex items-center gap-2">
         <Sparkles className="w-4 h-4 text-amber-400" />
-        <span className="text-xs font-bold uppercase tracking-[0.12em] text-sidebar-foreground/80">
+        <span className="text-xs font-bold uppercase tracking-[0.12em] text-sidebar-foreground/80 leading-none">
           Quarterback AI — Priority Actions
         </span>
       </div>

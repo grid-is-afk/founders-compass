@@ -109,9 +109,12 @@ export function InvestmentProbabilitySection({ clientId }: InvestmentProbability
   if (!hasData) {
     return (
       <div className="space-y-3">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Investment Probability Dashboard
-        </span>
+        <div className="relative flex items-center pt-1 pb-3">
+          <div className="flex-1 border-t border-border" />
+          <span className="absolute left-0 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground bg-muted px-3 py-0.5 rounded-full">
+            Investment Probability Dashboard
+          </span>
+        </div>
 
         <div className="rounded-lg border border-dashed border-border/60 p-6 space-y-4">
           <div className="grid grid-cols-2 gap-6">
@@ -149,7 +152,7 @@ export function InvestmentProbabilitySection({ clientId }: InvestmentProbability
 
   return (
     <div className="space-y-3">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground/70">
         Investment Probability Dashboard
       </span>
 

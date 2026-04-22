@@ -2,9 +2,12 @@ import { useState } from "react";
 import { Sparkles, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { ExposureIndexStrip } from "./ExposureIndexStrip";
 import { SixCsStrip } from "./SixCsStrip";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
+import CopilotMessages from "@/components/copilot/CopilotMessages";
+import CopilotInput from "@/components/copilot/CopilotInput";
 import { buildExposureIndexPrompt, buildSixCsPrompt } from "@/lib/quarterbackPrompts";
 import type { ExposureIndexSummary } from "@/hooks/useProspectExposureIndex";
 import type { SixCsSummary } from "@/hooks/useProspectSixCs";
@@ -25,7 +28,8 @@ export function ProspectAssessmentBlock({
   sixCsRecord,
 }: ProspectAssessmentBlockProps) {
   const [choosing, setChoosing] = useState(false);
-  const { setIsOpen: setCopilotOpen, sendMessage, isStreaming } = useCopilotContext();
+  const [qbOpen, setQbOpen] = useState(false);
+  const { sendMessage, isStreaming } = useCopilotContext();
 
   const hasExposure = !!(exposureSummary?.category_scores);
   const hasSixCs = !!(sixCsRecord?.scores);
@@ -50,7 +54,7 @@ export function ProspectAssessmentBlock({
       );
     }
     if (!prompt) return;
-    setCopilotOpen(true);
+    setQbOpen(true);
     setChoosing(false);
     setTimeout(() => sendMessage(prompt), 80);
   };
@@ -138,6 +142,25 @@ export function ProspectAssessmentBlock({
           </div>
         </div>
       )}
+      <Dialog open={qbOpen} onOpenChange={setQbOpen}>
+        <DialogContent className="sm:max-w-lg p-0 flex flex-col h-[560px]">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-md gradient-gold flex items-center justify-center">
+                <Sparkles className="w-3 h-3 text-accent-foreground" />
+              </div>
+              <span className="font-display text-sm font-semibold">Quarterback</span>
+            </div>
+            <span className="text-xs text-muted-foreground">{prospect.name}</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <CopilotMessages />
+          </div>
+          <div className="flex-shrink-0 border-t border-border">
+            <CopilotInput />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

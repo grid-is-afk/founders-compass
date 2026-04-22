@@ -144,14 +144,15 @@ export function AssessmentPulseWidget({ clientId, clientName }: AssessmentPulseW
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="relative flex items-center pt-1 pb-3">
+          <div className="flex-1 border-t border-border" />
+          <span className="absolute left-0 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground bg-muted px-3 py-0.5 rounded-full">
             Assessment Pulse{clientName ? ` — ${clientName}` : ""}
           </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+            className="absolute right-0 h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground bg-muted"
             onClick={() => setEditOpen(true)}
           >
             <Pencil className="w-3 h-3" />
