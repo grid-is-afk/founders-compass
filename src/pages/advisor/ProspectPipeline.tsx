@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2 } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
@@ -38,6 +38,8 @@ import {
   type CategoryId,
 } from "@/lib/exposureIndexQuestions";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
+import CopilotMessages from "@/components/copilot/CopilotMessages";
+import CopilotInput from "@/components/copilot/CopilotInput";
 
 // ---------------------------------------------------------------------------
 // Animations
@@ -169,6 +171,14 @@ const NEXT_STATUS: Record<string, { status: string; label: string }> = {
   fit: { status: "onboarding", label: "Begin Onboarding" },
 };
 
+const PREV_STATUS: Record<string, { status: string; label: string }> = {
+  fit_assessment: { status: "intake", label: "Back to Intake" },
+  discovery_scheduled: { status: "fit_assessment", label: "Back to Fit Assessment" },
+  discovery_complete: { status: "discovery_scheduled", label: "Back to Discovery" },
+  fit: { status: "discovery_complete", label: "Back to Discovery" },
+  onboarding: { status: "fit", label: "Back to Fit" },
+};
+
 // ---------------------------------------------------------------------------
 // Prospect Detail Dialog
 // ---------------------------------------------------------------------------
@@ -177,6 +187,7 @@ interface DetailDialogProps {
   prospect: ProspectShape | null;
   onClose: () => void;
   onAdvance: (id: string, newStatus: string) => void;
+  onStepBack: (id: string, prevStatus: string) => void;
   onMarkNotFit: (id: string, source: string) => void;
   onOpenInvestmentDashboard: (prospectId: string) => void;
   isPending: boolean;
@@ -186,17 +197,20 @@ function ProspectDetailDialog({
   prospect,
   onClose,
   onAdvance,
+  onStepBack,
   onMarkNotFit,
   onOpenInvestmentDashboard,
   isPending,
 }: DetailDialogProps) {
   const [retakeOpen, setRetakeOpen] = useState(false);
+  const [isQBActive, setIsQBActive] = useState(false);
   const { data: fullRecord } = useProspectExposureIndex(prospect?.id ?? null);
-  const { setIsOpen: setCopilotOpen, sendMessage, isStreaming } = useCopilotContext();
+  const { sendMessage, isStreaming } = useCopilotContext();
 
   if (!prospect) return null;
 
   const next = NEXT_STATUS[prospect.status];
+  const prev = PREV_STATUS[prospect.status];
   const showNotFitButton = prospect.status === "fit_assessment";
   const isTerminal = ["not_fit", "onboarding", "nurture_call", "kept_in_loop", "flagged_follow_up"].includes(
     prospect.status
@@ -212,14 +226,16 @@ function ProspectDetailDialog({
       prospect.name,
       fullRecord.category_scores as Record<CategoryId, number>
     );
-    setCopilotOpen(true);
+    setIsQBActive(true);
     setTimeout(() => sendMessage(prompt), 80);
   };
 
   return (
     <>
-      <Dialog open={!!prospect} onOpenChange={(v) => !v && onClose()}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={!!prospect} onOpenChange={(v) => { if (!v) { onClose(); setIsQBActive(false); } }}>
+        <DialogContent className={isQBActive ? "sm:max-w-4xl" : "sm:max-w-md"}>
+          <div className={isQBActive ? "flex gap-6" : ""}>
+          <div className={isQBActive ? "w-[45%] flex-shrink-0 overflow-y-auto max-h-[70vh]" : ""}>
           <DialogHeader>
             <DialogTitle className="font-display">{prospect.name}</DialogTitle>
             <DialogDescription>
@@ -412,6 +428,17 @@ function ProspectDetailDialog({
                 <XCircle className="w-4 h-4" /> Not a Fit
               </Button>
             )}
+            {prev && !isTerminal && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onStepBack(prospect.id, prev.status)}
+                disabled={isPending}
+                className="gap-1.5 text-muted-foreground hover:text-foreground"
+              >
+                <ChevronLeft className="w-4 h-4" /> {prev.label}
+              </Button>
+            )}
             {next && !isTerminal && (
               <Button
                 onClick={() => onAdvance(prospect.id, next.status)}
@@ -427,6 +454,35 @@ function ProspectDetailDialog({
               </span>
             )}
           </DialogFooter>
+          </div>
+
+          {isQBActive && (
+            <div className="flex-1 flex flex-col border-l border-border pl-4 min-h-[400px]">
+              <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-md gradient-gold flex items-center justify-center">
+                    <Sparkles className="w-3 h-3 text-accent-foreground" />
+                  </div>
+                  <span className="font-display text-sm font-semibold">Quarterback</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground h-6"
+                  onClick={() => setIsQBActive(false)}
+                >
+                  Close
+                </Button>
+              </div>
+              <div className="flex-1 overflow-y-auto max-h-[50vh]">
+                <CopilotMessages />
+              </div>
+              <div className="flex-shrink-0 pt-2 border-t border-border">
+                <CopilotInput />
+              </div>
+            </div>
+          )}
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -716,10 +772,15 @@ const ProspectPipeline = () => {
     }
   };
 
-  const handleFlagFollowUp = async (id: string) => {
+  const handleStepBack = async (id: string, prevStatus: string) => {
     try {
-      await updateProspect.mutateAsync({ id, status: "flagged_follow_up" });
-      toast.success("Flagged for Follow-Up");
+      const updates: Record<string, unknown> = { id, status: prevStatus };
+      if (prevStatus !== "fit" && prevStatus !== "onboarding") updates.fit_decision = null;
+      await updateProspect.mutateAsync(updates);
+      toast.success("Prospect moved back", {
+        description: `Status changed to ${STATUS_LABEL[prevStatus] || prevStatus}.`,
+      });
+      setSelectedProspect(null);
     } catch {
       toast.error("Failed to update prospect");
     }
@@ -843,7 +904,7 @@ const ProspectPipeline = () => {
                       </div>
 
                       {/* Column body */}
-                      <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px]">
+                      <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[400px] overflow-y-auto">
                         {colProspects.length === 0 && (
                           <div className="flex items-center justify-center h-16">
                             <span className="text-xs text-muted-foreground/50">
@@ -946,7 +1007,7 @@ const ProspectPipeline = () => {
                         {colProspects.length}
                       </Badge>
                     </div>
-                    <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px]">
+                    <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[400px] overflow-y-auto">
                       {colProspects.length === 0 && (
                         <div className="flex items-center justify-center h-16">
                           <span className="text-xs text-muted-foreground/50">No prospects</span>
@@ -1012,9 +1073,9 @@ const ProspectPipeline = () => {
               Zone divider — Off-Pipeline
           ================================================================ */}
           {hasAny && (
-            <div className="relative flex items-center py-2">
-              <div className="flex-1 border-t border-border/40" />
-              <span className="ml-0 absolute left-0 text-[10px] uppercase tracking-[0.15em] text-muted-foreground/40 font-semibold bg-background pr-3">
+            <div className="relative flex items-center py-4">
+              <div className="flex-1 border-t border-border" />
+              <span className="absolute left-0 text-xs uppercase tracking-[0.15em] text-muted-foreground font-semibold bg-muted px-3 py-0.5 rounded-full">
                 Off-Pipeline
               </span>
             </div>
@@ -1053,7 +1114,7 @@ const ProspectPipeline = () => {
                     </Badge>
                   </div>
 
-                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px]">
+                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px] max-h-[320px] overflow-y-auto">
                     {colProspects.length === 0 && (
                       <div className="flex items-center justify-center h-12">
                         <span className="text-xs text-muted-foreground/40">Empty</span>
@@ -1086,16 +1147,10 @@ const ProspectPipeline = () => {
                               variant="outline"
                               size="sm"
                               className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                              onClick={() => handleFlagFollowUp(prospect.id)}
-                              disabled={
-                                updateProspect.isPending ||
-                                prospect.status === "flagged_follow_up"
-                              }
+                              onClick={() => toast.info("Follow-up tracking — coming soon")}
                             >
                               <Flag className="w-3 h-3" />
-                              {prospect.status === "flagged_follow_up"
-                                ? "Flagged"
-                                : "Flag for Follow Up"}
+                              Flag for Follow Up
                             </Button>
                           )}
                         </div>
@@ -1128,6 +1183,7 @@ const ProspectPipeline = () => {
         prospect={selectedProspect}
         onClose={() => setSelectedProspect(null)}
         onAdvance={handleAdvance}
+        onStepBack={handleStepBack}
         onMarkNotFit={handleMarkNotFit}
         onOpenInvestmentDashboard={handleOpenInvestmentDashboard}
         isPending={updateProspect.isPending}

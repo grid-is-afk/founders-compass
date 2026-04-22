@@ -39,23 +39,24 @@ export function CapitalOptionalityPanel({ clientId }: CapitalOptionalityPanelPro
   return (
     <>
       <div className="space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h3 className="text-base font-semibold text-foreground">Capital Optionality</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Most founders chase earnings. The Value Multiplier Framework™ amplifies the drivers of the multiple.
-            </p>
-          </div>
+        <div className="relative flex items-center pt-1 pb-3">
+          <div className="flex-1 border-t border-border" />
+          <span className="absolute left-0 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground bg-muted px-3 py-0.5 rounded-full">
+            Capital Optionality
+          </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground shrink-0"
+            className="absolute right-0 h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground bg-muted"
             onClick={() => setEditOpen(true)}
           >
             <Pencil className="w-3 h-3" />
             Edit
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground -mt-1 mb-2">
+          Most founders chase earnings. The Value Multiplier Framework™ amplifies the drivers of the multiple.
+        </p>
 
         {isLoading ? (
           <div className="space-y-2">
