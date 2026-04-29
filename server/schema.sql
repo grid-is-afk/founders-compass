@@ -538,3 +538,9 @@ CREATE INDEX IF NOT EXISTS idx_client_six_cs ON client_six_cs(client_id);
 -- ============================================================
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES documents(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- Skip reason on tasks (checklist item skipped with required note)
+-- ============================================================
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_reason TEXT;

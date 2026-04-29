@@ -12,6 +12,7 @@ const ALLOWED_COLUMNS = new Set([
   "phase",
   "notes",
   "document_id",
+  "skip_reason",
 ]);
 
 // Helper: verify client belongs to the requesting user (advisor or client-role)
@@ -175,6 +176,11 @@ router.patch("/:id", async (req, res) => {
   for (const k of Object.keys(rawFields)) {
     if (ALLOWED_COLUMNS.has(k)) fields[k] = rawFields[k];
   }
+
+  if (fields.status === "skipped" && !fields.skip_reason) {
+    return res.status(400).json({ error: "skip_reason is required when status is skipped" });
+  }
+
   const keys = Object.keys(fields);
 
   try {
