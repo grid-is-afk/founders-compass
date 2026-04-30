@@ -313,8 +313,9 @@ export default function AdvisorTasksPanel() {
             <p className="text-sm text-muted-foreground">No tasks match the current filters</p>
           </div>
         ) : (
+          <div className="max-h-[480px] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10">
               <tr className="border-b border-border bg-muted/50">
                 <th className="w-8 px-3 py-2" />
                 <th className="text-left px-2 py-2 font-medium text-muted-foreground text-xs">Task</th>
@@ -329,6 +330,7 @@ export default function AdvisorTasksPanel() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

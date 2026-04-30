@@ -721,8 +721,9 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
 
       {/* Document table */}
       <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="max-h-[480px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="border-b border-border bg-muted/40">
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Category</th>
@@ -806,6 +807,7 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Document preview dialog */}

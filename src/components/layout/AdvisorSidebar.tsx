@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Map,
+  Archive,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ const navGroups = [
     label: "Prospects",
     items: [
       { to: "/advisor/prospects", icon: UserPlus, label: "Prospects" },
+      { to: "/advisor/prospects?view=off-pipeline", icon: Archive, label: "Off-Pipeline" },
     ],
   },
   {
@@ -106,11 +108,18 @@ const AdvisorSidebar = () => {
             <div className="space-y-0.5">
               {group.items.map((item) => {
                 // Clients nav item should be active for both /clients-list and /clients/:id workspace
-                const isActive =
-                  item.to === "/advisor/clients-list"
-                    ? location.pathname === item.to ||
-                      location.pathname.startsWith("/advisor/clients/")
-                    : location.pathname === item.to;
+                const isActive = (() => {
+                  if (item.to === "/advisor/clients-list") {
+                    return location.pathname === item.to || location.pathname.startsWith("/advisor/clients/");
+                  }
+                  if (item.to === "/advisor/prospects?view=off-pipeline") {
+                    return location.pathname === "/advisor/prospects" && location.search === "?view=off-pipeline";
+                  }
+                  if (item.to === "/advisor/prospects") {
+                    return location.pathname === item.to && !location.search;
+                  }
+                  return location.pathname === item.to;
+                })();
                 const isDataRoom = item.to === "/advisor/data-room";
                 const showBadge = isDataRoom && unseenCount > 0;
                 return (
