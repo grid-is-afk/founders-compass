@@ -142,21 +142,23 @@ export function ProtectQ2Panel({
         </p>
       </div>
 
-      {/* Assessment strips — each handles its own loading state */}
+      {/* Assessment strips — records prefetched in Q2Page, no blanket load gate */}
       <div className="space-y-2">
         <ClientExposureIndexStrip
           clientId={clientId}
           clientName={clientName}
-          entityType={entityType}
+          record={exposureRecord ?? null}
         />
         <FounderSnapshotStrip
           clientId={clientId}
           clientName={clientName}
+          record={snapshotRecord ?? null}
         />
         <FounderMatrixStrip
           clientId={clientId}
           clientName={clientName}
           entityType={entityType}
+          record={matrixRecord ?? null}
         />
       </div>
 
