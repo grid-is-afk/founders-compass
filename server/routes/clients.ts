@@ -135,6 +135,21 @@ router.post("/", async (req, res) => {
       ]
     );
 
+    const newClientId = clientResult.rows[0].id;
+
+    // Promote prospect documents to the new client's data room
+    if (source_prospect_id) {
+      try {
+        await query(
+          `UPDATE documents SET client_id = $1, prospect_id = NULL WHERE prospect_id = $2`,
+          [newClientId, source_prospect_id]
+        );
+      } catch (docErr) {
+        // Non-fatal — enrollment still succeeds even if doc migration fails
+        console.warn("Document promotion failed during enrollment:", docErr);
+      }
+    }
+
     // Return the client record + generated credentials (shown once to advisor)
     return res.status(201).json({
       ...clientResult.rows[0],

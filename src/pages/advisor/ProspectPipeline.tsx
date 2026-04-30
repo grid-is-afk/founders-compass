@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
@@ -93,12 +93,12 @@ type ProspectShape = ReturnType<typeof toProspectShape>;
 
 const STATUS_LABEL: Record<string, string> = {
   intake: "Intake",
-  discovery_scheduled: "Discovery Scheduled",
-  discovery_complete: "Discovery Complete",
+  discovery_scheduled: "Discovery",
+  discovery_complete: "Discovery",
   fit_assessment: "Fit Assessment",
   not_fit: "Not a Fit",
-  fit: "Fit",
-  onboarding: "Onboarding",
+  fit: "Discovery",
+  onboarding: "Discovery",
   nurture_call: "Nurture Call",
   kept_in_loop: "Kept in Loop",
   flagged_follow_up: "Flagged Follow-Up",
@@ -128,14 +128,9 @@ const PIPELINE_COLUMNS: PipelineColumn[] = [
   {
     id: "discovery",
     label: "Discovery",
-    statuses: ["discovery_scheduled", "discovery_complete"],
+    // Absorbs legacy fit/onboarding statuses so existing data stays visible
+    statuses: ["discovery_scheduled", "discovery_complete", "fit", "onboarding"],
     accent: "bg-blue-500/10 text-blue-700",
-  },
-  {
-    id: "onboarding",
-    label: "Onboarding",
-    statuses: ["fit", "onboarding"],
-    accent: "bg-emerald-500/10 text-emerald-700",
   },
 ];
 
@@ -162,22 +157,28 @@ const OFF_PIPELINE_COLUMNS: OffPipelineColumn[] = [
   },
 ];
 
-// Pipeline advancement map — new order: Intake → Fit Assessment → Discovery → Onboarding
+// Pipeline advancement map — Intake → Fit Assessment → Discovery → Win | Pass
 const NEXT_STATUS: Record<string, { status: string; label: string }> = {
   intake: { status: "fit_assessment", label: "Begin Fit Assessment" },
   fit_assessment: { status: "discovery_scheduled", label: "Schedule Discovery" },
-  discovery_scheduled: { status: "discovery_complete", label: "Complete Discovery" },
-  discovery_complete: { status: "fit", label: "Mark as Fit" },
-  fit: { status: "onboarding", label: "Begin Onboarding" },
+  // Discovery-phase prospects use Win/Pass buttons — no auto-advance next
 };
 
 const PREV_STATUS: Record<string, { status: string; label: string }> = {
   fit_assessment: { status: "intake", label: "Back to Intake" },
   discovery_scheduled: { status: "fit_assessment", label: "Back to Fit Assessment" },
-  discovery_complete: { status: "discovery_scheduled", label: "Back to Discovery" },
-  fit: { status: "discovery_complete", label: "Back to Discovery" },
-  onboarding: { status: "fit", label: "Back to Fit" },
+  discovery_complete: { status: "fit_assessment", label: "Back to Fit Assessment" },
+  fit: { status: "fit_assessment", label: "Back to Fit Assessment" },
+  onboarding: { status: "fit_assessment", label: "Back to Fit Assessment" },
 };
+
+// Statuses that represent the Discovery phase (Win/Pass decision point)
+const DISCOVERY_STATUSES = new Set([
+  "discovery_scheduled",
+  "discovery_complete",
+  "fit",
+  "onboarding",
+]);
 
 // ---------------------------------------------------------------------------
 // Prospect Detail Dialog
@@ -189,6 +190,7 @@ interface DetailDialogProps {
   onAdvance: (id: string, newStatus: string) => void;
   onStepBack: (id: string, prevStatus: string) => void;
   onMarkNotFit: (id: string, source: string) => void;
+  onEnrollAsClient: (prospect: ProspectShape) => void;
   onOpenInvestmentDashboard: (prospectId: string) => void;
   isPending: boolean;
 }
@@ -199,6 +201,7 @@ function ProspectDetailDialog({
   onAdvance,
   onStepBack,
   onMarkNotFit,
+  onEnrollAsClient,
   onOpenInvestmentDashboard,
   isPending,
 }: DetailDialogProps) {
@@ -206,13 +209,16 @@ function ProspectDetailDialog({
   const [isQBActive, setIsQBActive] = useState(false);
   const { data: fullRecord } = useProspectExposureIndex(prospect?.id ?? null);
   const { sendMessage, isStreaming } = useCopilotContext();
+  const dialogNavigate = useNavigate();
 
   if (!prospect) return null;
 
   const next = NEXT_STATUS[prospect.status];
   const prev = PREV_STATUS[prospect.status];
-  const showNotFitButton = prospect.status === "fit_assessment";
-  const isTerminal = ["not_fit", "onboarding", "nurture_call", "kept_in_loop", "flagged_follow_up"].includes(
+  const inDiscovery = DISCOVERY_STATUSES.has(prospect.status);
+  const showNotFitButton = prospect.status === "fit_assessment" || inDiscovery;
+  const showWinButton = inDiscovery;
+  const isTerminal = ["not_fit", "nurture_call", "kept_in_loop", "flagged_follow_up"].includes(
     prospect.status
   );
 
@@ -237,7 +243,20 @@ function ProspectDetailDialog({
           <div className={isQBActive ? "flex gap-6" : ""}>
           <div className={isQBActive ? "w-[45%] flex-shrink-0 overflow-y-auto max-h-[70vh]" : ""}>
           <DialogHeader>
-            <DialogTitle className="font-display">{prospect.name}</DialogTitle>
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle className="font-display">{prospect.name}</DialogTitle>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  dialogNavigate(`/advisor/prospects/${prospect.id}/overview`);
+                }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View full profile
+              </button>
+            </div>
             <DialogDescription>
               {prospect.contact} · {prospect.company}
             </DialogDescription>
@@ -408,7 +427,7 @@ function ProspectDetailDialog({
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
-            {prospect.status === "onboarding" && (
+            {inDiscovery && (
               <Button
                 variant="outline"
                 className="gap-2 border-primary/30 text-primary hover:bg-primary/5"
@@ -425,7 +444,7 @@ function ProspectDetailDialog({
                 disabled={isPending}
                 className="gap-2"
               >
-                <XCircle className="w-4 h-4" /> Not a Fit
+                <XCircle className="w-4 h-4" /> Pass
               </Button>
             )}
             {prev && !isTerminal && (
@@ -448,7 +467,16 @@ function ProspectDetailDialog({
                 {isPending ? "Updating..." : next.label}
               </Button>
             )}
-            {isTerminal && prospect.status !== "onboarding" && (
+            {showWinButton && (
+              <Button
+                onClick={() => onEnrollAsClient(prospect)}
+                disabled={isPending}
+                className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
+              >
+                <CheckCircle2 className="w-4 h-4" /> Win — Enroll as Client
+              </Button>
+            )}
+            {isTerminal && (
               <span className="text-xs text-muted-foreground italic px-2">
                 Prospect is off-pipeline
               </span>
@@ -775,7 +803,7 @@ const ProspectPipeline = () => {
   const handleStepBack = async (id: string, prevStatus: string) => {
     try {
       const updates: Record<string, unknown> = { id, status: prevStatus };
-      if (prevStatus !== "fit" && prevStatus !== "onboarding") updates.fit_decision = null;
+      if (!DISCOVERY_STATUSES.has(prevStatus)) updates.fit_decision = null;
       await updateProspect.mutateAsync(updates);
       toast.success("Prospect moved back", {
         description: `Status changed to ${STATUS_LABEL[prevStatus] || prevStatus}.`,
@@ -846,7 +874,7 @@ const ProspectPipeline = () => {
               Prospect Pipeline
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Pre-client fit assessment and onboarding funnel
+              Intake → Fit Assessment → Discovery → Win or Pass
             </p>
           </div>
           <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -920,6 +948,18 @@ const ProspectPipeline = () => {
                             >
                               <ProspectCard prospect={prospect as Prospect} />
                             </div>
+                            {/* View full profile link */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/advisor/prospects/${prospect.id}/overview`);
+                              }}
+                              className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md border border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              View Profile
+                            </button>
                             {/* Assessment tools — fit_assessment column */}
                             {col.id === "fit_assessment" && (
                               <ProspectAssessmentBlock
@@ -928,21 +968,9 @@ const ProspectPipeline = () => {
                                 sixCsRecord={sixCsMap?.[prospect.id] ?? null}
                               />
                             )}
-                            {/* Onboarding column actions */}
-                            {col.id === "onboarding" && (
+                            {/* Discovery column actions — Win or Pass */}
+                            {col.id === "discovery" && (
                               <div className="space-y-1.5">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleOpenInvestmentDashboard(prospect.id);
-                                  }}
-                                >
-                                  <TrendingUp className="w-3.5 h-3.5" />
-                                  Investment Probability Dashboard
-                                </Button>
                                 <Button
                                   size="sm"
                                   className="w-full h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
@@ -957,7 +985,20 @@ const ProspectPipeline = () => {
                                   ) : (
                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                   )}
-                                  {enrollingId === prospect.id ? "Enrolling..." : "Enroll as Client"}
+                                  {enrollingId === prospect.id ? "Enrolling..." : "Win — Enroll as Client"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="w-full h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleMarkNotFit(prospect.id, prospect.source);
+                                  }}
+                                  disabled={updateProspect.isPending}
+                                >
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  Pass
                                 </Button>
                               </div>
                             )}
@@ -1021,6 +1062,18 @@ const ProspectPipeline = () => {
                           >
                             <ProspectCard prospect={prospect as Prospect} />
                           </div>
+                          {/* View full profile link */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/advisor/prospects/${prospect.id}/overview`);
+                            }}
+                            className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md border border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View Profile
+                          </button>
                           {col.id === "fit_assessment" && (
                             <ProspectAssessmentBlock
                               prospect={prospect as Prospect}
@@ -1028,20 +1081,8 @@ const ProspectPipeline = () => {
                               sixCsRecord={sixCsMap?.[prospect.id] ?? null}
                             />
                           )}
-                          {col.id === "onboarding" && (
+                          {col.id === "discovery" && (
                             <div className="space-y-1.5">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full h-8 text-xs gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenInvestmentDashboard(prospect.id);
-                                }}
-                              >
-                                <TrendingUp className="w-3.5 h-3.5" />
-                                Investment Probability Dashboard
-                              </Button>
                               <Button
                                 size="sm"
                                 className="w-full h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border-0"
@@ -1056,7 +1097,20 @@ const ProspectPipeline = () => {
                                 ) : (
                                   <CheckCircle2 className="w-3.5 h-3.5" />
                                 )}
-                                {enrollingId === prospect.id ? "Enrolling..." : "Enroll as Client"}
+                                {enrollingId === prospect.id ? "Enrolling..." : "Win — Enroll as Client"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full h-8 text-xs gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/5"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMarkNotFit(prospect.id, prospect.source);
+                                }}
+                                disabled={updateProspect.isPending}
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                Pass
                               </Button>
                             </div>
                           )}
@@ -1130,29 +1184,39 @@ const ProspectPipeline = () => {
                         </div>
 
                         {/* Zone 2 action buttons — outside the clickable card */}
-                        <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                          {col.id === "referral_not_fit" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                              onClick={() => toast.info("Calendar scheduling — coming soon")}
-                            >
-                              <Phone className="w-3 h-3" />
-                              Schedule Nurture Call
-                            </Button>
-                          )}
-                          {col.id === "other_not_fit" && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                              onClick={() => toast.info("Follow-up tracking — coming soon")}
-                            >
-                              <Flag className="w-3 h-3" />
-                              Flag for Follow Up
-                            </Button>
-                          )}
+                        <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex gap-1.5">
+                            {col.id === "referral_not_fit" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
+                                onClick={() => toast.info("Calendar scheduling — coming soon")}
+                              >
+                                <Phone className="w-3 h-3" />
+                                Schedule Nurture Call
+                              </Button>
+                            )}
+                            {col.id === "other_not_fit" && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
+                                onClick={() => toast.info("Follow-up tracking — coming soon")}
+                              >
+                                <Flag className="w-3 h-3" />
+                                Flag for Follow Up
+                              </Button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/advisor/prospects/${prospect.id}/overview`)}
+                            className="w-full flex items-center justify-center gap-1.5 text-xs font-medium px-2 py-1.5 rounded-md border border-border/60 text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            View Profile
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -1185,6 +1249,7 @@ const ProspectPipeline = () => {
         onAdvance={handleAdvance}
         onStepBack={handleStepBack}
         onMarkNotFit={handleMarkNotFit}
+        onEnrollAsClient={handleEnrollAsClient}
         onOpenInvestmentDashboard={handleOpenInvestmentDashboard}
         isPending={updateProspect.isPending}
       />
