@@ -2,6 +2,7 @@ import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { query } from "../db.js";
 import { requireClientOwnership } from "../lib/clientAuth.js";
+import "../middleware/auth.js";
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
