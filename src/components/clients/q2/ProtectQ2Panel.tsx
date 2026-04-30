@@ -10,7 +10,6 @@ import { ChecklistItem, type SubtaskItem } from "@/components/clients/ChecklistI
 import { useClientExposureIndex } from "@/hooks/useClientExposureIndex";
 import { useClientFounderMatrix } from "@/hooks/useClientFounderMatrix";
 import { useClientFounderSnapshot } from "@/hooks/useClientFounderSnapshot";
-import { useClientIpValueFramework } from "@/hooks/useClientIpValueFramework";
 import { useClientTasks, useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import { useUpdateClient } from "@/hooks/useClients";
 
@@ -53,10 +52,9 @@ export function ProtectQ2Panel({
   nextPhase,
   onPhaseComplete,
 }: ProtectQ2PanelProps) {
-  const { data: exposureRecord, isLoading: exposureLoading } = useClientExposureIndex(clientId);
-  const { data: matrixRecord, isLoading: matrixLoading } = useClientFounderMatrix(clientId);
-  const { data: snapshotRecord, isLoading: snapshotLoading } = useClientFounderSnapshot(clientId);
-  const { data: ipRecord, isLoading: ipLoading } = useClientIpValueFramework(clientId);
+  const { data: exposureRecord } = useClientExposureIndex(clientId);
+  const { data: matrixRecord } = useClientFounderMatrix(clientId);
+  const { data: snapshotRecord } = useClientFounderSnapshot(clientId);
 
   const { data: tasksRaw = [], isLoading: tasksLoading } = useClientTasks(clientId);
   const createTask = useCreateTask();
@@ -104,8 +102,6 @@ export function ProtectQ2Panel({
     PROTECT_CHECKLIST.length > 0 &&
     PROTECT_CHECKLIST.every((item) => taskMap[item.label]?.done);
 
-  const allComplete = assessmentsComplete && architectureAllDone;
-
   const handleToggle = async (label: string) => {
     const task = taskMap[label];
     if (!task) return;
@@ -137,8 +133,6 @@ export function ProtectQ2Panel({
     }
   };
 
-  const assessmentsLoading = exposureLoading || matrixLoading || snapshotLoading || ipLoading;
-
   return (
     <div className="space-y-5">
       <div>
@@ -148,33 +142,23 @@ export function ProtectQ2Panel({
         </p>
       </div>
 
-      {/* Assessment strips */}
-      {assessmentsLoading ? (
-        <div className="space-y-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-9 rounded-md bg-muted/30 animate-pulse" />
-          ))}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <ClientExposureIndexStrip
-            clientId={clientId}
-            clientName={clientName}
-            record={exposureRecord ?? null}
-          />
-          <FounderSnapshotStrip
-            clientId={clientId}
-            clientName={clientName}
-            record={snapshotRecord ?? null}
-          />
-          <FounderMatrixStrip
-            clientId={clientId}
-            clientName={clientName}
-            entityType={entityType}
-            record={matrixRecord ?? null}
-          />
-        </div>
-      )}
+      {/* Assessment strips — each handles its own loading state */}
+      <div className="space-y-2">
+        <ClientExposureIndexStrip
+          clientId={clientId}
+          clientName={clientName}
+          entityType={entityType}
+        />
+        <FounderSnapshotStrip
+          clientId={clientId}
+          clientName={clientName}
+        />
+        <FounderMatrixStrip
+          clientId={clientId}
+          clientName={clientName}
+          entityType={entityType}
+        />
+      </div>
 
       {/* Capital Alignment & Protection Architecture checklist */}
       <div className="space-y-2">
@@ -210,7 +194,7 @@ export function ProtectQ2Panel({
       </div>
 
       {/* IP Value Framework strip */}
-      {!assessmentsLoading && <IpValueFrameworkStrip clientId={clientId} />}
+      <IpValueFrameworkStrip clientId={clientId} />
 
       {/* Phase completion */}
       {nextPhase !== null && (
