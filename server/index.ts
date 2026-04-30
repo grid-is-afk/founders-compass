@@ -40,6 +40,7 @@ import clientIpdMetricsRoutes from "./routes/clientIpdMetrics.js";
 import analyzeDataRoomRouter from "./routes/analyzeDataRoom.js";
 import clientDiagnoseActionsRoutes from "./routes/clientDiagnoseActions.js";
 import clientAssessmentSummaryRoutes from "./routes/clientAssessmentSummary.js";
+import notificationRoutes from "./routes/notifications.js";
 
 dotenv.config();
 
@@ -99,6 +100,7 @@ app.use("/api/documents", authMiddleware, documentRoutes);
 app.use("/api/quarterly-plans", authMiddleware, quarterlyPlanRoutes);
 app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
+app.use("/api/notifications", authMiddleware, notificationRoutes);
 
 // ---------------------------------------------------------------------------
 // GET /api/q1-phase-config — public config for the Gantt chart

@@ -5,6 +5,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  CheckCheck,
   CalendarDays,
   ClipboardCheck,
   FileText,
@@ -23,6 +24,7 @@ import {
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useActivity } from "@/hooks/useActivity";
+import { useNotifications, useMarkAllNotificationsRead } from "@/hooks/useNotifications";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -67,11 +69,14 @@ const TopBar = () => {
   const { user, logout } = useAuth();
   const { data: riskAlerts = [] } = useClientRiskAlerts(selectedClientId);
   const { data: activity = [] } = useActivity();
+  const { data: clientNotifications = [] } = useNotifications();
+  const markAllRead = useMarkAllNotificationsRead();
 
   const riskNotifications = (riskAlerts as any[]).filter(
     (a) => a.severity === "high" || a.severity === "critical" || a.severity === "medium"
   );
-  const notificationCount = riskNotifications.length + (activity as any[]).length;
+  const unreadClientNotifs = clientNotifications.filter((n) => !n.read);
+  const notificationCount = riskNotifications.length + unreadClientNotifs.length;
 
   const handleSearchSelect = (path: string) => {
     setSearchOpen(false);
@@ -186,19 +191,57 @@ const TopBar = () => {
             </button>
           </PopoverTrigger>
 
-          <PopoverContent className="w-[360px] p-0" align="end" sideOffset={8}>
+          <PopoverContent className="w-[380px] p-0" align="end" sideOffset={8}>
             <div className="px-3 py-2.5 border-b border-border flex items-center justify-between">
               <h3 className="text-sm font-display font-semibold">Notifications</h3>
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {notificationCount}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {unreadClientNotifs.length > 0 && (
+                  <button
+                    onClick={() => markAllRead.mutate()}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <CheckCheck className="w-3 h-3" /> Mark all read
+                  </button>
+                )}
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {notificationCount}
+                </Badge>
+              </div>
             </div>
 
-            <div className="max-h-[300px] overflow-y-auto divide-y divide-border">
+            <div className="max-h-[340px] overflow-y-auto divide-y divide-border">
+              {/* Client-triggered notifications */}
+              {clientNotifications.slice(0, 8).map((notif) => (
+                <div
+                  key={notif.id}
+                  className={cn(
+                    "flex items-start gap-2.5 px-3 py-2.5 transition-colors",
+                    !notif.read && "bg-blue-50/50 dark:bg-blue-950/20"
+                  )}
+                >
+                  <Activity className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs leading-snug">{notif.message}</p>
+                    {notif.client_name && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{notif.client_name}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(notif.created_at).toLocaleDateString()}
+                    </span>
+                    {!notif.read && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Risk alerts */}
               {riskNotifications.map((alert: any) => (
                 <div key={alert.id} className="flex items-start gap-2.5 px-3 py-2.5">
                   <AlertTriangle className={cn("w-4 h-4 mt-0.5 shrink-0", severityColor(alert.severity))} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium leading-snug truncate">{alert.title}</p>
                     {alert.detail && <p className="text-xs text-muted-foreground mt-0.5 truncate">{alert.detail}</p>}
                   </div>
@@ -208,20 +251,23 @@ const TopBar = () => {
                 </div>
               ))}
 
-              {(activity as any[]).slice(0, 5).map((item: any, i: number) => (
-                <div key={item.id ?? i} className="flex items-start gap-2.5 px-3 py-2.5">
-                  <Activity className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
-                  <p className="text-xs leading-snug flex-1 min-w-0">
-                    {item.action}
-                    {item.client_name ? ` — ${item.client_name}` : ""}
-                  </p>
-                  <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
-                    {new Date(item.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
+              {/* Recent activity (fallback when no client notifs or risk alerts) */}
+              {clientNotifications.length === 0 && riskNotifications.length === 0 && (
+                (activity as any[]).slice(0, 5).map((item: any, i: number) => (
+                  <div key={item.id ?? i} className="flex items-start gap-2.5 px-3 py-2.5">
+                    <Activity className="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
+                    <p className="text-xs leading-snug flex-1 min-w-0">
+                      {item.text ?? item.action}
+                      {item.client_name ? ` — ${item.client_name}` : ""}
+                    </p>
+                    <span className="ml-2 text-[10px] text-muted-foreground shrink-0">
+                      {new Date(item.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                ))
+              )}
 
-              {notificationCount === 0 && (
+              {notificationCount === 0 && clientNotifications.length === 0 && (activity as any[]).length === 0 && (
                 <div className="px-3 py-6 text-center text-xs text-muted-foreground">No notifications</div>
               )}
             </div>

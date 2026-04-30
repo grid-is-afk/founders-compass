@@ -552,3 +552,20 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_reason TEXT;
 ALTER TABLE documents ALTER COLUMN client_id DROP NOT NULL;
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_documents_prospect ON documents(prospect_id);
+
+-- ============================================================
+-- Advisor notifications (client-triggered actions)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  advisor_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id  UUID REFERENCES clients(id) ON DELETE SET NULL,
+  type       TEXT NOT NULL,
+  message    TEXT NOT NULL,
+  read       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_advisor ON notifications(advisor_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(advisor_id, read) WHERE read = FALSE;

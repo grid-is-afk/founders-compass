@@ -163,7 +163,7 @@ export const AdvisorUploads = () => {
               <Upload className="w-5 h-5 text-primary" />
             </div>
             <p className="text-sm font-medium text-foreground mb-1">Drop files here or click to upload</p>
-            <p className="text-xs text-muted-foreground">Accepts PDF, XLSX, DOCX — up to 50 MB per file</p>
+            <p className="text-xs text-muted-foreground">Accepts PDF, XLSX, DOCX, PPT — up to 25 MB per file</p>
             <Button
               variant="outline"
               size="sm"
@@ -261,9 +261,31 @@ export const AdvisorUploads = () => {
 // AdvisorDataRoom — Data Room
 // ---------------------------------------------------------------------------
 
-const DATA_ROOM_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"];
+const DATA_ROOM_CATEGORIES = [
+  "Reports", "Financials", "Customer Capital", "Legal & Structure",
+  "Governance", "Meeting Notes", "Agreements", "Other",
+];
 const FILTER_CATEGORIES = ["All", "From Client", ...DATA_ROOM_CATEGORIES];
-const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_BYTES = 100 * 1024 * 1024;
+
+interface CategoryStyle {
+  bg: string;
+  text: string;
+  border: string;
+}
+
+const CATEGORY_COLORS: Record<string, CategoryStyle> = {
+  "Reports":           { bg: "bg-slate-100",  text: "text-slate-600", border: "border-slate-300" },
+  "Financials":        { bg: "bg-slate-200",  text: "text-slate-700", border: "border-slate-400" },
+  "Customer Capital":  { bg: "bg-blue-50",    text: "text-blue-700",  border: "border-blue-300"  },
+  "Legal & Structure": { bg: "bg-slate-100",  text: "text-slate-600", border: "border-slate-400" },
+  "Governance":        { bg: "bg-slate-200",  text: "text-slate-800", border: "border-slate-500" },
+  "Meeting Notes":     { bg: "bg-blue-100",   text: "text-blue-800",  border: "border-blue-400"  },
+  "Agreements":        { bg: "bg-slate-300",  text: "text-slate-800", border: "border-slate-600" },
+  "Other":             { bg: "bg-slate-50",   text: "text-slate-500", border: "border-slate-200" },
+};
+
+const DEFAULT_CATEGORY_STYLE: CategoryStyle = { bg: "bg-slate-50", text: "text-slate-500", border: "border-slate-200" };
 
 
 function isDocNew(uploadedAt: string): boolean {
@@ -310,6 +332,7 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
   const [fileProgress, setFileProgress] = useState<Record<string, number>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Toast when new client uploads arrive (poll-based)
   const prevCountRef = useRef<number>(0);
@@ -453,17 +476,27 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
           <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowUpload(!showUpload)}>
             <Upload className="w-3.5 h-3.5" />{showUpload ? "Hide Upload" : "Upload Files"}
           </Button>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => folderInputRef.current?.click()}>
+            <FolderOpen className="w-3.5 h-3.5" /> Upload Folder
+          </Button>
           <ShareInvestorPortal clientName={selectedClient?.name} />
         </div>
       </div>
 
-      {/* Hidden file input */}
+      {/* Hidden file inputs */}
       <input
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.jpg,.jpeg,.png"
+        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png"
         className="hidden"
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        className="hidden"
+        {...({ webkitdirectory: "true", multiple: true } as React.InputHTMLAttributes<HTMLInputElement>)}
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
 
@@ -484,7 +517,7 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
             <p className="text-sm font-medium text-foreground mb-1">
               {dragging ? "Drop files to upload" : "Drag files here or click to browse"}
             </p>
-            <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word, JPG, PNG — up to 25 MB per file</p>
+            <p className="text-xs text-muted-foreground mb-3">PDF, Excel, Word, PowerPoint, JPG, PNG — up to 25 MB per file</p>
             <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
               Browse Files
             </Button>
@@ -712,8 +745,10 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
                 const dateLabel = doc.uploaded_at
                   ? new Date(doc.uploaded_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—";
+                const categoryName: string = doc.category ?? "Other";
+                const catStyle = CATEGORY_COLORS[categoryName] ?? DEFAULT_CATEGORY_STYLE;
                 return (
-                  <tr key={doc.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors">
+                  <tr key={doc.id} className={cn("border-b border-border/60 last:border-0 hover:bg-muted/20 transition-colors border-l-2", catStyle.border)}>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <FileTypeIcon type={doc.type ?? "document"} />
@@ -724,7 +759,9 @@ export const AdvisorDataRoom = ({ clientOverride }: { clientOverride?: { id: str
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant="outline" className="text-[10px] px-2 py-0">{doc.category ?? "Uploads"}</Badge>
+                      <span className={cn("inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium border", catStyle.bg, catStyle.text, catStyle.border)}>
+                        {categoryName}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <span className={cn(

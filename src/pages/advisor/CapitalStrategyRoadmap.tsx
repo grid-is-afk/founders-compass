@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Map,
   Plus,
@@ -9,7 +9,10 @@ import {
   Zap,
   ArrowRight,
   Sparkles,
+  Upload,
+  FileText,
 } from "lucide-react";
+import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -61,6 +64,54 @@ interface RoadmapTask {
 
 const DOMAIN_FILTERS = ["All", "Discover", "Protect", "Grow", "Prove & Align"] as const;
 type DomainFilter = typeof DOMAIN_FILTERS[number];
+
+// ---------------------------------------------------------------------------
+// CSV Import Types
+// ---------------------------------------------------------------------------
+
+type ImportStep = 1 | 2 | 3;
+
+interface CsvImportField {
+  key: "title" | "assignee" | "due_date" | "priority" | "domain" | "notes";
+  label: string;
+  required: boolean;
+}
+
+interface ColumnMapping {
+  title: string;
+  assignee: string;
+  due_date: string;
+  priority: string;
+  domain: string;
+  notes: string;
+}
+
+interface ValidatedImportRow {
+  title: string;
+  assignee: string | null;
+  due_date: string | null;
+  priority: string;
+  domain: Domain;
+  notes: string | null;
+}
+
+const IMPORT_FIELDS: CsvImportField[] = [
+  { key: "title",    label: "Task Title",             required: true  },
+  { key: "assignee", label: "Assignee",               required: false },
+  { key: "due_date", label: "Due Date (YYYY-MM-DD)",  required: false },
+  { key: "priority", label: "Priority",               required: false },
+  { key: "domain",   label: "Domain",                 required: false },
+  { key: "notes",    label: "Notes",                  required: false },
+];
+
+const VALID_PRIORITIES = new Set(["low", "medium", "high", "urgent"]);
+const VALID_DOMAINS    = new Set<string>(["Discover", "Protect", "Grow", "Prove & Align"]);
+
+const SAMPLE_CSV_CONTENT = [
+  "title,assignee,due_date,priority,domain,notes",
+  "Set up legal entity,Jane Smith,2024-06-01,high,Discover,Consult with attorney on LLC vs C-Corp",
+  "Build financial model,John Doe,2024-07-15,medium,Grow,3-year projection with scenario analysis",
+].join("\n");
 
 const STATUS_CYCLE: TaskStatus[] = ["todo", "in_progress", "done", "blocked"];
 
@@ -118,6 +169,20 @@ const CapitalStrategyRoadmap = () => {
   const [editAssignee, setEditAssignee] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
+
+  // CSV import state
+  const [importOpen, setImportOpen]           = useState(false);
+  const [importStep, setImportStep]           = useState<ImportStep>(1);
+  const [csvHeaders, setCsvHeaders]           = useState<string[]>([]);
+  const [csvRows, setCsvRows]                 = useState<Record<string, string>[]>([]);
+  const [columnMapping, setColumnMapping]     = useState<ColumnMapping>({
+    title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "",
+  });
+  const [validatedRows, setValidatedRows]     = useState<ValidatedImportRow[]>([]);
+  const [skippedCount, setSkippedCount]       = useState(0);
+  const [importProgress, setImportProgress]   = useState<number | null>(null);
+  const [isDragOver, setIsDragOver]           = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------------------------------------------------------------------------
   // Derived data
@@ -238,6 +303,147 @@ const CapitalStrategyRoadmap = () => {
   };
 
   // ---------------------------------------------------------------------------
+  // CSV Import Handlers
+  // ---------------------------------------------------------------------------
+
+  const resetImport = () => {
+    setImportStep(1);
+    setCsvHeaders([]);
+    setCsvRows([]);
+    setColumnMapping({ title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "" });
+    setValidatedRows([]);
+    setSkippedCount(0);
+    setImportProgress(null);
+    setIsDragOver(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleImportClose = () => {
+    setImportOpen(false);
+    resetImport();
+  };
+
+  const autoDetectMapping = (headers: string[]): ColumnMapping => {
+    const mapping: ColumnMapping = { title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "" };
+    for (const field of IMPORT_FIELDS) {
+      const matched = headers.find((h) => h.toLowerCase() === field.key.toLowerCase());
+      if (matched) mapping[field.key] = matched;
+    }
+    return mapping;
+  };
+
+  const parseCsvFile = (file: File) => {
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        const headers = result.meta.fields ?? [];
+        const rows    = result.data;
+        setCsvHeaders(headers);
+        setCsvRows(rows);
+        setColumnMapping(autoDetectMapping(headers));
+        setImportStep(2);
+      },
+      error: () => {
+        toast.error("Failed to parse CSV file. Please check the file format.");
+      },
+    });
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) parseCsvFile(file);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.name.endsWith(".csv")) {
+      parseCsvFile(file);
+    } else {
+      toast.error("Please drop a CSV file.");
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const blob = new Blob([SAMPLE_CSV_CONTENT], { type: "text/csv" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href     = url;
+    a.download = "tasks-template.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleMappingNext = () => {
+    const validated: ValidatedImportRow[] = [];
+    let skipped = 0;
+
+    for (const row of csvRows) {
+      const rawTitle = columnMapping.title ? (row[columnMapping.title] ?? "").trim() : "";
+      if (!rawTitle) { skipped++; continue; }
+
+      const rawPriority = columnMapping.priority ? (row[columnMapping.priority] ?? "").trim().toLowerCase() : "";
+      const priority    = VALID_PRIORITIES.has(rawPriority) ? rawPriority : "medium";
+
+      const rawDomain = columnMapping.domain ? (row[columnMapping.domain] ?? "").trim() : "";
+      const domain    = (VALID_DOMAINS.has(rawDomain) ? rawDomain : "Discover") as Domain;
+
+      const rawDate   = columnMapping.due_date ? (row[columnMapping.due_date] ?? "").trim() : "";
+      let   due_date: string | null = null;
+      if (rawDate) {
+        const parsed = new Date(rawDate);
+        due_date = isNaN(parsed.getTime()) ? null : rawDate;
+      }
+
+      const rawAssignee = columnMapping.assignee ? (row[columnMapping.assignee] ?? "").trim() : "";
+      const rawNotes    = columnMapping.notes    ? (row[columnMapping.notes]    ?? "").trim() : "";
+
+      validated.push({
+        title:    rawTitle,
+        assignee: rawAssignee || null,
+        due_date,
+        priority,
+        domain,
+        notes:    rawNotes || null,
+      });
+    }
+
+    setValidatedRows(validated);
+    setSkippedCount(skipped);
+    setImportStep(3);
+  };
+
+  const handleImportTasks = async () => {
+    setImportProgress(0);
+    let successCount = 0;
+
+    for (let i = 0; i < validatedRows.length; i++) {
+      const row = validatedRows[i];
+      setImportProgress(i + 1);
+      try {
+        await createTask.mutateAsync({
+          client_id: selectedClientId,
+          title:     row.title,
+          assignee:  row.assignee,
+          due_date:  row.due_date,
+          priority:  row.priority,
+          phase:     row.domain,
+          notes:     row.notes,
+        });
+        successCount++;
+      } catch {
+        toast.error(`Failed to import: "${row.title}"`);
+      }
+    }
+
+    setImportProgress(null);
+    handleImportClose();
+    toast.success(`${successCount} task${successCount !== 1 ? "s" : ""} imported successfully`);
+  };
+
+  // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
 
@@ -262,10 +468,15 @@ const CapitalStrategyRoadmap = () => {
               </p>
             </div>
           </div>
-          <Button onClick={() => setDialogOpen(true)} className="gap-2 flex-shrink-0">
-            <Plus className="w-4 h-4" />
-            Add Task
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button variant="outline" onClick={() => setImportOpen(true)} className="gap-2">
+              <Upload className="w-4 h-4" /> Import CSV
+            </Button>
+            <Button onClick={() => setDialogOpen(true)} className="gap-2">
+              <Plus className="w-4 h-4" />
+              Add Task
+            </Button>
+          </div>
         </div>
 
         {/* Engagement Progress */}
@@ -642,6 +853,294 @@ const CapitalStrategyRoadmap = () => {
             >
               {createTask.isPending ? "Creating..." : "Create Task"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Import CSV Dialog ─────────────────────────────────────────────── */}
+      <Dialog open={importOpen} onOpenChange={(open) => { if (!open) handleImportClose(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>
+              {importStep === 1 && "Import Tasks — Upload CSV"}
+              {importStep === 2 && "Import Tasks — Map Columns"}
+              {importStep === 3 && "Import Tasks — Preview & Import"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Step indicator */}
+          <div className="flex items-center gap-2 py-1">
+            {([1, 2, 3] as ImportStep[]).map((step) => (
+              <div key={step} className="flex items-center gap-2">
+                <div className={cn(
+                  "w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-colors",
+                  importStep === step
+                    ? "bg-accent text-accent-foreground"
+                    : importStep > step
+                    ? "bg-emerald-500 text-white"
+                    : "bg-muted text-muted-foreground"
+                )}>
+                  {step}
+                </div>
+                {step < 3 && (
+                  <div className={cn(
+                    "h-px w-8 transition-colors",
+                    importStep > step ? "bg-emerald-500" : "bg-border"
+                  )} />
+                )}
+              </div>
+            ))}
+            <span className="text-xs text-muted-foreground ml-1">Step {importStep} of 3</span>
+          </div>
+
+          {/* Step content — scrollable */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+
+            {/* ── Step 1: Upload ── */}
+            {importStep === 1 && (
+              <div className="space-y-4 py-2">
+                {/* Dropzone */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors",
+                    isDragOver
+                      ? "border-accent bg-accent/5"
+                      : "border-border hover:border-accent/50 hover:bg-muted/30"
+                  )}
+                >
+                  <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-sm font-medium text-foreground mb-1">
+                    Drop your CSV here, or click to browse
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Supported format: .csv
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+
+                {/* Template download */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>Not sure about the format?</span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    className="text-accent underline underline-offset-2 hover:opacity-80 transition-opacity font-medium"
+                  >
+                    Download sample template
+                  </button>
+                </div>
+
+                {/* Expected columns info */}
+                <div className="bg-muted/40 rounded-md p-3 space-y-1">
+                  <p className="text-xs font-semibold text-foreground mb-2">Expected CSV columns</p>
+                  {IMPORT_FIELDS.map((f) => (
+                    <div key={f.key} className="flex items-center gap-2 text-xs">
+                      <code className="bg-background border border-border rounded px-1.5 py-0.5 font-mono text-[11px]">
+                        {f.key}
+                      </code>
+                      <span className="text-muted-foreground">{f.label}</span>
+                      {f.required && (
+                        <span className="text-destructive font-semibold">required</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Step 2: Map Columns ── */}
+            {importStep === 2 && (
+              <div className="space-y-5 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Match your CSV columns to the task fields below. Auto-detection has been applied where possible.
+                </p>
+
+                {/* Field mapping selects */}
+                <div className="space-y-3">
+                  {IMPORT_FIELDS.map((field) => (
+                    <div key={field.key} className="grid grid-cols-2 gap-3 items-center">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {field.label}
+                          {field.required && <span className="text-destructive ml-1">*</span>}
+                        </p>
+                      </div>
+                      <Select
+                        value={columnMapping[field.key]}
+                        onValueChange={(v) =>
+                          setColumnMapping((prev) => ({ ...prev, [field.key]: v }))
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="— Not mapped —" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">— Not mapped —</SelectItem>
+                          {csvHeaders.map((h) => (
+                            <SelectItem key={h} value={h}>{h}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+                </div>
+
+                {/* CSV preview — first 3 rows */}
+                {csvRows.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground">Preview (first 3 rows)</p>
+                    <div className="overflow-x-auto rounded-md border border-border">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="bg-muted/40 border-b border-border">
+                            {csvHeaders.map((h) => (
+                              <th key={h} className="px-2 py-1.5 text-left font-medium text-muted-foreground whitespace-nowrap">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {csvRows.slice(0, 3).map((row, i) => (
+                            <tr key={i} className="border-b border-border/60 last:border-0">
+                              {csvHeaders.map((h) => (
+                                <td key={h} className="px-2 py-1.5 text-muted-foreground whitespace-nowrap max-w-[120px] truncate">
+                                  {row[h] ?? ""}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {csvRows.length} total rows in file
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Step 3: Preview & Import ── */}
+            {importStep === 3 && (
+              <div className="space-y-4 py-2">
+                {/* Summary */}
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="font-semibold text-foreground">
+                    {validatedRows.length} task{validatedRows.length !== 1 ? "s" : ""} will be imported.
+                  </span>
+                  {skippedCount > 0 && (
+                    <span className="text-muted-foreground">
+                      {skippedCount} row{skippedCount !== 1 ? "s" : ""} skipped (empty title).
+                    </span>
+                  )}
+                </div>
+
+                {/* Progress indicator */}
+                {importProgress !== null && (
+                  <div className="bg-accent/10 border border-accent/20 rounded-md px-4 py-3 text-sm font-medium text-accent">
+                    Importing {importProgress} of {validatedRows.length}...
+                  </div>
+                )}
+
+                {/* Preview table */}
+                {validatedRows.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    No valid rows to import. Go back and check your column mapping.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto rounded-md border border-border">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-muted/40 border-b border-border">
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Title</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Domain</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Priority</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Assignee</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Due Date</th>
+                          <th className="px-3 py-2 text-left font-medium text-muted-foreground">Notes</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {validatedRows.slice(0, 10).map((row, i) => (
+                          <tr key={i} className="border-b border-border/60 last:border-0">
+                            <td className="px-3 py-2 font-medium text-foreground max-w-[160px] truncate">{row.title}</td>
+                            <td className="px-3 py-2">
+                              <span className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border",
+                                domainColors[row.domain]
+                              )}>
+                                {row.domain}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-muted-foreground capitalize">{row.priority}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{row.assignee ?? "—"}</td>
+                            <td className="px-3 py-2 text-muted-foreground">{row.due_date ?? "—"}</td>
+                            <td className="px-3 py-2 text-muted-foreground max-w-[140px] truncate">{row.notes ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {validatedRows.length > 10 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground border-t border-border">
+                        + {validatedRows.length - 10} more rows not shown
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex-shrink-0 pt-2 border-t border-border mt-2">
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="ghost"
+                onClick={handleImportClose}
+                disabled={importProgress !== null}
+              >
+                Cancel
+              </Button>
+              <div className="flex items-center gap-2">
+                {importStep > 1 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setImportStep((s) => (s - 1) as ImportStep)}
+                    disabled={importProgress !== null}
+                  >
+                    Back
+                  </Button>
+                )}
+                {importStep === 2 && (
+                  <Button
+                    onClick={handleMappingNext}
+                    disabled={!columnMapping.title}
+                  >
+                    Next
+                  </Button>
+                )}
+                {importStep === 3 && (
+                  <Button
+                    onClick={handleImportTasks}
+                    disabled={validatedRows.length === 0 || importProgress !== null}
+                  >
+                    {importProgress !== null
+                      ? `Importing ${importProgress} of ${validatedRows.length}...`
+                      : `Import ${validatedRows.length} Task${validatedRows.length !== 1 ? "s" : ""}`}
+                  </Button>
+                )}
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -15,10 +15,10 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_FILE_BYTES = 25 * 1024 * 1024;        // 25 MB per file
-const MAX_CLIENT_BYTES = 50 * 1024 * 1024;       // 50 MB per client data room
+const MAX_CLIENT_BYTES = 100 * 1024 * 1024;      // 100 MB per client data room
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".xlsx", ".xls", ".csv",
-  ".doc", ".docx", ".jpg", ".jpeg", ".png",
+  ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png",
 ]);
 
 // ── Multer config ─────────────────────────────────────────────────────────────
@@ -71,6 +71,7 @@ function getFileType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   if (ext === ".pdf") return "pdf";
   if ([".xlsx", ".xls", ".csv"].includes(ext)) return "spreadsheet";
+  // .doc, .docx, .ppt, .pptx, and all other allowed types map to "document"
   return "document";
 }
 
@@ -210,7 +211,7 @@ router.post(
         return res.status(404).json({ error: "Client not found" });
       }
 
-      // Enforce 50 MB per-client cap
+      // Enforce 100 MB per-client cap
       const usageResult = await query(
         `SELECT COALESCE(SUM(size_bytes), 0)::bigint AS used_bytes FROM documents WHERE client_id = $1`,
         [client_id]
@@ -219,7 +220,7 @@ router.post(
       if (usedBytes + req.file.size > MAX_CLIENT_BYTES) {
         fs.unlinkSync(req.file.path);
         return res.status(413).json({
-          error: `Data Room is full. Maximum 50 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
+          error: `Data Room is full. Maximum 100 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
         });
       }
 
@@ -245,7 +246,7 @@ router.post(
         ]
       );
 
-      // Log to activity feed
+      // Log to activity feed + notify advisor when client uploads
       try {
         const clientResult = await query(
           `SELECT c.name, c.advisor_id FROM clients c WHERE c.id = $1`,
@@ -263,10 +264,23 @@ router.post(
               `${uploadedBy} uploaded "${req.file.originalname}" to the Data Room`,
             ]
           );
+          // Notify advisor only when a client triggers the upload
+          if (role === "client") {
+            await query(
+              `INSERT INTO notifications (advisor_id, client_id, type, message)
+               VALUES ($1, $2, $3, $4)`,
+              [
+                advisor_id,
+                client_id,
+                "document_upload",
+                `${clientName} uploaded "${req.file.originalname}" to their Data Room`,
+              ]
+            );
+          }
         }
       } catch (logErr) {
-        // Activity log failure is non-fatal
-        console.warn("Activity log write failed:", logErr);
+        // Non-fatal: activity log / notification failure should not fail the upload
+        console.warn("Activity log / notification write failed:", logErr);
       }
 
       return res.status(201).json(docResult.rows[0]);
