@@ -25,6 +25,10 @@ import {
   ClientProvePage,
 } from "./pages/advisor/ClientWorkspacePlaceholders";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
+import ProspectWorkspace from "./pages/advisor/ProspectWorkspace";
+import ProspectOverviewTab from "./pages/advisor/ProspectOverviewTab";
+import ProspectAssessmentsTab from "./pages/advisor/ProspectAssessmentsTab";
+import ProspectDocumentsTab from "./pages/advisor/ProspectDocumentsTab";
 import GrowLanePage from "./pages/advisor/GrowLanePage";
 import ProtectionPage from "./pages/advisor/ProtectionPage";
 import QuarterlyReviewPage from "./pages/advisor/QuarterlyReviewPage";
@@ -94,6 +98,12 @@ const App = () => (
 
               {/* TFO pages */}
               <Route path="prospects" element={<ProspectPipeline />} />
+              <Route path="prospects/:id" element={<ProspectWorkspace />}>
+                <Route index element={<Navigate to="overview" replace />} />
+                <Route path="overview" element={<ProspectOverviewTab />} />
+                <Route path="assessments" element={<ProspectAssessmentsTab />} />
+                <Route path="documents" element={<ProspectDocumentsTab />} />
+              </Route>
               <Route path="grow-lane" element={<GrowLanePage />} />
               <Route path="protection" element={<ProtectionPage />} />
               <Route path="quarterly-review" element={<QuarterlyReviewPage />} />

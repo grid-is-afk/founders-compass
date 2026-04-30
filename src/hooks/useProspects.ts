@@ -1,6 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+export function useProspect(id: string | null) {
+  const { data: prospects = [], isLoading, isError } = useQuery<Record<string, unknown>[]>({
+    queryKey: ["prospects"],
+    queryFn: () => api.get("/prospects"),
+    enabled: !!id,
+  });
+
+  const prospect = id ? prospects.find((p) => p.id === id) ?? null : null;
+
+  return { data: prospect, isLoading, isError };
+}
+
 export function useProspects() {
   return useQuery({
     queryKey: ["prospects"],

@@ -125,7 +125,8 @@ export function ChecklistItem({
   return (
     <div>
       {/* Main row */}
-      <div className={cn("flex items-center group", isSkipped && "opacity-60")}>
+      <div className={cn("flex items-center group", isSkipped && "opacity-70")}>
+
         {/* Expand toggle */}
         <button
           type="button"
@@ -133,30 +134,31 @@ export function ChecklistItem({
           disabled={isSkipped}
           className={cn(
             "pl-3 pr-1 py-3 flex-shrink-0 transition-colors",
-            expanded
-              ? "text-foreground/60"
-              : "text-muted-foreground/30 hover:text-muted-foreground/60",
+            expanded ? "text-foreground/60" : "text-muted-foreground/30 hover:text-muted-foreground/60",
             isSkipped && "pointer-events-none"
           )}
-          title={expanded ? "Collapse subtasks" : "Add or view subtasks"}
         >
-          {expanded ? (
-            <ChevronDown className="w-3.5 h-3.5" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5" />
-          )}
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </button>
 
-        {/* Checkbox + label */}
-        <button
-          type="button"
-          disabled={isPending || isSkipped}
-          onClick={onToggle}
+        {/*
+          Content area: checkbox icon + label + inline Skip/Undo.
+          Using a div[role="button"] instead of <button> so we can legally
+          nest real <button> elements (Skip, Undo) inside without invalid HTML.
+          e.stopPropagation() on inner buttons prevents the toggle from firing.
+        */}
+        <div
+          role="button"
+          tabIndex={isSkipped || isPending ? -1 : 0}
+          onClick={() => { if (!isSkipped && !isPending) onToggle(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !isSkipped && !isPending) onToggle(); }}
           className={cn(
-            "flex items-center gap-3 flex-1 pr-3 py-3 text-left transition-colors hover:bg-muted/20 min-w-0",
-            (isPending || isSkipped) && "opacity-60 cursor-not-allowed"
+            "flex items-center gap-3 flex-1 py-3 pr-2 text-left transition-colors min-w-0",
+            !isSkipped && !isPending && "cursor-pointer hover:bg-muted/20",
+            (isPending || isSkipped) && "cursor-default"
           )}
         >
+          {/* Checkbox icon */}
           {isSkipped ? (
             <MinusCircle className="w-4 h-4 text-muted-foreground/40 flex-shrink-0" />
           ) : isDone ? (
@@ -164,59 +166,58 @@ export function ChecklistItem({
           ) : (
             <Square className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
           )}
-          <div className="flex-1 min-w-0">
-            <p
-              className={cn(
-                "text-sm truncate",
-                isDone || isSkipped
-                  ? "line-through text-muted-foreground"
-                  : "text-foreground"
-              )}
-            >
+
+          {/* Label + category/reason */}
+          <div className="min-w-0 flex-1">
+            <p className={cn(
+              "text-sm truncate",
+              isDone || isSkipped ? "line-through text-muted-foreground" : "text-foreground"
+            )}>
               {label}
             </p>
             {isSkipped && skipReason ? (
-              <p className="text-[10px] text-muted-foreground/50">
-                Skipped · {skipReason}
-              </p>
+              <p className="text-[10px] text-muted-foreground/50">Skipped · {skipReason}</p>
             ) : category ? (
               <p className="text-[10px] text-muted-foreground/60">{category}</p>
             ) : null}
           </div>
+
+          {/* Subtask count */}
           {hasSubtasks && !isSkipped && (
             <span className="text-[10px] text-muted-foreground/50 tabular-nums flex-shrink-0">
               {doneCount}/{subtasks.length}
             </span>
           )}
-        </button>
 
-        {/* Right-side actions */}
-        <div className="flex items-center pr-3 gap-1">
-          {/* Undo skip — always visible since it's the primary recovery action */}
-          {isSkipped && (
-            <button
-              type="button"
-              onClick={onUnskip}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Undo
-            </button>
-          )}
-
-          {/* Skip button — revealed on row hover */}
+          {/* Skip — inline, right after label, revealed on hover */}
           {!isDone && !isSkipped && (
             <button
               type="button"
-              onClick={() => setShowSkipForm((v) => !v)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground/40 hover:text-amber-500 hover:bg-amber-50/40 opacity-0 group-hover:opacity-100 transition-all"
+              onClick={(e) => { e.stopPropagation(); setShowSkipForm((v) => !v); }}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground/50 hover:text-amber-600 hover:bg-amber-50/60 opacity-0 group-hover:opacity-100 transition-all flex-shrink-0"
             >
               <SkipForward className="w-3 h-3" />
               Skip
             </button>
           )}
 
-          {/* Delete button — only for manually added items, revealed on row hover */}
+          {/* Undo — inline, always visible when skipped */}
+          {isSkipped && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onUnskip(); }}
+              className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors flex-shrink-0"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Undo
+            </button>
+          )}
+        </div>
+
+        {/* Right-side controls: Remove + Link file */}
+        <div className="flex items-center pr-3 gap-2 flex-shrink-0">
+
+          {/* Remove — for manually added items, revealed on hover */}
           {onDelete && (
             <button
               type="button"
@@ -228,7 +229,7 @@ export function ChecklistItem({
             </button>
           )}
 
-          {/* Document link area */}
+          {/* Link file */}
           {hasDocumentFeature && !isSkipped && (
             <>
               {linkedDocumentId && linkedDocumentName ? (
@@ -260,10 +261,10 @@ export function ChecklistItem({
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      title="Link a file from the Data Room"
-                      className="p-1.5 text-muted-foreground/30 hover:text-primary transition-colors"
+                      className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted-foreground/40 hover:text-primary hover:bg-primary/5 transition-colors"
                     >
-                      <Paperclip className="w-3.5 h-3.5" />
+                      <Paperclip className="w-3 h-3" />
+                      Link file
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64 max-h-52 overflow-y-auto">
@@ -349,35 +350,27 @@ export function ChecklistItem({
       {expanded && !isSkipped && (
         <div className="border-t border-border/40 bg-muted/5 pl-10 pr-4 pb-3 pt-2 space-y-1.5">
           {subtasks.length === 0 && (
-            <p className="text-[11px] text-muted-foreground/40 italic py-0.5">
-              No subtasks yet.
-            </p>
+            <p className="text-[11px] text-muted-foreground/40 italic py-0.5">No subtasks yet.</p>
           )}
           {subtasks.map((subtask, idx) => (
-            <div key={idx} className="flex items-center gap-2 group">
-              <button
-                type="button"
-                onClick={() => handleToggleSubtask(idx)}
-                className="flex-shrink-0"
-              >
+            <div key={idx} className="flex items-center gap-2 group/sub">
+              <button type="button" onClick={() => handleToggleSubtask(idx)} className="flex-shrink-0">
                 {subtask.done ? (
                   <CheckSquare className="w-3.5 h-3.5 text-emerald-500" />
                 ) : (
                   <Square className="w-3.5 h-3.5 text-muted-foreground/40" />
                 )}
               </button>
-              <span
-                className={cn(
-                  "text-xs flex-1 leading-snug",
-                  subtask.done ? "line-through text-muted-foreground/60" : "text-foreground/80"
-                )}
-              >
+              <span className={cn(
+                "text-xs flex-1 leading-snug",
+                subtask.done ? "line-through text-muted-foreground/60" : "text-foreground/80"
+              )}>
                 {subtask.title}
               </span>
               <button
                 type="button"
                 onClick={() => handleDeleteSubtask(idx)}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground/30 hover:text-destructive transition-opacity flex-shrink-0"
+                className="opacity-0 group-hover/sub:opacity-100 text-muted-foreground/30 hover:text-destructive transition-opacity flex-shrink-0"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -400,11 +393,7 @@ export function ChecklistItem({
               className="flex-1 text-xs bg-transparent border-0 outline-none text-foreground placeholder:text-muted-foreground/30"
             />
             {newTitle.trim() && (
-              <button
-                type="button"
-                onClick={handleAddSubtask}
-                className="text-[10px] text-primary font-medium flex-shrink-0"
-              >
+              <button type="button" onClick={handleAddSubtask} className="text-[10px] text-primary font-medium flex-shrink-0">
                 Add
               </button>
             )}

@@ -53,6 +53,14 @@ async function verifyClient(clientId: string, userId: string, userRole: string) 
   return result.rows.length > 0;
 }
 
+async function verifyProspect(prospectId: string, userId: string) {
+  const result = await query(
+    `SELECT id FROM prospects WHERE id = $1 AND advisor_id = $2`,
+    [prospectId, userId]
+  );
+  return result.rows.length > 0;
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -66,14 +74,31 @@ function getFileType(filename: string): string {
   return "document";
 }
 
-// ── GET /api/documents?client_id=xxx ─────────────────────────────────────────
+// ── GET /api/documents?client_id=xxx OR ?prospect_id=xxx ─────────────────────
 router.get("/", async (req, res) => {
-  const { client_id } = req.query;
-  if (!client_id) {
-    return res.status(400).json({ error: "client_id query param required" });
+  const { client_id, prospect_id } = req.query;
+
+  if (!client_id && !prospect_id) {
+    return res.status(400).json({ error: "client_id or prospect_id query param required" });
   }
 
   try {
+    if (prospect_id) {
+      if (!(await verifyProspect(prospect_id as string, req.user!.id))) {
+        return res.status(404).json({ error: "Prospect not found" });
+      }
+      const result = await query(
+        `SELECT id, prospect_id, client_id, name, category, file_url, size, size_bytes, type,
+                uploaded_by_role, uploaded_at
+         FROM documents
+         WHERE prospect_id = $1
+         ORDER BY uploaded_at DESC`,
+        [prospect_id]
+      );
+      return res.json(result.rows);
+    }
+
+    // client_id path
     if (!(await verifyClient(client_id as string, req.user!.id, req.user!.role))) {
       return res.status(404).json({ error: "Client not found" });
     }
@@ -125,7 +150,7 @@ router.get("/storage", async (req, res) => {
 });
 
 // ── POST /api/documents ───────────────────────────────────────────────────────
-// Accepts multipart/form-data: file, client_id, category, uploaded_by_role
+// Accepts multipart/form-data: file, client_id OR prospect_id, category, uploaded_by_role
 router.post(
   "/",
   (req, res, next) => {
@@ -138,17 +163,48 @@ router.post(
     });
   },
   async (req, res) => {
-    const { client_id, category, uploaded_by_role } = req.body;
+    const { client_id, prospect_id, category, uploaded_by_role } = req.body;
 
-    if (!client_id) {
+    if (!client_id && !prospect_id) {
       if (req.file) fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: "client_id is required" });
+      return res.status(400).json({ error: "client_id or prospect_id is required" });
     }
     if (!req.file) {
       return res.status(400).json({ error: "A file is required" });
     }
 
     try {
+      // ── Prospect upload path ───────────────────────────────────────────────
+      if (prospect_id) {
+        if (!(await verifyProspect(prospect_id, req.user!.id))) {
+          fs.unlinkSync(req.file.path);
+          return res.status(404).json({ error: "Prospect not found" });
+        }
+
+        const fileUrl = `/uploads/${req.file.filename}`;
+        const sizeLabel = formatFileSize(req.file.size);
+        const fileType = getFileType(req.file.originalname);
+
+        const docResult = await query(
+          `INSERT INTO documents
+             (prospect_id, client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING *`,
+          [
+            prospect_id,
+            req.file.originalname,
+            category ?? null,
+            fileUrl,
+            sizeLabel,
+            req.file.size,
+            fileType,
+            "advisor",
+          ]
+        );
+        return res.status(201).json(docResult.rows[0]);
+      }
+
+      // ── Client upload path ────────────────────────────────────────────────
       if (!(await verifyClient(client_id, req.user!.id, req.user!.role))) {
         fs.unlinkSync(req.file.path);
         return res.status(404).json({ error: "Client not found" });
@@ -236,8 +292,15 @@ router.delete("/:id", async (req, res) => {
     }
     const doc = dResult.rows[0];
 
-    if (!(await verifyClient(doc.client_id, req.user!.id, req.user!.role))) {
-      return res.status(403).json({ error: "Access denied" });
+    // Verify ownership — prospect doc or client doc
+    if (doc.client_id == null && doc.prospect_id != null) {
+      if (!(await verifyProspect(doc.prospect_id, req.user!.id))) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    } else {
+      if (!(await verifyClient(doc.client_id, req.user!.id, req.user!.role))) {
+        return res.status(403).json({ error: "Access denied" });
+      }
     }
 
     // Delete physical file

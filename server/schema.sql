@@ -544,3 +544,11 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES documents
 -- ============================================================
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS skip_reason TEXT;
+
+-- ============================================================
+-- Prospect Data Room — documents now support prospect ownership
+-- ============================================================
+
+ALTER TABLE documents ALTER COLUMN client_id DROP NOT NULL;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS prospect_id UUID REFERENCES prospects(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_documents_prospect ON documents(prospect_id);
