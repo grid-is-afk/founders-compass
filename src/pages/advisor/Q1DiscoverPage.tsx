@@ -118,7 +118,13 @@ export default function Q1DiscoverPage() {
           />
         );
       case "review":
-        return <ReviewWrapPanel />;
+        return (
+          <ReviewWrapPanel
+            clientId={client.id}
+            nextPhase={nextPhase}
+            onPhaseComplete={handlePhaseComplete}
+          />
+        );
       default:
         return null;
     }
