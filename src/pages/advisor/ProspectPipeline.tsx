@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import { useClients, useCreateClient } from "@/hooks/useClients";
@@ -729,6 +729,8 @@ function EnrollClientDialog({ prospect, onClose, onConfirm, isPending }: EnrollC
 
 const ProspectPipeline = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isOffPipelineView = searchParams.get("view") === "off-pipeline";
   const { data: rawProspects = [], isLoading } = useProspects();
   const { data: rawClients = [] } = useClients();
   const updateProspect = useUpdateProspect();
@@ -871,10 +873,12 @@ const ProspectPipeline = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-display font-semibold text-foreground">
-              Prospect Pipeline
+              {isOffPipelineView ? "Off-Pipeline" : "Prospect Pipeline"}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
-              Intake → Fit Assessment → Discovery → Win or Pass
+              {isOffPipelineView
+                ? "Prospects who didn't fit or are being nurtured"
+                : "Intake → Fit Assessment → Discovery → Win or Pass"}
             </p>
           </div>
           <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -891,9 +895,9 @@ const ProspectPipeline = () => {
       ) : (
         <>
           {/* ================================================================
-              Zone 1 — Active Pipeline
+              Zone 1 — Active Pipeline (hidden in off-pipeline view)
           ================================================================ */}
-          <motion.div
+          {!isOffPipelineView && <motion.div
             initial="hidden"
             animate="visible"
             variants={{
@@ -1121,23 +1125,12 @@ const ProspectPipeline = () => {
                 );
               })}
             </div>
-          </motion.div>
+          </motion.div>}
 
           {/* ================================================================
-              Zone divider — Off-Pipeline
+              Zone 2 — Off-Pipeline (only shown in off-pipeline view)
           ================================================================ */}
-          {hasAny && (
-            <div className="relative flex items-center py-4">
-              <div className="flex-1 border-t border-border" />
-              <span className="absolute left-0 text-xs uppercase tracking-[0.15em] text-muted-foreground font-semibold bg-muted px-3 py-0.5 rounded-full">
-                Off-Pipeline
-              </span>
-            </div>
-          )}
-
-          {/* ================================================================
-              Zone 2 — Off-Pipeline
-          ================================================================ */}
+          {isOffPipelineView && <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 opacity-90">
             {OFF_PIPELINE_COLUMNS.map((col, colIdx) => {
               const colProspects = prospects.filter((p) =>
@@ -1168,7 +1161,7 @@ const ProspectPipeline = () => {
                     </Badge>
                   </div>
 
-                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px] max-h-[320px] overflow-y-auto">
+                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px]">
                     {colProspects.length === 0 && (
                       <div className="flex items-center justify-center h-12">
                         <span className="text-xs text-muted-foreground/40">Empty</span>
@@ -1225,6 +1218,7 @@ const ProspectPipeline = () => {
               );
             })}
           </div>
+        </>}
         </>
       )}
 
