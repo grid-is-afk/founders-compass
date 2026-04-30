@@ -1,9 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface SubmitSixKeysPayload {
+  clarity?: number;
+  alignment?: number;
+  structure?: number;
+  stewardship?: number;
+  velocity?: number;
+  legacy?: number;
+  notes?: string | null;
+}
 
 export interface ClientSixKeysRecord {
   id: string;
@@ -34,5 +44,16 @@ export function useClientSixKeys(clientId: string | null) {
     queryKey: ["client-six-keys", clientId],
     queryFn: () => api.get(`/clients/${clientId}/six-keys`),
     enabled: !!clientId,
+  });
+}
+
+export function useSubmitClientSixKeys(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: SubmitSixKeysPayload) =>
+      api.post(`/clients/${clientId}/six-keys`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client-six-keys", clientId] });
+    },
   });
 }

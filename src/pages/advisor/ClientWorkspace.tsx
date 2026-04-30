@@ -19,10 +19,8 @@ interface ClientRecord {
 
 const TABS = [
   { label: "Dashboard", path: "dashboard" },
-  { label: "Discover", path: "discover" },
-  { label: "Protect", path: "protect" },
-  { label: "Grow", path: "grow" },
-  { label: "Prove & Align", path: "prove" },
+  { label: "Chapter 1: Discover", path: "discover" },
+  { label: "Chapter 2: Grow", path: "q2" },
   { label: "Data Room", path: "data-room" },
 ] as const;
 
@@ -85,10 +83,10 @@ export default function ClientWorkspace() {
           >
             <Clock className="w-3.5 h-3.5" />
             {days === null
-              ? "No Q1 start date"
+              ? "No Chapter 1 start date"
               : days <= 0
-              ? "Q1 Complete"
-              : `${days} days remaining in Q1`}
+              ? "Chapter 1 Complete"
+              : `${days} days remaining in Ch. 1`}
           </div>
         </div>
 

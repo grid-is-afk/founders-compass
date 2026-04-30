@@ -5,10 +5,10 @@ import { requireClientOwnership } from "../lib/clientAuth.js";
 const router = Router();
 
 // ---------------------------------------------------------------------------
-// GET /api/clients/:clientId/six-keys
-// Returns the latest Six Keys record for the client, or null.
+// GET /api/clients/:clientId/ip-value-framework
+// Returns the latest IP Value Framework record for the client, or null.
 // ---------------------------------------------------------------------------
-router.get("/:clientId/six-keys", async (req, res) => {
+router.get("/:clientId/ip-value-framework", async (req, res) => {
   const { clientId } = req.params;
   const advisorId = req.user!.id;
 
@@ -18,9 +18,9 @@ router.get("/:clientId/six-keys", async (req, res) => {
 
     const result = await query(
       `SELECT id, client_id, advisor_id,
-              clarity, alignment, structure, stewardship, velocity, legacy,
-              notes, completed_at, created_at, updated_at
-       FROM client_six_keys
+              ip_type, ip_status, valuation_basis, notes, ai_summary,
+              completed_at, created_at, updated_at
+       FROM client_ip_value_framework
        WHERE client_id = $1
        ORDER BY created_at DESC
        LIMIT 1`,
@@ -29,34 +29,28 @@ router.get("/:clientId/six-keys", async (req, res) => {
 
     return res.json(result.rows.length === 0 ? null : result.rows[0]);
   } catch (err) {
-    console.error("GET /clients/:clientId/six-keys error:", err);
+    console.error("GET /clients/:clientId/ip-value-framework error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/clients/:clientId/six-keys
+// POST /api/clients/:clientId/ip-value-framework
 // Upsert: DELETE then INSERT in a transaction.
-// Body: { clarity, alignment, structure, stewardship, velocity, legacy, notes? }
+// Body: { ip_type, ip_status, valuation_basis, notes? }
 // ---------------------------------------------------------------------------
-router.post("/:clientId/six-keys", async (req, res) => {
+router.post("/:clientId/ip-value-framework", async (req, res) => {
   const { clientId } = req.params;
   const advisorId = req.user!.id;
   const {
-    clarity = 0,
-    alignment = 0,
-    structure = 0,
-    stewardship = 0,
-    velocity = 0,
-    legacy = 0,
+    ip_type = null,
+    ip_status = null,
+    valuation_basis = null,
     notes = null,
   } = req.body as {
-    clarity?: number;
-    alignment?: number;
-    structure?: number;
-    stewardship?: number;
-    velocity?: number;
-    legacy?: number;
+    ip_type?: string | null;
+    ip_status?: string | null;
+    valuation_basis?: string | null;
     notes?: string | null;
   };
 
@@ -68,15 +62,15 @@ router.post("/:clientId/six-keys", async (req, res) => {
     try {
       await dbClient.query("BEGIN");
       await dbClient.query(
-        "DELETE FROM client_six_keys WHERE client_id = $1 AND advisor_id = $2",
+        "DELETE FROM client_ip_value_framework WHERE client_id = $1 AND advisor_id = $2",
         [clientId, advisorId]
       );
       const result = await dbClient.query(
-        `INSERT INTO client_six_keys
-           (client_id, advisor_id, clarity, alignment, structure, stewardship, velocity, legacy, notes, completed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        `INSERT INTO client_ip_value_framework
+           (client_id, advisor_id, ip_type, ip_status, valuation_basis, notes, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
          RETURNING *`,
-        [clientId, advisorId, clarity, alignment, structure, stewardship, velocity, legacy, notes]
+        [clientId, advisorId, ip_type, ip_status, valuation_basis, notes]
       );
       await dbClient.query("COMMIT");
       return res.status(201).json(result.rows[0]);
@@ -87,7 +81,7 @@ router.post("/:clientId/six-keys", async (req, res) => {
       dbClient.release();
     }
   } catch (err) {
-    console.error("POST /clients/:clientId/six-keys error:", err);
+    console.error("POST /clients/:clientId/ip-value-framework error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

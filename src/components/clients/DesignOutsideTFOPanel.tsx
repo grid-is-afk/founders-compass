@@ -127,7 +127,7 @@ export function DesignOutsideTFOPanel({
   };
 
   const handleMarkComplete = async () => {
-    if (!allDone || !nextPhase) return;
+    if (!nextPhase) return;
     try {
       await updateClient.mutateAsync({ id: clientId, q1_phase: nextPhase });
       toast.success("Design (Outside TFO) phase complete", { description: "Moving to Review & Wrap." });
@@ -175,11 +175,13 @@ export function DesignOutsideTFOPanel({
       {nextPhase !== null && (
         <div className="flex items-center justify-between rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
           <p className="text-xs text-muted-foreground">
-            {allDone ? "All items complete — ready to advance." : "Complete all items to advance."}
+            {allDone
+              ? "All items complete."
+              : `${allItems.filter((title) => !taskMap[title]?.done).length} items remaining`}
           </p>
           <Button
             size="sm"
-            disabled={!allDone || updateClient.isPending}
+            disabled={updateClient.isPending}
             onClick={handleMarkComplete}
             className="gap-1.5"
           >

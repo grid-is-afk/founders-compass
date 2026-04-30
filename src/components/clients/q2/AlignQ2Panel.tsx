@@ -1,51 +1,35 @@
 import { useEffect, useMemo, useRef } from "react";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { ChecklistItem, type SubtaskItem } from "./ChecklistItem";
+import { ChecklistItem, type SubtaskItem } from "@/components/clients/ChecklistItem";
 import { useClientTasks, useCreateTask, useUpdateTask } from "@/hooks/useTasks";
 import { useUpdateClient } from "@/hooks/useClients";
 
 // ---------------------------------------------------------------------------
-// Checklist definition — ordered, grouped
+// Checklist definition
 // ---------------------------------------------------------------------------
 
-interface KickoffItem {
+interface AlignItem {
   key: string;
   group: string;
   label: string;
 }
 
-const KICKOFF_CHECKLIST: KickoffItem[] = [
-  {
-    key: "kickoff_objectives",
-    group: "Project Plan",
-    label: "Overall Project Objectives / Milestones / Deliverables",
-  },
-  {
-    key: "kickoff_scheduling",
-    group: "Project Plan",
-    label: "Scheduling",
-  },
-  {
-    key: "kickoff_roadmap_milestones",
-    group: "Project Roadmap",
-    label: "Objectives and Milestones",
-  },
-  {
-    key: "kickoff_partners",
-    group: "Project Roadmap",
-    label: "Project Partners",
-  },
+const ALIGN_CHECKLIST: AlignItem[] = [
+  { key: "q2_align_protection_review", group: "Progress Review", label: "Review Protection Objectives" },
+  { key: "q2_align_value_review", group: "Progress Review", label: "Review Value Enhancement goals" },
+  { key: "q2_align_objectives", group: "Quarterly Roadmap", label: "Set Objectives and Milestones" },
+  { key: "q2_align_champions", group: "Quarterly Roadmap", label: "Identify Champions" },
+  { key: "q2_align_referrals", group: "Referrals", label: "Make referrals to partners" },
 ];
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-interface ProjectKickoffPanelProps {
+interface AlignQ2PanelProps {
   clientId: string;
-  /** FIX-15: Passed from Q1DiscoverPage — the phase to advance to on completion. Null = last phase, hide button. */
   nextPhase: string | null;
   onPhaseComplete: () => void;
 }
@@ -54,48 +38,47 @@ interface ProjectKickoffPanelProps {
 // Component
 // ---------------------------------------------------------------------------
 
-export function ProjectKickoffPanel({ clientId, nextPhase, onPhaseComplete }: ProjectKickoffPanelProps) {
+export function AlignQ2Panel({ clientId, nextPhase, onPhaseComplete }: AlignQ2PanelProps) {
   const { data: tasksRaw = [], isLoading } = useClientTasks(clientId);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const updateClient = useUpdateClient();
 
-  const kickoffTasks = useMemo(() => {
+  const alignTasks = useMemo(() => {
     return (
       tasksRaw as Array<{ id: string; title: string; phase: string; status: string; subtasks: SubtaskItem[] }>
-    ).filter((t) => t.phase === "kickoff");
+    ).filter((t) => t.phase === "q2_align");
   }, [tasksRaw]);
 
   const taskMap = useMemo(() => {
     const map: Record<string, { id: string; done: boolean; subtasks: SubtaskItem[] }> = {};
-    for (const t of kickoffTasks) {
+    for (const t of alignTasks) {
       map[t.title] = { id: t.id, done: t.status === "done", subtasks: t.subtasks ?? [] };
     }
     return map;
-  }, [kickoffTasks]);
+  }, [alignTasks]);
 
-  // FIX-6: useRef instead of useState — survives remounts and Strict Mode double-invocations.
   const seededRef = useRef(false);
   useEffect(() => {
     if (isLoading || seededRef.current) return;
     seededRef.current = true;
-    const existing = new Set(kickoffTasks.map((t) => t.title));
-    for (const item of KICKOFF_CHECKLIST) {
+    const existing = new Set(alignTasks.map((t) => t.title));
+    for (const item of ALIGN_CHECKLIST) {
       if (!existing.has(item.label)) {
         createTask.mutate({
           client_id: clientId,
           title: item.label,
-          phase: "kickoff",
+          phase: "q2_align",
           status: "todo",
           priority: "medium",
         });
       }
     }
-  }, [isLoading, kickoffTasks, clientId, createTask]);
+  }, [isLoading, alignTasks, clientId, createTask]);
 
   const allDone =
-    KICKOFF_CHECKLIST.length > 0 &&
-    KICKOFF_CHECKLIST.every((item) => taskMap[item.label]?.done);
+    ALIGN_CHECKLIST.length > 0 &&
+    ALIGN_CHECKLIST.every((item) => taskMap[item.label]?.done);
 
   const handleToggle = async (label: string) => {
     const task = taskMap[label];
@@ -117,19 +100,17 @@ export function ProjectKickoffPanel({ clientId, nextPhase, onPhaseComplete }: Pr
     }
   };
 
-  const handleMarkComplete = async () => {
-    if (!nextPhase) return;
+  const handleCompleteChapter = async () => {
     try {
-      await updateClient.mutateAsync({ id: clientId, q1_phase: nextPhase });
-      toast.success("Kickoff phase complete", { description: "Moving to Prove phase." });
+      await updateClient.mutateAsync({ id: clientId, q2_phase: "align" });
+      toast.success("Chapter 2: Grow complete!", { description: "Ready for Chapter 3: Strengthen." });
       onPhaseComplete();
     } catch {
-      toast.error("Failed to advance phase");
+      toast.error("Failed to complete chapter");
     }
   };
 
-  // Group items by group label
-  const groups = KICKOFF_CHECKLIST.reduce<Record<string, KickoffItem[]>>((acc, item) => {
+  const groups = ALIGN_CHECKLIST.reduce<Record<string, AlignItem[]>>((acc, item) => {
     if (!acc[item.group]) acc[item.group] = [];
     acc[item.group].push(item);
     return acc;
@@ -147,9 +128,9 @@ export function ProjectKickoffPanel({ clientId, nextPhase, onPhaseComplete }: Pr
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-display font-semibold text-foreground">Project Kickoff</h2>
+        <h2 className="text-lg font-display font-semibold text-foreground">Align — Quarterly Review</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
-          Complete the following items to initiate the Q1 engagement.
+          Review progress, set the roadmap, and make referrals.
         </p>
       </div>
 
@@ -169,6 +150,8 @@ export function ProjectKickoffPanel({ clientId, nextPhase, onPhaseComplete }: Pr
                   subtasks={task?.subtasks ?? []}
                   isPending={updateTask.isPending}
                   onToggle={() => handleToggle(item.label)}
+                  onSkip={() => {}}
+                  onUnskip={() => {}}
                   onSubtasksChange={(subtasks) => handleSubtasksChange(item.label, subtasks)}
                 />
               );
@@ -177,18 +160,48 @@ export function ProjectKickoffPanel({ clientId, nextPhase, onPhaseComplete }: Pr
         </div>
       ))}
 
-      {/* Completion action — hidden if this is the last phase (nextPhase === null) */}
-      {nextPhase !== null && (
+      {/* nextPhase === null means this is the last phase — show celebration card instead */}
+      {nextPhase === null ? (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <h3 className="text-sm font-semibold text-emerald-800">
+              Chapter 2: Grow
+            </h3>
+          </div>
+          <p className="text-xs text-emerald-700">
+            {allDone
+              ? "All items complete — ready for Chapter 3: Strengthen."
+              : `${ALIGN_CHECKLIST.filter((i) => !taskMap[i.label]?.done).length} items remaining.`}
+          </p>
+          <Button
+            size="sm"
+            onClick={handleCompleteChapter}
+            disabled={updateClient.isPending}
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {updateClient.isPending ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5" /> Complete Chapter 2
+              </>
+            )}
+          </Button>
+        </div>
+      ) : (
         <div className="flex items-center justify-between rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
           <p className="text-xs text-muted-foreground">
             {allDone
               ? "All items complete."
-              : `${KICKOFF_CHECKLIST.filter((i) => !taskMap[i.label]?.done).length} items remaining`}
+              : `${ALIGN_CHECKLIST.filter((i) => !taskMap[i.label]?.done).length} items remaining`}
           </p>
           <Button
             size="sm"
             disabled={updateClient.isPending}
-            onClick={handleMarkComplete}
+            onClick={handleCompleteChapter}
             className="gap-1.5"
           >
             {updateClient.isPending ? (

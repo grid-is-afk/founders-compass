@@ -285,7 +285,7 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
   };
 
   const handleMarkComplete = async () => {
-    if (!allDone || !nextPhase) return;
+    if (!nextPhase) return;
     try {
       await updateClient.mutateAsync({ id: clientId, q1_phase: nextPhase });
       toast.success("Prove phase complete", { description: "Moving to Diagnose phase." });
@@ -502,12 +502,12 @@ export function ProvePanel({ clientId, nextPhase, onPhaseComplete }: ProvePanelP
         <div className="flex items-center justify-between rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
           <p className="text-xs text-muted-foreground">
             {allDone
-              ? "All documents collected — ready to advance."
+              ? "All documents collected."
               : `${remainingCount} document${remainingCount === 1 ? "" : "s"} remaining`}
           </p>
           <Button
             size="sm"
-            disabled={!allDone || updateClient.isPending}
+            disabled={updateClient.isPending}
             onClick={handleMarkComplete}
             className="gap-1.5"
           >
