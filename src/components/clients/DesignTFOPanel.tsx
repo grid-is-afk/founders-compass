@@ -110,7 +110,7 @@ export function DesignTFOPanel({
   };
 
   const handleMarkComplete = async () => {
-    if (!allDone || !nextPhase) return;
+    if (!nextPhase) return;
     try {
       await updateClient.mutateAsync({ id: clientId, q1_phase: nextPhase });
       toast.success("Design TFO phase complete", { description: "Moving to Design (Outside TFO) phase." });
@@ -181,11 +181,11 @@ export function DesignTFOPanel({
       {nextPhase !== null && (
         <div className="flex items-center justify-between rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
           <p className="text-xs text-muted-foreground">
-            {allDone ? "Design TFO complete — ready to advance." : "Complete all items to advance."}
+            {allDone ? "All items complete." : "Complete checklist items and Optionality Framework to continue."}
           </p>
           <Button
             size="sm"
-            disabled={!allDone || updateClient.isPending}
+            disabled={updateClient.isPending}
             onClick={handleMarkComplete}
             className="gap-1.5"
           >

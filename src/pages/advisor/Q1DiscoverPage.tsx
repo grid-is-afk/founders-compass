@@ -152,10 +152,15 @@ export default function Q1DiscoverPage() {
 
   return (
     <div className="space-y-6">
-      {/* Q1 header with editable start date */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <span className="text-sm font-semibold text-foreground font-display">Q1: Discover</span>
-        <span className="text-muted-foreground/40 text-sm">|</span>
+      {/* Chapter header */}
+      <div className="space-y-3">
+        <div>
+          <h1 className="text-2xl font-display font-semibold text-foreground">Chapter 1: Discover</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Understanding where you are</p>
+        </div>
+
+        {/* Start date + countdown row */}
+        <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground font-medium">Start:</span>
           <div className="relative flex items-center gap-1">
@@ -183,7 +188,7 @@ export default function Q1DiscoverPage() {
               {days === null
                 ? "No start date"
                 : days <= 0
-                ? "Q1 Complete"
+                ? "Chapter 1 Complete"
                 : `${days}d remaining`}
               {showGantt ? (
                 <ChevronDown className="w-3 h-3 opacity-70" />
@@ -193,6 +198,7 @@ export default function Q1DiscoverPage() {
             </button>
           </>
         )}
+        </div>
       </div>
 
       {/* Phase stepper */}

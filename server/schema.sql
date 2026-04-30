@@ -576,3 +576,34 @@ CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(advisor_id,
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id UUID REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);
+
+-- ============================================================
+-- Chapter 2: Grow Phase
+-- ============================================================
+
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS q2_phase TEXT DEFAULT 'prove';
+
+CREATE TABLE IF NOT EXISTS client_six_cs_reconcile (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id   UUID NOT NULL REFERENCES users(id),
+  findings     JSONB NOT NULL DEFAULT '[]',
+  summary      TEXT,
+  generated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_six_cs_reconcile ON client_six_cs_reconcile(client_id);
+
+CREATE TABLE IF NOT EXISTS client_ip_value_framework (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  advisor_id      UUID NOT NULL REFERENCES users(id),
+  ip_type         TEXT,
+  ip_status       TEXT,
+  valuation_basis TEXT,
+  notes           TEXT,
+  ai_summary      TEXT,
+  completed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_ip_value_framework ON client_ip_value_framework(client_id);

@@ -45,7 +45,7 @@ export function DiagnosePanel({
     !!(snapshotRecord?.completed_at);
 
   const handleMarkComplete = async () => {
-    if (!allComplete || !nextPhase) return;
+    if (!nextPhase) return;
     try {
       await updateClient.mutateAsync({ id: clientId, q1_phase: nextPhase });
       toast.success("Diagnose phase complete", { description: "Moving to Design TFO phase." });
@@ -107,12 +107,12 @@ export function DiagnosePanel({
         <div className="flex items-center justify-between rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-3">
           <p className="text-xs text-muted-foreground">
             {allComplete
-              ? "All diagnoses complete — ready to advance."
-              : "Complete all 3 assessments to advance."}
+              ? "All 3 assessments complete."
+              : "Complete all 3 assessments to capture the full diagnosis."}
           </p>
           <Button
             size="sm"
-            disabled={!allComplete || updateClient.isPending}
+            disabled={updateClient.isPending}
             onClick={handleMarkComplete}
             className="gap-1.5"
           >

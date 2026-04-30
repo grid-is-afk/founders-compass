@@ -96,17 +96,12 @@ export function PhaseTracker({ activePhase, reachedPhase, onPhaseClick }: PhaseT
               {/* Phase step */}
               <button
                 type="button"
-                onClick={isFuture ? undefined : () => onPhaseClick(phase.id)}
-                disabled={isFuture}
+                onClick={() => onPhaseClick(phase.id)}
                 className={cn(
                   "flex flex-col items-center gap-1.5 px-4 py-2 rounded-lg transition-colors group",
-                  isActive
-                    ? "bg-primary/10"
-                    : isFuture
-                    ? "opacity-40 cursor-not-allowed pointer-events-none"
-                    : "hover:bg-muted/40"
+                  isActive ? "bg-primary/10" : "hover:bg-muted/40"
                 )}
-                title={isFuture ? `${phase.label} (locked)` : phase.label}
+                title={phase.label}
               >
                 {/* Icon + dot */}
                 <div className="relative">

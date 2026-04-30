@@ -17,13 +17,9 @@ import AdvisorClients from "./pages/advisor/AdvisorClients";
 import ClientListPage from "./pages/advisor/ClientListPage";
 import ClientWorkspace from "./pages/advisor/ClientWorkspace";
 import Q1DiscoverPage from "./pages/advisor/Q1DiscoverPage";
+import Q2Page from "./pages/advisor/Q2Page";
 import ClientDashboardTab from "./pages/advisor/ClientDashboardTab";
 import ClientDataRoomTab from "./pages/advisor/ClientDataRoomTab";
-import {
-  ClientProtectPage,
-  ClientGrowPage,
-  ClientProvePage,
-} from "./pages/advisor/ClientWorkspacePlaceholders";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
 import ProspectWorkspace from "./pages/advisor/ProspectWorkspace";
 import ProspectOverviewTab from "./pages/advisor/ProspectOverviewTab";
@@ -91,9 +87,7 @@ const App = () => (
                 <Route index element={<Navigate to="dashboard" replace />} />
                 <Route path="dashboard" element={<ClientDashboardTab />} />
                 <Route path="discover" element={<Q1DiscoverPage />} />
-                <Route path="protect" element={<ClientProtectPage />} />
-                <Route path="grow" element={<ClientGrowPage />} />
-                <Route path="prove" element={<ClientProvePage />} />
+                <Route path="q2" element={<Q2Page />} />
                 <Route path="data-room" element={<ClientDataRoomTab />} />
               </Route>
 

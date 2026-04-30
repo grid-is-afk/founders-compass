@@ -39,9 +39,11 @@ import clientMultiplesRoutes from "./routes/clientMultiples.js";
 import clientIpdMetricsRoutes from "./routes/clientIpdMetrics.js";
 import analyzeDataRoomRouter from "./routes/analyzeDataRoom.js";
 import clientDiagnoseActionsRoutes from "./routes/clientDiagnoseActions.js";
+import clientSixCsReconcileRoutes from "./routes/clientSixCsReconcile.js";
 import clientAssessmentSummaryRoutes from "./routes/clientAssessmentSummary.js";
 import notificationRoutes from "./routes/notifications.js";
 import adminRoutes from "./routes/admin.js";
+import clientIpValueFrameworkRoutes from "./routes/clientIpValueFramework.js";
 
 dotenv.config();
 
@@ -82,7 +84,9 @@ app.use("/api/clients", authMiddleware, clientMultiplesRoutes);
 app.use("/api/clients", authMiddleware, clientIpdMetricsRoutes);
 app.use("/api/clients", authMiddleware, analyzeDataRoomRouter);
 app.use("/api/clients", authMiddleware, clientDiagnoseActionsRoutes);
+app.use("/api/clients", authMiddleware, clientSixCsReconcileRoutes);
 app.use("/api/clients", authMiddleware, clientAssessmentSummaryRoutes);
+app.use("/api/clients", authMiddleware, clientIpValueFrameworkRoutes);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);
