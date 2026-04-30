@@ -254,7 +254,16 @@ router.post(
         );
         if (clientResult.rows.length > 0) {
           const { name: clientName, advisor_id } = clientResult.rows[0];
-          const uploadedBy = role === "client" ? clientName : "Advisor";
+          let uploadedBy: string;
+          if (role === "client") {
+            uploadedBy = clientName;
+          } else {
+            const uploaderResult = await query(
+              "SELECT name FROM users WHERE id = $1",
+              [req.user!.id]
+            );
+            uploadedBy = uploaderResult.rows[0]?.name ?? "Advisor";
+          }
           await query(
             `INSERT INTO activity_log (client_id, advisor_id, text)
              VALUES ($1, $2, $3)`,

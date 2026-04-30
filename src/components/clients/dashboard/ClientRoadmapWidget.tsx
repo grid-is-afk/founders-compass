@@ -18,6 +18,7 @@ interface TaskRow {
   status: "todo" | "in_progress" | "done" | "blocked";
   phase: string | null;
   assignee: string | null;
+  assignee_name: string | null;
   priority: string;
 }
 
@@ -108,7 +109,7 @@ export function ClientRoadmapWidget({ clientId }: ClientRoadmapWidgetProps) {
                     )}
                   </td>
                   <td className="px-3 py-2.5 hidden sm:table-cell text-muted-foreground">
-                    {task.assignee ?? "—"}
+                    {task.assignee_name ?? task.assignee ?? "—"}
                   </td>
                 </tr>
               );

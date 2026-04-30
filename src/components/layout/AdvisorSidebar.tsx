@@ -9,11 +9,13 @@ import {
   ChevronRight,
   Map,
   Archive,
+  ShieldCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientDocuments } from "@/hooks/useDocuments";
+import { useAuth } from "@/lib/auth";
 
 const navGroups = [
   {
@@ -50,6 +52,7 @@ const SEEN_TS_KEY = "tfo-data-room-seen-ts";
 const AdvisorSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const { user } = useAuth();
   const { selectedClient } = useClientContext();
   const clientId = selectedClient?.id ?? "";
 
@@ -75,6 +78,8 @@ const AdvisorSidebar = () => {
       d.uploaded_by_role === "client" &&
       new Date(d.uploaded_at).getTime() > seenTs
   ).length;
+
+  const isAdminUser = user?.role === "admin";
 
   return (
     <aside
@@ -158,6 +163,31 @@ const AdvisorSidebar = () => {
             </div>
           </div>
         ))}
+
+        {/* Admin section — only visible to admin role */}
+        {isAdminUser && (
+          <div>
+            {!collapsed && (
+              <p className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/40">
+                Admin
+              </p>
+            )}
+            <div className="space-y-0.5">
+              <NavLink
+                to="/advisor/admin/users"
+                className={cn(
+                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                  location.pathname === "/advisor/admin/users"
+                    ? "bg-sidebar-accent text-sidebar-primary"
+                    : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+                )}
+              >
+                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                {!collapsed && <span>User Management</span>}
+              </NavLink>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Collapse toggle */}

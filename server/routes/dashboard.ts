@@ -3,74 +3,111 @@ import { query } from "../db.js";
 
 const router = Router();
 
-// GET /api/dashboard — aggregated overview for the advisor
+// GET /api/dashboard — aggregated overview
 router.get("/", async (req, res) => {
   const advisorId = req.user!.id;
+  const isTeamMember = req.user!.role !== "client";
 
   try {
     // Total clients
-    const clientsResult = await query(
-      "SELECT COUNT(*) AS total FROM clients WHERE advisor_id = $1",
-      [advisorId]
-    );
+    const clientsResult = isTeamMember
+      ? await query("SELECT COUNT(*) AS total FROM clients")
+      : await query("SELECT COUNT(*) AS total FROM clients WHERE advisor_id = $1", [advisorId]);
 
     // Clients by stage
-    const stageResult = await query(
-      `SELECT stage, COUNT(*) AS count
-       FROM clients WHERE advisor_id = $1
-       GROUP BY stage ORDER BY stage`,
-      [advisorId]
-    );
+    const stageResult = isTeamMember
+      ? await query(
+          `SELECT stage, COUNT(*) AS count FROM clients GROUP BY stage ORDER BY stage`
+        )
+      : await query(
+          `SELECT stage, COUNT(*) AS count FROM clients WHERE advisor_id = $1 GROUP BY stage ORDER BY stage`,
+          [advisorId]
+        );
 
     // Active tasks across all clients
-    const tasksResult = await query(
-      `SELECT t.status, COUNT(*) AS count
-       FROM tasks t
-       JOIN clients c ON c.id = t.client_id
-       WHERE c.advisor_id = $1
-       GROUP BY t.status`,
-      [advisorId]
-    );
+    const tasksResult = isTeamMember
+      ? await query(
+          `SELECT t.status, COUNT(*) AS count
+           FROM tasks t
+           JOIN clients c ON c.id = t.client_id
+           GROUP BY t.status`
+        )
+      : await query(
+          `SELECT t.status, COUNT(*) AS count
+           FROM tasks t
+           JOIN clients c ON c.id = t.client_id
+           WHERE c.advisor_id = $1
+           GROUP BY t.status`,
+          [advisorId]
+        );
 
     // Unresolved risk alerts across all clients
-    const riskResult = await query(
-      `SELECT ra.severity, COUNT(*) AS count
-       FROM risk_alerts ra
-       JOIN clients c ON c.id = ra.client_id
-       WHERE c.advisor_id = $1 AND ra.resolved = FALSE
-       GROUP BY ra.severity`,
-      [advisorId]
-    );
+    const riskResult = isTeamMember
+      ? await query(
+          `SELECT ra.severity, COUNT(*) AS count
+           FROM risk_alerts ra
+           JOIN clients c ON c.id = ra.client_id
+           WHERE ra.resolved = FALSE
+           GROUP BY ra.severity`
+        )
+      : await query(
+          `SELECT ra.severity, COUNT(*) AS count
+           FROM risk_alerts ra
+           JOIN clients c ON c.id = ra.client_id
+           WHERE c.advisor_id = $1 AND ra.resolved = FALSE
+           GROUP BY ra.severity`,
+          [advisorId]
+        );
 
-    // Recent activity
-    const activityResult = await query(
-      `SELECT al.id, al.text AS action, al.created_at, c.name AS client_name
-       FROM activity_log al
-       LEFT JOIN clients c ON c.id = al.client_id
-       WHERE al.advisor_id = $1
-       ORDER BY al.created_at DESC
-       LIMIT 20`,
-      [advisorId]
-    );
+    // Recent activity — JOIN users to show actor name
+    const activityResult = isTeamMember
+      ? await query(
+          `SELECT al.id, al.text AS action, al.created_at,
+                  c.name AS client_name, u.name AS actor_name
+           FROM activity_log al
+           LEFT JOIN clients c ON c.id = al.client_id
+           LEFT JOIN users u ON u.id = al.advisor_id
+           ORDER BY al.created_at DESC
+           LIMIT 20`
+        )
+      : await query(
+          `SELECT al.id, al.text AS action, al.created_at,
+                  c.name AS client_name, u.name AS actor_name
+           FROM activity_log al
+           LEFT JOIN clients c ON c.id = al.client_id
+           LEFT JOIN users u ON u.id = al.advisor_id
+           WHERE al.advisor_id = $1
+           ORDER BY al.created_at DESC
+           LIMIT 20`,
+          [advisorId]
+        );
 
     // Prospects by status
-    const prospectsResult = await query(
-      `SELECT status, COUNT(*) AS count
-       FROM prospects WHERE advisor_id = $1
-       GROUP BY status`,
-      [advisorId]
-    );
+    const prospectsResult = isTeamMember
+      ? await query(`SELECT status, COUNT(*) AS count FROM prospects GROUP BY status`)
+      : await query(
+          `SELECT status, COUNT(*) AS count FROM prospects WHERE advisor_id = $1 GROUP BY status`,
+          [advisorId]
+        );
 
     // Average scores across all clients
-    const scoresResult = await query(
-      `SELECT
-         ROUND(AVG(capital_readiness)) AS avg_capital_readiness,
-         ROUND(AVG(customer_capital)) AS avg_customer_capital,
-         ROUND(AVG(performance_score)) AS avg_performance_score
-       FROM clients
-       WHERE advisor_id = $1`,
-      [advisorId]
-    );
+    const scoresResult = isTeamMember
+      ? await query(
+          `SELECT
+             ROUND(AVG(capital_readiness)) AS avg_capital_readiness,
+             ROUND(AVG(customer_capital)) AS avg_customer_capital,
+             ROUND(AVG(performance_score)) AS avg_performance_score
+           FROM clients`
+        )
+      : await query(
+          `SELECT
+             ROUND(AVG(capital_readiness)) AS avg_capital_readiness,
+             ROUND(AVG(customer_capital)) AS avg_customer_capital,
+             ROUND(AVG(performance_score)) AS avg_performance_score
+           FROM clients
+           WHERE advisor_id = $1`,
+          [advisorId]
+        );
 
     return res.json({
       totalClients: parseInt(clientsResult.rows[0].total),

@@ -44,10 +44,7 @@ router.get("/", async (req, res) => {
       return res.json(result.rows);
     }
 
-    const result = await query(
-      "SELECT * FROM clients WHERE advisor_id = $1 ORDER BY name",
-      [req.user!.id]
-    );
+    const result = await query("SELECT * FROM clients ORDER BY name");
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /clients error:", err);

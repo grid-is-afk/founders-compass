@@ -38,6 +38,7 @@ import PerformanceEngine from "./pages/advisor/PerformanceEngine";
 import AdvisorAssessmentsPage from "./pages/advisor/AdvisorAssessmentsPage";
 import CopilotPage from "./pages/advisor/CopilotPage";
 import CapitalStrategyRoadmap from "./pages/advisor/CapitalStrategyRoadmap";
+import UserManagement from "./pages/advisor/admin/UserManagement";
 import {
   AdvisorDataRoom,
   AdvisorReports,
@@ -121,6 +122,7 @@ const App = () => (
               <Route path="publish" element={<AdvisorPublish />} />
               <Route path="investor-share" element={<AdvisorInvestorShare />} />
               <Route path="capital-strategy-roadmap" element={<CapitalStrategyRoadmap />} />
+              <Route path="admin/users" element={<UserManagement />} />
             </Route>
 
             {/* Protected Client Portal */}

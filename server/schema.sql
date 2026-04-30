@@ -569,3 +569,10 @@ CREATE TABLE IF NOT EXISTS notifications (
 
 CREATE INDEX IF NOT EXISTS idx_notifications_advisor ON notifications(advisor_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(advisor_id, read) WHERE read = FALSE;
+
+-- ============================================================
+-- Task assignee linked to TFO team members
+-- ============================================================
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id UUID REFERENCES users(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee ON tasks(assignee_id);

@@ -30,11 +30,14 @@ const VALID_STATUSES = new Set([
 
 // GET /api/prospects
 router.get("/", async (req, res) => {
+  const isTeamMember = req.user!.role !== "client";
   try {
-    const result = await query(
-      "SELECT * FROM prospects WHERE advisor_id = $1 ORDER BY created_at DESC",
-      [req.user!.id]
-    );
+    const result = isTeamMember
+      ? await query("SELECT * FROM prospects ORDER BY created_at DESC")
+      : await query(
+          "SELECT * FROM prospects WHERE advisor_id = $1 ORDER BY created_at DESC",
+          [req.user!.id]
+        );
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /prospects error:", err);

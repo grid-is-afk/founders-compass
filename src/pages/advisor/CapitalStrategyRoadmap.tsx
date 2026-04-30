@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import {
   Map,
   Plus,
@@ -56,10 +58,18 @@ interface RoadmapTask {
   title: string;
   status: TaskStatus;
   assignee: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
   due_date: string | null;
   phase: Domain | null;
   priority: string;
   notes: string | null;
+}
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
 }
 
 const DOMAIN_FILTERS = ["All", "Discover", "Protect", "Grow", "Prove & Align"] as const;
@@ -147,6 +157,10 @@ const CapitalStrategyRoadmap = () => {
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
   const { messages, clearConversation, sendMessage } = useCopilotContext();
+  const { data: teamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => api.get("/tasks/team-members"),
+  });
 
   // UI state
   const [activeFilter, setActiveFilter] = useState<DomainFilter>("All");
@@ -158,7 +172,7 @@ const CapitalStrategyRoadmap = () => {
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState<Domain>("Discover");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
-  const [newAssignee, setNewAssignee] = useState("");
+  const [newAssigneeId, setNewAssigneeId] = useState<string>("");
   const [newDueDate, setNewDueDate] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
@@ -166,7 +180,7 @@ const CapitalStrategyRoadmap = () => {
   const [editTitle, setEditTitle] = useState("");
   const [editDomain, setEditDomain] = useState<Domain>("Discover");
   const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
-  const [editAssignee, setEditAssignee] = useState("");
+  const [editAssigneeId, setEditAssigneeId] = useState<string>("");
   const [editDueDate, setEditDueDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
@@ -247,13 +261,13 @@ const CapitalStrategyRoadmap = () => {
     if (!newTitle.trim()) return;
     createTask.mutate(
       {
-        client_id: selectedClientId,
-        title:     newTitle.trim(),
-        phase:     newDomain,
-        status:    newStatus,
-        assignee:  newAssignee.trim() || null,
-        due_date:  newDueDate || null,
-        notes:     newNotes.trim() || null,
+        client_id:   selectedClientId,
+        title:       newTitle.trim(),
+        phase:       newDomain,
+        status:      newStatus,
+        assignee_id: newAssigneeId || null,
+        due_date:    newDueDate || null,
+        notes:       newNotes.trim() || null,
       },
       {
         onSuccess: () => {
@@ -262,7 +276,7 @@ const CapitalStrategyRoadmap = () => {
           setNewTitle("");
           setNewDomain("Discover");
           setNewStatus("todo");
-          setNewAssignee("");
+          setNewAssigneeId("");
           setNewDueDate("");
           setNewNotes("");
         },
@@ -275,7 +289,7 @@ const CapitalStrategyRoadmap = () => {
     setEditTitle(task.title);
     setEditDomain((task.phase ?? "Discover") as Domain);
     setEditStatus(task.status);
-    setEditAssignee(task.assignee ?? "");
+    setEditAssigneeId(task.assignee_id ?? "");
     setEditDueDate(task.due_date ?? "");
     setEditNotes(task.notes ?? "");
   };
@@ -284,14 +298,14 @@ const CapitalStrategyRoadmap = () => {
     if (!editingTask || !editTitle.trim()) return;
     updateTask.mutate(
       {
-        id:       editingTask.id,
-        clientId: selectedClientId,
-        title:    editTitle.trim(),
-        phase:    editDomain,
-        status:   editStatus,
-        assignee: editAssignee.trim() || null,
-        due_date: editDueDate || null,
-        notes:    editNotes.trim() || null,
+        id:          editingTask.id,
+        clientId:    selectedClientId,
+        title:       editTitle.trim(),
+        phase:       editDomain,
+        status:      editStatus,
+        assignee_id: editAssigneeId || null,
+        due_date:    editDueDate || null,
+        notes:       editNotes.trim() || null,
       },
       {
         onSuccess: () => {
@@ -663,7 +677,7 @@ const CapitalStrategyRoadmap = () => {
 
                     {/* Assignee */}
                     <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {task.assignee ?? "—"}
+                      {task.assignee_name ?? "—"}
                     </td>
 
                     {/* Due Date */}
@@ -814,11 +828,17 @@ const CapitalStrategyRoadmap = () => {
             {/* Assignee */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Assignee</label>
-              <Input
-                placeholder="Name or email"
-                value={newAssignee}
-                onChange={(e) => setNewAssignee(e.target.value)}
-              />
+              <Select value={newAssigneeId} onValueChange={setNewAssigneeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {teamMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Due Date */}
@@ -1201,11 +1221,17 @@ const CapitalStrategyRoadmap = () => {
             {/* Assignee */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">Assignee</label>
-              <Input
-                placeholder="Name or email"
-                value={editAssignee}
-                onChange={(e) => setEditAssignee(e.target.value)}
-              />
+              <Select value={editAssigneeId} onValueChange={setEditAssigneeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Unassigned</SelectItem>
+                  {teamMembers.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Due Date */}

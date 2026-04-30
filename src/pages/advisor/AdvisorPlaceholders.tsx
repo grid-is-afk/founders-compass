@@ -929,6 +929,7 @@ interface SprintTask {
   title: string;
   status: TaskStatus;
   assignee: string | null;
+  assignee_name: string | null;
   due_date?: string | null;
   dueDate?: string;
   priority: string;
@@ -954,9 +955,11 @@ const SprintTaskCard = ({ task }: { task: SprintTask }) => {
               >
                 {task.priority}
               </Badge>
-              <Badge variant="outline" className="text-[10px] px-2 py-0">
-                {task.assignee}
-              </Badge>
+              {(task.assignee_name ?? task.assignee) && (
+                <Badge variant="outline" className="text-[10px] px-2 py-0">
+                  {task.assignee_name ?? task.assignee}
+                </Badge>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-3 mt-1.5 text-[11px] text-muted-foreground">
@@ -1022,6 +1025,7 @@ export const AdvisorSprints = () => {
     title: t.title,
     status: (t.status ?? "todo") as TaskStatus,
     assignee: t.assignee ?? null,
+    assignee_name: t.assignee_name ?? null,
     due_date: t.due_date ?? null,
     dueDate: t.due_date
       ? new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })

@@ -18,6 +18,8 @@ export interface AdvisorTask {
   priority: "low" | "medium" | "high" | "urgent";
   due_date: string | null;
   assignee: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
   phase: string | null;
   notes: string | null;
 }

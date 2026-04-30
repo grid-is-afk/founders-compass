@@ -12,7 +12,8 @@ const statusIcon: Record<string, React.ReactNode> = {
 interface DbTask {
   id: string;
   title: string;
-  assignee: string;
+  assignee: string | null;
+  assignee_name: string | null;
   status: string;
   priority: string;
   due_date: string | null;
@@ -26,7 +27,7 @@ const PerformanceEngine = () => {
   const tasks = (rawTasks as DbTask[]).map((t) => ({
     id: t.id,
     title: t.title,
-    assignee: t.assignee ?? "Advisor",
+    assignee: t.assignee_name ?? t.assignee ?? null,
     status: t.status ?? "todo",
     dueDate: t.due_date ?? "",
   }));
@@ -59,7 +60,7 @@ const PerformanceEngine = () => {
               <div key={task.id} className="flex items-center gap-4 px-5 py-4">
                 {statusIcon[task.status] || statusIcon.todo}
                 <p className={cn("text-sm flex-1", task.status === "done" && "text-muted-foreground line-through")}>{task.title}</p>
-                <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">{task.assignee}</span>
+                {task.assignee && <span className="text-xs px-2 py-1 rounded bg-muted text-muted-foreground">{task.assignee}</span>}
                 {task.dueDate && <span className="text-xs text-muted-foreground">{task.dueDate}</span>}
               </div>
             ))}
