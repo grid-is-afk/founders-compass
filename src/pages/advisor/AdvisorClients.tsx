@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import ClientRow from "@/components/dashboard/ClientRow";
-import { Lock, Plus, Users } from "lucide-react";
+import { Lock, Plus, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,7 +11,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useClients, useCreateClient } from "@/hooks/useClients";
+import { useClients, useCreateClient, useDeleteClient } from "@/hooks/useClients";
+import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
 interface GeneratedCredentials {
@@ -18,12 +20,68 @@ interface GeneratedCredentials {
   password: string;
 }
 
+// ---------------------------------------------------------------------------
+// Delete Confirm Dialog
+// ---------------------------------------------------------------------------
+
+function DeleteConfirmDialog({
+  target,
+  onClose,
+}: {
+  target: { id: string; name: string } | null;
+  onClose: () => void;
+}) {
+  const deleteClient = useDeleteClient();
+
+  const handleConfirm = async () => {
+    if (!target) return;
+    try {
+      await deleteClient.mutateAsync(target.id);
+      toast.success(`"${target.name}" removed`);
+      onClose();
+    } catch {
+      toast.error("Failed to delete client");
+    }
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display">Delete {target?.name}?</DialogTitle>
+          <DialogDescription>
+            This will permanently remove the client and all their data. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={deleteClient.isPending}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            {deleteClient.isPending ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 const AdvisorClients = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: clients = [], isLoading } = useClients();
   const createClient = useCreateClient();
 
   const [open, setOpen] = useState(false);
   const [credentials, setCredentials] = useState<GeneratedCredentials | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [form, setForm] = useState({
     name: "",
     contact_name: "",
@@ -88,7 +146,7 @@ const AdvisorClients = () => {
         <div className="bg-card rounded-lg border border-border p-12 text-center text-sm text-muted-foreground">
           Loading clients...
         </div>
-      ) : clients.length === 0 ? (
+      ) : (clients as any[]).length === 0 ? (
         <div className="bg-card rounded-lg border border-border p-12 text-center">
           <Users className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
           <h3 className="font-display font-semibold text-foreground mb-1">No clients yet</h3>
@@ -107,10 +165,62 @@ const AdvisorClients = () => {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Readiness</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Revenue</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground">Activity</th>
+                <th className="text-right px-4 py-3 font-medium text-muted-foreground"></th>
               </tr>
             </thead>
             <tbody>
-              {(clients as any[]).map((c: any) => <ClientRow key={c.id} client={c} />)}
+              {(clients as any[]).map((c: any) => (
+                <tr
+                  key={c.id}
+                  onClick={() => navigate(`/advisor/clients/${c.id}`)}
+                  className="group border-b border-border last:border-0 hover:bg-muted/30 transition-colors cursor-pointer"
+                >
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-foreground">{c.name}</p>
+                    <p className="text-xs text-muted-foreground">{c.contact_name ?? "—"}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-primary/10 text-primary">
+                      {c.stage || "—"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full gradient-olive"
+                          style={{ width: `${c.capital_readiness ?? 0}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{c.capital_readiness ?? 0}%</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{c.revenue ?? "—"}</td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    {c.updated_at
+                      ? (() => {
+                          const diff = Date.now() - new Date(c.updated_at).getTime();
+                          const mins = Math.floor(diff / 60_000);
+                          if (mins < 60) return `${mins}m ago`;
+                          const hours = Math.floor(mins / 60);
+                          if (hours < 24) return `${hours}h ago`;
+                          return `${Math.floor(hours / 24)}d ago`;
+                        })()
+                      : "—"}
+                  </td>
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    {(c.advisor_id === user?.id || user?.role === "admin") && (
+                      <button
+                        onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -218,6 +328,8 @@ const AdvisorClients = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </div>
   );
 };

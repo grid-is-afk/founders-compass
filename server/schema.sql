@@ -616,3 +616,9 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS q3_phase TEXT DEFAULT 'prove';
 
 -- Distinguish Q2 vs Q3 grow engagements (default 2 = existing Q2 data)
 ALTER TABLE grow_engagements ADD COLUMN IF NOT EXISTS chapter INT NOT NULL DEFAULT 2;
+
+-- ============================================================
+-- Client Visibility — per-user "See all" vs "Own clients only"
+-- ============================================================
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS see_all_clients BOOLEAN NOT NULL DEFAULT true;

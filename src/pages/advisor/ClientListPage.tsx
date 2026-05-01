@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Users, Search, Plus, Building2, Mail, Clock, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useClients, useCreateClient, useDeleteClient } from "@/hooks/useClients";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -31,6 +32,7 @@ import { daysRemaining, countdownChipClass } from "@/lib/q1Utils";
 
 interface ClientRow {
   id: string;
+  advisor_id: string;
   name: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -285,6 +287,7 @@ function AddClientDialog({ open, onClose }: AddClientDialogProps) {
 
 export default function ClientListPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data: rawClients = [], isLoading } = useClients();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -430,16 +433,18 @@ export default function ClientListPage() {
                       <Progress value={client.capital_readiness ?? 0} className="h-1" />
                     </div>
 
-                    {/* Delete */}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
-                    >
-                      <Trash2 className="w-3 h-3 mr-1" />
-                      Delete
-                    </Button>
+                    {/* Delete — only own clients or admin */}
+                    {(client.advisor_id === user?.id || user?.role === "admin") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Delete
+                      </Button>
+                    )}
                   </div>
                 </div>
               </motion.div>

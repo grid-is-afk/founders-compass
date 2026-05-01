@@ -122,7 +122,7 @@ const TopBar = () => {
                     <CommandItem
                       key={client.id}
                       value={`${client.name} ${client.contact_name ?? ""}`}
-                      onSelect={() => handleSearchSelect("/advisor/clients")}
+                      onSelect={() => handleSearchSelect(`/advisor/clients/${client.id}`)}
                       className="cursor-pointer"
                     >
                       <Users className="w-4 h-4 mr-2 text-muted-foreground shrink-0" />

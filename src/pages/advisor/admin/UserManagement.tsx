@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, UserPlus, Copy, Check, Trash2, X } from "lucide-react";
+import { ShieldCheck, UserPlus, Copy, Check, Trash2, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ interface TeamUser {
   name: string;
   email: string;
   role: "advisor" | "admin";
+  see_all_clients: boolean;
   created_at: string | null;
 }
 
@@ -56,6 +57,7 @@ export default function UserManagement() {
 
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   if (user?.role !== "admin") {
     return <Navigate to="/advisor" replace />;
@@ -126,6 +128,18 @@ export default function UserManagement() {
     }
   }
 
+  async function handleToggleVisibility(u: TeamUser) {
+    setTogglingId(u.id);
+    try {
+      await api.patch(`/admin/users/${u.id}`, { see_all_clients: !u.see_all_clients });
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    } catch (err: any) {
+      alert(err.message ?? "Could not update visibility.");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -161,6 +175,7 @@ export default function UserManagement() {
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Email</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Role</th>
+                <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Client Visibility</th>
                 <th className="text-left px-4 py-3 font-medium text-muted-foreground text-xs">Created</th>
                 <th className="text-right px-4 py-3 font-medium text-muted-foreground text-xs">Actions</th>
               </tr>
@@ -181,6 +196,30 @@ export default function UserManagement() {
                     >
                       {u.role}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border",
+                          u.see_all_clients
+                            ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                            : "bg-muted text-muted-foreground border-border"
+                        )}
+                      >
+                        {u.see_all_clients ? "All Clients" : "Own Only"}
+                      </span>
+                      <button
+                        onClick={() => handleToggleVisibility(u)}
+                        disabled={togglingId === u.id}
+                        title={u.see_all_clients ? "Switch to own clients only" : "Switch to all clients"}
+                        className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                      >
+                        {u.see_all_clients
+                          ? <Eye className="w-3.5 h-3.5" />
+                          : <EyeOff className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(u.created_at)}</td>
                   <td className="px-4 py-3 text-right">
