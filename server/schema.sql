@@ -607,3 +607,12 @@ CREATE TABLE IF NOT EXISTS client_ip_value_framework (
   updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_client_ip_value_framework ON client_ip_value_framework(client_id);
+
+-- ============================================================
+-- Chapter 3: Strengthen Phase
+-- ============================================================
+
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS q3_phase TEXT DEFAULT 'prove';
+
+-- Distinguish Q2 vs Q3 grow engagements (default 2 = existing Q2 data)
+ALTER TABLE grow_engagements ADD COLUMN IF NOT EXISTS chapter INT NOT NULL DEFAULT 2;

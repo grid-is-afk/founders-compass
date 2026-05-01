@@ -21,12 +21,14 @@ async function verifyClient(clientId: string, userId: string, userRole: string) 
   return result.rows.length > 0;
 }
 
-// GET /api/grow?client_id=xxx
+// GET /api/grow?client_id=xxx&chapter=2
 router.get("/", async (req, res) => {
-  const { client_id } = req.query;
+  const { client_id, chapter } = req.query;
   if (!client_id) {
     return res.status(400).json({ error: "client_id query param required" });
   }
+
+  const chapterNum = chapter ? parseInt(chapter as string, 10) : 2;
 
   try {
     if (!(await verifyClient(client_id as string, req.user!.id, req.user!.role))) {
@@ -34,8 +36,8 @@ router.get("/", async (req, res) => {
     }
 
     const result = await query(
-      "SELECT * FROM grow_engagements WHERE client_id = $1 ORDER BY created_at",
-      [client_id]
+      "SELECT * FROM grow_engagements WHERE client_id = $1 AND chapter = $2 ORDER BY created_at",
+      [client_id, chapterNum]
     );
     return res.json(result.rows);
   } catch (err) {
@@ -55,6 +57,7 @@ router.post("/", async (req, res) => {
     adopted_from_template,
     task_count,
     completed_tasks,
+    chapter,
   } = req.body;
   if (!client_id || !label) {
     return res.status(400).json({ error: "client_id and label required" });
@@ -67,8 +70,8 @@ router.post("/", async (req, res) => {
 
     const result = await query(
       `INSERT INTO grow_engagements
-         (client_id, capital_type, label, partner, status, adopted_from_template, task_count, completed_tasks)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+         (client_id, capital_type, label, partner, status, adopted_from_template, task_count, completed_tasks, chapter)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [
         client_id,
         capital_type ?? null,
@@ -78,6 +81,7 @@ router.post("/", async (req, res) => {
         adopted_from_template ?? false,
         task_count ?? 0,
         completed_tasks ?? 0,
+        chapter ?? 2,
       ]
     );
     return res.status(201).json(result.rows[0]);
