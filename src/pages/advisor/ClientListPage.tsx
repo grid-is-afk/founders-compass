@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, Search, Plus, Building2, Mail, Clock } from "lucide-react";
+import { Users, Search, Plus, Building2, Mail, Clock, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useClients, useCreateClient } from "@/hooks/useClients";
+import { useClients, useCreateClient, useDeleteClient } from "@/hooks/useClients";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -70,6 +70,56 @@ const fadeIn = {
     transition: { delay: i * 0.05, duration: 0.35 },
   }),
 };
+
+// ---------------------------------------------------------------------------
+// Delete Confirm Dialog
+// ---------------------------------------------------------------------------
+
+interface DeleteConfirmDialogProps {
+  target: { id: string; name: string } | null;
+  onClose: () => void;
+}
+
+function DeleteConfirmDialog({ target, onClose }: DeleteConfirmDialogProps) {
+  const deleteClient = useDeleteClient();
+
+  const handleConfirm = async () => {
+    if (!target) return;
+    try {
+      await deleteClient.mutateAsync(target.id);
+      toast.success(`"${target.name}" removed`);
+      onClose();
+    } catch {
+      toast.error("Failed to delete client");
+    }
+  };
+
+  return (
+    <Dialog open={!!target} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="font-display">Delete {target?.name}?</DialogTitle>
+          <DialogDescription>
+            This will permanently remove the client and all their data. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleConfirm}
+            disabled={deleteClient.isPending}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            {deleteClient.isPending ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Add Client Dialog
@@ -238,6 +288,7 @@ export default function ClientListPage() {
   const { data: rawClients = [], isLoading } = useClients();
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const clients = (rawClients as ClientRow[]).filter((c) => {
     const q = search.toLowerCase();
@@ -352,7 +403,7 @@ export default function ClientListPage() {
                   </div>
 
                   {/* Right — metrics */}
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     {/* Countdown chip */}
                     <div
                       className={cn(
@@ -378,6 +429,17 @@ export default function ClientListPage() {
                       </div>
                       <Progress value={client.capital_readiness ?? 0} className="h-1" />
                     </div>
+
+                    {/* Delete */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Delete
+                    </Button>
                   </div>
                 </div>
               </motion.div>
@@ -387,6 +449,7 @@ export default function ClientListPage() {
       )}
 
       <AddClientDialog open={addOpen} onClose={() => setAddOpen(false)} />
+      <DeleteConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </div>
   );
 }
