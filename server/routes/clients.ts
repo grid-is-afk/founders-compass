@@ -24,6 +24,13 @@ const ALLOWED_COLUMNS = new Set([
   "onboarded_at",
 ]);
 
+/** Returns true if this user can access all clients (admin always can; advisors check DB flag). */
+async function canSeeAll(userId: string, role: string): Promise<boolean> {
+  if (role === "admin") return true;
+  const r = await query("SELECT see_all_clients FROM users WHERE id = $1", [userId]);
+  return r.rows[0]?.see_all_clients ?? true;
+}
+
 /** Generate a readable 10-char password — no ambiguous chars (0/O, 1/l/I) */
 function generatePassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -46,7 +53,10 @@ router.get("/", async (req, res) => {
       return res.json(result.rows);
     }
 
-    const result = await query("SELECT * FROM clients ORDER BY name");
+    const seeAll = await canSeeAll(req.user!.id, req.user!.role);
+    const result = seeAll
+      ? await query("SELECT * FROM clients ORDER BY name")
+      : await query("SELECT * FROM clients WHERE advisor_id = $1 ORDER BY name", [req.user!.id]);
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /clients error:", err);
@@ -199,10 +209,10 @@ router.get("/:id", async (req, res) => {
       return res.json(result.rows[0]);
     }
 
-    const result = await query(
-      "SELECT * FROM clients WHERE id = $1 AND advisor_id = $2",
-      [req.params.id, req.user!.id]
-    );
+    const seeAll = await canSeeAll(req.user!.id, req.user!.role);
+    const result = seeAll
+      ? await query("SELECT * FROM clients WHERE id = $1", [req.params.id])
+      : await query("SELECT * FROM clients WHERE id = $1 AND advisor_id = $2", [req.params.id, req.user!.id]);
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
@@ -235,14 +245,17 @@ router.patch("/:id", async (req, res) => {
 
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
+    const seeAll = await canSeeAll(req.user!.id, req.user!.role);
 
-    const result = await query(
-      `UPDATE clients
-       SET ${setClauses.join(", ")}, updated_at = NOW()
-       WHERE id = $${keys.length + 1} AND advisor_id = $${keys.length + 2}
-       RETURNING *`,
-      [...values, req.params.id, req.user!.id]
-    );
+    const result = seeAll
+      ? await query(
+          `UPDATE clients SET ${setClauses.join(", ")}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,
+          [...values, req.params.id]
+        )
+      : await query(
+          `UPDATE clients SET ${setClauses.join(", ")}, updated_at = NOW() WHERE id = $${keys.length + 1} AND advisor_id = $${keys.length + 2} RETURNING *`,
+          [...values, req.params.id, req.user!.id]
+        );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
@@ -256,10 +269,13 @@ router.patch("/:id", async (req, res) => {
 // DELETE /api/clients/:id
 router.delete("/:id", async (req, res) => {
   try {
-    await query(
-      "DELETE FROM clients WHERE id = $1 AND advisor_id = $2",
-      [req.params.id, req.user!.id]
-    );
+    const isAdmin = req.user!.role === "admin";
+    const result = isAdmin
+      ? await query("DELETE FROM clients WHERE id = $1 RETURNING id", [req.params.id])
+      : await query("DELETE FROM clients WHERE id = $1 AND advisor_id = $2 RETURNING id", [req.params.id, req.user!.id]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found or access denied" });
+    }
     return res.json({ ok: true });
   } catch (err) {
     console.error("DELETE /clients/:id error:", err);

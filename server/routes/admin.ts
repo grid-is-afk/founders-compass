@@ -17,7 +17,7 @@ router.get("/users", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
     const result = await query(
-      `SELECT id, name, email, role, created_at
+      `SELECT id, name, email, role, see_all_clients, created_at
        FROM users
        WHERE role IN ('advisor', 'admin')
        ORDER BY created_at DESC NULLS LAST`
@@ -56,6 +56,31 @@ router.post("/users", async (req, res) => {
     return res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("POST /admin/users error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/admin/users/:id — update advisor/admin settings (e.g. see_all_clients)
+router.patch("/users/:id", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { id } = req.params;
+  const { see_all_clients } = req.body;
+
+  if (typeof see_all_clients !== "boolean") {
+    return res.status(400).json({ error: "see_all_clients must be a boolean" });
+  }
+
+  try {
+    const result = await query(
+      `UPDATE users SET see_all_clients = $1 WHERE id = $2 AND role IN ('advisor', 'admin') RETURNING id, name, email, role, see_all_clients, created_at`,
+      [see_all_clients, id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    return res.json(result.rows[0]);
+  } catch (err) {
+    console.error("PATCH /admin/users/:id error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
