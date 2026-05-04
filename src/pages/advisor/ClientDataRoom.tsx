@@ -46,7 +46,7 @@ import { SixKeysScoreGrid } from "@/components/clients/dashboard/SixKeysScoreGri
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_BYTES = 100 * 1024 * 1024;
+const MAX_BYTES = 800 * 1024 * 1024;
 
 interface CategoryStyle {
   bg: string;

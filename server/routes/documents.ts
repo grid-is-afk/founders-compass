@@ -15,7 +15,7 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_FILE_BYTES = 25 * 1024 * 1024;        // 25 MB per file
-const MAX_CLIENT_BYTES = 100 * 1024 * 1024;      // 100 MB per client data room
+const MAX_CLIENT_BYTES = 800 * 1024 * 1024;      // 800 MB per client data room
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".xlsx", ".xls", ".csv",
   ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png",
@@ -215,7 +215,7 @@ router.post(
         return res.status(404).json({ error: "Client not found" });
       }
 
-      // Enforce 100 MB per-client cap
+      // Enforce 800 MB per-client cap
       const usageResult = await query(
         `SELECT COALESCE(SUM(size_bytes), 0)::bigint AS used_bytes FROM documents WHERE client_id = $1`,
         [client_id]
@@ -224,7 +224,7 @@ router.post(
       if (usedBytes + req.file.size > MAX_CLIENT_BYTES) {
         fs.unlinkSync(req.file.path);
         return res.status(413).json({
-          error: `Data Room is full. Maximum 100 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
+          error: `Data Room is full. Maximum 800 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
         });
       }
 

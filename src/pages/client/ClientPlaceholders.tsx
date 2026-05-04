@@ -339,7 +339,7 @@ export const ClientQuestionnaires = () => {
 // ─── 2. CLIENT UPLOADS ────────────────────────────────────────────────────────
 
 const UPLOAD_CATEGORIES = ["Reports", "Financials", "Customer Capital", "Legal & Structure", "Governance"];
-const MAX_CLIENT_BYTES = 50 * 1024 * 1024;
+const MAX_CLIENT_BYTES = 800 * 1024 * 1024;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
