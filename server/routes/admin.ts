@@ -1,10 +1,6 @@
 import { Router } from "express";
 import bcryptjs from "bcryptjs";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { query } from "../db.js";
-import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 
 const router = Router();
 
@@ -111,61 +107,6 @@ router.delete("/users/:id", async (req, res) => {
     console.error("DELETE /admin/users/:id error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
-});
-
-// ── POST /api/admin/migrate-storage ──────────────────────────────────────────
-// TEMPORARY — runs once to move files from Railway volume to Supabase Storage.
-// Remove after migration is confirmed complete.
-router.post("/migrate-storage", async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const UPLOADS_DIR = process.env.UPLOADS_DIR ?? path.join(__dirname, "..", "uploads");
-
-  let files: string[] = [];
-  try {
-    files = fs.readdirSync(UPLOADS_DIR);
-  } catch {
-    return res.status(500).json({ error: `Cannot read uploads dir: ${UPLOADS_DIR}` });
-  }
-
-  const { rows } = await query(
-    `SELECT id, file_url, client_id, prospect_id FROM documents WHERE file_url LIKE '/uploads/%'`
-  );
-
-  const results: { id: string; status: string; path?: string; error?: string }[] = [];
-
-  for (const doc of rows) {
-    const filename = path.basename(doc.file_url as string);
-    const filePath = path.join(UPLOADS_DIR, filename);
-
-    if (!fs.existsSync(filePath)) {
-      results.push({ id: doc.id, status: "skip", error: "file not found on disk" });
-      continue;
-    }
-
-    try {
-      const buffer = fs.readFileSync(filePath);
-      const prefix = doc.client_id ? `clients/${doc.client_id}` : `prospects/${doc.prospect_id}`;
-      const bucketPath = `${prefix}/${filename}`;
-
-      const { error } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .upload(bucketPath, buffer, { upsert: true });
-      if (error) throw error;
-
-      await query("UPDATE documents SET file_url = $1 WHERE id = $2", [bucketPath, doc.id]);
-      results.push({ id: doc.id, status: "ok", path: bucketPath });
-    } catch (err: any) {
-      results.push({ id: doc.id, status: "fail", error: err.message });
-    }
-  }
-
-  const ok = results.filter(r => r.status === "ok").length;
-  const skipped = results.filter(r => r.status === "skip").length;
-  const failed = results.filter(r => r.status === "fail").length;
-
-  return res.json({ summary: { ok, skipped, failed }, results });
 });
 
 export default router;
