@@ -19,6 +19,7 @@ import ClientWorkspace from "./pages/advisor/ClientWorkspace";
 import Q1DiscoverPage from "./pages/advisor/Q1DiscoverPage";
 import Q2Page from "./pages/advisor/Q2Page";
 import Q3Page from "./pages/advisor/Q3Page";
+import Q4Page from "./pages/advisor/Q4Page";
 import ClientDashboardTab from "./pages/advisor/ClientDashboardTab";
 import ClientDataRoomTab from "./pages/advisor/ClientDataRoomTab";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
@@ -90,6 +91,7 @@ const App = () => (
                 <Route path="discover" element={<Q1DiscoverPage />} />
                 <Route path="q2" element={<Q2Page />} />
                 <Route path="q3" element={<Q3Page />} />
+                <Route path="q4" element={<Q4Page />} />
                 <Route path="data-room" element={<ClientDataRoomTab />} />
               </Route>
 

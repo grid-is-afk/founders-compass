@@ -15,6 +15,7 @@ interface ClientRecord {
   q1_phase: string | null;
   q2_phase: string | null;
   q3_phase: string | null;
+  q4_phase: string | null;
   onboarded_at: string | null;
   capital_readiness: number;
 }
@@ -24,6 +25,7 @@ const TABS = [
   { label: "Chapter 1: Discover", path: "discover" },
   { label: "Chapter 2: Grow", path: "q2" },
   { label: "Chapter 3: Strengthen", path: "q3" },
+  { label: "Chapter 4: Elevate", path: "q4" },
   { label: "Data Room", path: "data-room" },
 ] as const;
 
