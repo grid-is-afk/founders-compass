@@ -5,13 +5,13 @@ import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { query } from "../db.js";
+import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 
 const router = Router();
 
-// ── Upload directory setup ────────────────────────────────────────────────────
+// ── Legacy uploads dir (used only for deleting pre-migration local files) ──────
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UPLOADS_DIR = path.join(__dirname, "..", "uploads");
-fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_FILE_BYTES = 25 * 1024 * 1024;        // 25 MB per file
@@ -21,17 +21,9 @@ const ALLOWED_EXTENSIONS = new Set([
   ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png",
 ]);
 
-// ── Multer config ─────────────────────────────────────────────────────────────
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `${crypto.randomUUID()}${ext}`);
-  },
-});
-
+// ── Multer config (memory storage — no disk writes) ───────────────────────────
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_BYTES },
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -75,8 +67,24 @@ function getFileType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   if (ext === ".pdf") return "pdf";
   if ([".xlsx", ".xls", ".csv"].includes(ext)) return "spreadsheet";
-  // .doc, .docx, .ppt, .pptx, and all other allowed types map to "document"
   return "document";
+}
+
+// Generate 1-hour signed URLs for docs stored in Supabase bucket.
+// Docs with legacy /uploads/ paths are left as-is (served by express.static fallback).
+async function signFileUrls(rows: Record<string, unknown>[]) {
+  return Promise.all(
+    rows.map(async (doc) => {
+      const fileUrl = doc.file_url as string | null;
+      if (fileUrl && !fileUrl.startsWith("/uploads/")) {
+        const { data } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .createSignedUrl(fileUrl, 3600);
+        return { ...doc, file_url: data?.signedUrl ?? fileUrl };
+      }
+      return doc;
+    })
+  );
 }
 
 // ── GET /api/documents?client_id=xxx OR ?prospect_id=xxx ─────────────────────
@@ -100,7 +108,8 @@ router.get("/", async (req, res) => {
          ORDER BY uploaded_at DESC`,
         [prospect_id]
       );
-      return res.json(result.rows);
+      const signed = await signFileUrls(result.rows);
+      return res.json(signed);
     }
 
     // client_id path
@@ -116,7 +125,8 @@ router.get("/", async (req, res) => {
        ORDER BY uploaded_at DESC`,
       [client_id]
     );
-    return res.json(result.rows);
+    const signed = await signFileUrls(result.rows);
+    return res.json(signed);
   } catch (err) {
     console.error("GET /documents error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -124,7 +134,6 @@ router.get("/", async (req, res) => {
 });
 
 // ── GET /api/documents/storage?client_id=xxx ─────────────────────────────────
-// Returns current storage usage for a client's data room
 router.get("/storage", async (req, res) => {
   const { client_id } = req.query;
   if (!client_id) {
@@ -155,7 +164,6 @@ router.get("/storage", async (req, res) => {
 });
 
 // ── POST /api/documents ───────────────────────────────────────────────────────
-// Accepts multipart/form-data: file, client_id OR prospect_id, category, uploaded_by_role
 router.post(
   "/",
   (req, res, next) => {
@@ -171,7 +179,6 @@ router.post(
     const { client_id, prospect_id, category, uploaded_by_role } = req.body;
 
     if (!client_id && !prospect_id) {
-      if (req.file) fs.unlinkSync(req.file.path);
       return res.status(400).json({ error: "client_id or prospect_id is required" });
     }
     if (!req.file) {
@@ -179,14 +186,20 @@ router.post(
     }
 
     try {
+      const ext = path.extname(req.file.originalname).toLowerCase();
+
       // ── Prospect upload path ───────────────────────────────────────────────
       if (prospect_id) {
         if (!(await verifyProspect(prospect_id, req.user!.id))) {
-          fs.unlinkSync(req.file.path);
           return res.status(404).json({ error: "Prospect not found" });
         }
 
-        const fileUrl = `/uploads/${req.file.filename}`;
+        const bucketPath = `prospects/${prospect_id}/${crypto.randomUUID()}${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(bucketPath, req.file.buffer, { contentType: req.file.mimetype });
+        if (uploadError) throw uploadError;
+
         const sizeLabel = formatFileSize(req.file.size);
         const fileType = getFileType(req.file.originalname);
 
@@ -199,7 +212,7 @@ router.post(
             prospect_id,
             req.file.originalname,
             category ?? null,
-            fileUrl,
+            bucketPath,
             sizeLabel,
             req.file.size,
             fileType,
@@ -211,7 +224,6 @@ router.post(
 
       // ── Client upload path ────────────────────────────────────────────────
       if (!(await verifyClient(client_id, req.user!.id, req.user!.role))) {
-        fs.unlinkSync(req.file.path);
         return res.status(404).json({ error: "Client not found" });
       }
 
@@ -222,13 +234,17 @@ router.post(
       );
       const usedBytes = Number(usageResult.rows[0].used_bytes);
       if (usedBytes + req.file.size > MAX_CLIENT_BYTES) {
-        fs.unlinkSync(req.file.path);
         return res.status(413).json({
           error: `Data Room is full. Maximum 800 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
         });
       }
 
-      const fileUrl = `/uploads/${req.file.filename}`;
+      const bucketPath = `clients/${client_id}/${crypto.randomUUID()}${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(bucketPath, req.file.buffer, { contentType: req.file.mimetype });
+      if (uploadError) throw uploadError;
+
       const sizeLabel = formatFileSize(req.file.size);
       const fileType = getFileType(req.file.originalname);
       const role = uploaded_by_role === "client" ? "client" : "advisor";
@@ -242,7 +258,7 @@ router.post(
           client_id,
           req.file.originalname,
           category ?? null,
-          fileUrl,
+          bucketPath,
           sizeLabel,
           req.file.size,
           fileType,
@@ -277,7 +293,6 @@ router.post(
               `${uploadedBy} uploaded "${req.file.originalname}" to the Data Room`,
             ]
           );
-          // Notify advisor only when a client triggers the upload
           if (role === "client") {
             await query(
               `INSERT INTO notifications (advisor_id, client_id, type, message)
@@ -292,15 +307,11 @@ router.post(
           }
         }
       } catch (logErr) {
-        // Non-fatal: activity log / notification failure should not fail the upload
         console.warn("Activity log / notification write failed:", logErr);
       }
 
       return res.status(201).json(docResult.rows[0]);
     } catch (err) {
-      if (req.file) {
-        try { fs.unlinkSync(req.file.path); } catch {}
-      }
       console.error("POST /documents error:", err);
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -330,10 +341,14 @@ router.delete("/:id", async (req, res) => {
       }
     }
 
-    // Delete physical file
+    // Delete file — Supabase bucket path or legacy local file
     if (doc.file_url) {
-      const filePath = path.join(UPLOADS_DIR, path.basename(doc.file_url));
-      try { fs.unlinkSync(filePath); } catch {}
+      if (doc.file_url.startsWith("/uploads/")) {
+        const filePath = path.join(UPLOADS_DIR, path.basename(doc.file_url));
+        try { fs.unlinkSync(filePath); } catch {}
+      } else {
+        await supabase.storage.from(STORAGE_BUCKET).remove([doc.file_url]);
+      }
     }
 
     await query("DELETE FROM documents WHERE id = $1", [req.params.id]);
