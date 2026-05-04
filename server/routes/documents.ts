@@ -45,6 +45,10 @@ const upload = multer({
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 async function verifyClient(clientId: string, userId: string, userRole: string) {
+  if (userRole === "admin") {
+    const result = await query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
+    return result.rows.length > 0;
+  }
   const col = userRole === "client" ? "user_id" : "advisor_id";
   const result = await query(
     `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
