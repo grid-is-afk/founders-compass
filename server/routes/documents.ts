@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import sharp from "sharp";
 import { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 
@@ -101,7 +102,7 @@ router.get("/", async (req, res) => {
         return res.status(404).json({ error: "Prospect not found" });
       }
       const result = await query(
-        `SELECT id, prospect_id, client_id, name, category, file_url, size, size_bytes, type,
+        `SELECT id, prospect_id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
                 uploaded_by_role, uploaded_at
          FROM documents
          WHERE prospect_id = $1
@@ -118,7 +119,7 @@ router.get("/", async (req, res) => {
     }
 
     const result = await query(
-      `SELECT id, client_id, name, category, file_url, size, size_bytes, type,
+      `SELECT id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
               uploaded_by_role, uploaded_at
        FROM documents
        WHERE client_id = $1
@@ -176,7 +177,7 @@ router.post(
     });
   },
   async (req, res) => {
-    const { client_id, prospect_id, category, uploaded_by_role } = req.body;
+    const { client_id, prospect_id, category, uploaded_by_role, subfolder } = req.body;
 
     if (!client_id && !prospect_id) {
       return res.status(400).json({ error: "client_id or prospect_id is required" });
@@ -205,8 +206,8 @@ router.post(
 
         const docResult = await query(
           `INSERT INTO documents
-             (prospect_id, client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
-           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)
+             (prospect_id, client_id, name, category, subfolder, file_url, size, size_bytes, type, uploaded_by_role)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING *`,
           [
             prospect_id,
@@ -214,7 +215,7 @@ router.post(
             category ?? null,
             bucketPath,
             sizeLabel,
-            req.file.size,
+            actualSize,
             fileType,
             "advisor",
           ]
@@ -251,8 +252,8 @@ router.post(
 
       const docResult = await query(
         `INSERT INTO documents
-           (client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (client_id, name, category, subfolder, file_url, size, size_bytes, type, uploaded_by_role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
         [
           client_id,
@@ -260,7 +261,7 @@ router.post(
           category ?? null,
           bucketPath,
           sizeLabel,
-          req.file.size,
+          actualSize,
           fileType,
           role,
         ]
@@ -317,6 +318,34 @@ router.post(
     }
   }
 );
+
+// ── PATCH /api/documents/:id ──────────────────────────────────────────────────
+router.patch("/:id", async (req, res) => {
+  const { category, subfolder } = req.body;
+  try {
+    const dResult = await query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+    if (dResult.rows.length === 0) return res.status(404).json({ error: "Document not found" });
+    const doc = dResult.rows[0];
+    if (doc.client_id) {
+      if (!(await verifyClient(doc.client_id, req.user!.id, req.user!.role)))
+        return res.status(403).json({ error: "Access denied" });
+    } else if (doc.prospect_id) {
+      if (!(await verifyProspect(doc.prospect_id, req.user!.id)))
+        return res.status(403).json({ error: "Access denied" });
+    }
+    const updated = await query(
+      `UPDATE documents SET
+         category = COALESCE($1, category),
+         subfolder = $2
+       WHERE id = $3 RETURNING *`,
+      [category ?? null, subfolder !== undefined ? (subfolder || null) : doc.subfolder, req.params.id]
+    );
+    return res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("PATCH /documents/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // ── DELETE /api/documents/:id ─────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {

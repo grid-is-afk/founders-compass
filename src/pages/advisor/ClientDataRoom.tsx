@@ -34,6 +34,7 @@ import {
   useClientStorage,
   useUploadDocuments,
   useDeleteDocument,
+  useUpdateDocument,
   type StagedFile,
   type Document,
 } from "@/hooks/useDocuments";
@@ -352,6 +353,7 @@ export const AdvisorDataRoom = ({
   const { data: storage } = useClientStorage(clientId);
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
+  const updateMutation = useUpdateDocument();
   const {
     mutate: analyzeDataRoom,
     isPending: isAnalyzing,
@@ -380,6 +382,8 @@ export const AdvisorDataRoom = ({
     file_url: string | null;
   } | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [editingDoc, setEditingDoc] = useState<Document | null>(null);
+  const [editSubfolder, setEditSubfolder] = useState("");
 
   // ── Toast when new client uploads arrive ────────────────────────────────
   const prevCountRef = useRef<number>(0);
@@ -800,6 +804,18 @@ export const AdvisorDataRoom = ({
                         </option>
                       ))}
                     </select>
+                    <input
+                      type="text"
+                      placeholder="Subfolder (optional)"
+                      value={pf.subfolder ?? ""}
+                      onChange={(e) =>
+                        setPendingFiles((prev) =>
+                          prev.map((p) => p.id === pf.id ? { ...p, subfolder: e.target.value } : p)
+                        )
+                      }
+                      disabled={uploadMutation.isPending}
+                      className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 w-36"
+                    />
                     <button
                       className="text-muted-foreground hover:text-foreground transition-colors ml-1 disabled:opacity-30"
                       disabled={uploadMutation.isPending}
@@ -1186,60 +1202,61 @@ export const AdvisorDataRoom = ({
             </div>
           )}
 
-          {/* Grid layout */}
-          {currentFolderDocs.length > 0 && layout === "grid" && (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {currentFolderDocs.map((doc) => (
-                <DocumentCard
-                  key={doc.id}
-                  doc={doc}
-                  onView={() => openPreview(doc)}
-                  onDownload={() => handleDownload(doc)}
-                  onDelete={() => setPendingDeleteId(doc.id)}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* List layout */}
-          {currentFolderDocs.length > 0 && layout === "list" && (
-            <div className="bg-card rounded-lg border border-border overflow-hidden">
-              <div className="max-h-[520px] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="border-b border-border bg-muted/40">
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
-                        Name
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
-                        Uploaded by
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
-                        Date
-                      </th>
-                      <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">
-                        Size
-                      </th>
-                      <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {currentFolderDocs.map((doc) => (
-                      <DocumentTableRow
-                        key={doc.id}
-                        doc={doc}
-                        onView={() => openPreview(doc)}
-                        onDownload={() => handleDownload(doc)}
-                        onDelete={() => setPendingDeleteId(doc.id)}
-                      />
-                    ))}
-                  </tbody>
-                </table>
+          {/* Documents — grouped by subfolder */}
+          {currentFolderDocs.length > 0 && (() => {
+            const noSub: Document[] = [];
+            const subMap = new Map<string, Document[]>();
+            for (const doc of currentFolderDocs) {
+              const sf = doc.subfolder?.trim() || "";
+              if (!sf) { noSub.push(doc); }
+              else {
+                if (!subMap.has(sf)) subMap.set(sf, []);
+                subMap.get(sf)!.push(doc);
+              }
+            }
+            return (
+              <div className="space-y-6">
+                {noSub.length > 0 && (
+                  layout === "grid"
+                    ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        {noSub.map((doc) => (
+                          <DocumentCard key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />
+                        ))}
+                      </div>
+                    : <div className="bg-card rounded-lg border border-border overflow-hidden">
+                        <div className="max-h-[520px] overflow-y-auto">
+                          <table className="w-full text-sm">
+                            <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-muted/40"><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Uploaded by</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Date</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Size</th><th className="px-4 py-3" /></tr></thead>
+                            <tbody>{noSub.map((doc) => <DocumentTableRow key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}</tbody>
+                          </table>
+                        </div>
+                      </div>
+                )}
+                {Array.from(subMap.entries()).map(([sf, sfDocs]) => (
+                  <div key={sf}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold text-foreground">{sf}</span>
+                      <span className="text-xs text-muted-foreground">({sfDocs.length} doc{sfDocs.length !== 1 ? "s" : ""})</span>
+                    </div>
+                    {layout === "grid"
+                      ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          {sfDocs.map((doc) => <DocumentCard key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}
+                        </div>
+                      : <div className="bg-card rounded-lg border border-border overflow-hidden">
+                          <div className="max-h-[520px] overflow-y-auto">
+                            <table className="w-full text-sm">
+                              <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-muted/40"><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Uploaded by</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Date</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Size</th><th className="px-4 py-3" /></tr></thead>
+                              <tbody>{sfDocs.map((doc) => <DocumentTableRow key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}</tbody>
+                            </table>
+                          </div>
+                        </div>
+                    }
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
 
@@ -1313,6 +1330,36 @@ export const AdvisorDataRoom = ({
             >
               <Download className="w-4 h-4" /> Download
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit subfolder dialog ── */}
+      <Dialog open={editingDoc !== null} onOpenChange={(o) => { if (!o) setEditingDoc(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move to Subfolder</DialogTitle>
+            <DialogDescription>Assign this file to a subfolder within <strong>{editingDoc?.category ?? "this folder"}</strong>.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <input
+              type="text"
+              placeholder="Subfolder name (leave blank to remove)"
+              value={editSubfolder}
+              onChange={(e) => setEditSubfolder(e.target.value)}
+              className="w-full rounded-md border border-input bg-background text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setEditingDoc(null)}>Cancel</Button>
+            <Button size="sm" onClick={async () => {
+              if (!editingDoc) return;
+              try {
+                await updateMutation.mutateAsync({ id: editingDoc.id, subfolder: editSubfolder });
+                toast("Subfolder updated");
+                setEditingDoc(null);
+              } catch { toast("Failed to update subfolder"); }
+            }}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
