@@ -438,13 +438,15 @@ const CapitalStrategyRoadmap = () => {
       setImportProgress(i + 1);
       try {
         await createTask.mutateAsync({
-          client_id: selectedClientId,
-          title:     row.title,
-          assignee:  row.assignee,
-          due_date:  row.due_date,
-          priority:  row.priority,
-          phase:     row.domain,
-          notes:     row.notes,
+          client_id:   selectedClientId,
+          title:       row.title,
+          assignee_id: (teamMembers as TeamMember[]).find(
+            (m) => m.name?.toLowerCase() === row.assignee?.toLowerCase()
+          )?.id ?? null,
+          due_date:    row.due_date,
+          priority:    row.priority,
+          phase:       row.domain,
+          notes:       row.notes,
         });
         successCount++;
       } catch {
@@ -919,6 +921,12 @@ const CapitalStrategyRoadmap = () => {
             {/* ── Step 1: Upload ── */}
             {importStep === 1 && (
               <div className="space-y-4 py-2">
+                {/* Client attribution */}
+                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted/50 border border-border text-sm mb-4">
+                  <span className="text-muted-foreground">Importing tasks for:</span>
+                  <span className="font-semibold text-foreground">{selectedClient?.name ?? "Unknown client"}</span>
+                </div>
+
                 {/* Dropzone */}
                 <div
                   onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}

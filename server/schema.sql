@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS documents (
   client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   category    TEXT,
+  subfolder   TEXT,
   file_url    TEXT,
   size        TEXT,
   type        TEXT,
@@ -624,3 +625,9 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS q4_phase TEXT DEFAULT 'prove';
 -- ============================================================
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS see_all_clients BOOLEAN NOT NULL DEFAULT true;
+
+-- ============================================================
+-- Subfolder support on documents
+-- ============================================================
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS subfolder TEXT;
