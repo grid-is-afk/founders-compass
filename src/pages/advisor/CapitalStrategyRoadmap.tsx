@@ -151,7 +151,7 @@ const statusLabels: Record<TaskStatus, string> = {
 // ---------------------------------------------------------------------------
 
 const CapitalStrategyRoadmap = () => {
-  const { selectedClient, selectedClientId } = useClientContext();
+  const { selectedClient, selectedClientId, clients } = useClientContext();
   const { data: rawTasks = [], isLoading } = useClientTasks(selectedClientId);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -172,7 +172,7 @@ const CapitalStrategyRoadmap = () => {
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState<Domain>("Discover");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
-  const [newAssigneeId, setNewAssigneeId] = useState<string>("");
+  const [newAssigneeId, setNewAssigneeId] = useState<string>("__none__");
   const [newDueDate, setNewDueDate] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
@@ -180,7 +180,7 @@ const CapitalStrategyRoadmap = () => {
   const [editTitle, setEditTitle] = useState("");
   const [editDomain, setEditDomain] = useState<Domain>("Discover");
   const [editStatus, setEditStatus] = useState<TaskStatus>("todo");
-  const [editAssigneeId, setEditAssigneeId] = useState<string>("");
+  const [editAssigneeId, setEditAssigneeId] = useState<string>("__none__");
   const [editDueDate, setEditDueDate] = useState("");
   const [editNotes, setEditNotes] = useState("");
 
@@ -190,8 +190,9 @@ const CapitalStrategyRoadmap = () => {
   const [csvHeaders, setCsvHeaders]           = useState<string[]>([]);
   const [csvRows, setCsvRows]                 = useState<Record<string, string>[]>([]);
   const [columnMapping, setColumnMapping]     = useState<ColumnMapping>({
-    title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "",
+    title: "__none__", assignee: "__none__", due_date: "__none__", priority: "__none__", domain: "__none__", notes: "__none__",
   });
+  const [importClientId, setImportClientId]   = useState<string>(selectedClientId);
   const [validatedRows, setValidatedRows]     = useState<ValidatedImportRow[]>([]);
   const [skippedCount, setSkippedCount]       = useState(0);
   const [importProgress, setImportProgress]   = useState<number | null>(null);
@@ -203,14 +204,16 @@ const CapitalStrategyRoadmap = () => {
   // ---------------------------------------------------------------------------
 
   const tasks: RoadmapTask[] = (rawTasks as any[]).map((t) => ({
-    id:       t.id,
-    title:    t.title,
-    status:   (t.status ?? "todo") as TaskStatus,
-    assignee: t.assignee ?? null,
-    due_date: t.due_date ?? null,
-    phase:    (t.phase ?? null) as Domain | null,
-    priority: t.priority ?? "medium",
-    notes:    t.notes ?? null,
+    id:            t.id,
+    title:         t.title,
+    status:        (t.status ?? "todo") as TaskStatus,
+    assignee:      t.assignee ?? null,
+    assignee_id:   t.assignee_id ?? null,
+    assignee_name: t.assignee_name ?? null,
+    due_date:      t.due_date ?? null,
+    phase:         (t.phase ?? null) as Domain | null,
+    priority:      t.priority ?? "medium",
+    notes:         t.notes ?? null,
   }));
 
   const total       = tasks.length;
@@ -265,7 +268,7 @@ const CapitalStrategyRoadmap = () => {
         title:       newTitle.trim(),
         phase:       newDomain,
         status:      newStatus,
-        assignee_id: newAssigneeId || null,
+        assignee_id: newAssigneeId === "__none__" ? null : newAssigneeId,
         due_date:    newDueDate || null,
         notes:       newNotes.trim() || null,
       },
@@ -276,7 +279,7 @@ const CapitalStrategyRoadmap = () => {
           setNewTitle("");
           setNewDomain("Discover");
           setNewStatus("todo");
-          setNewAssigneeId("");
+          setNewAssigneeId("__none__");
           setNewDueDate("");
           setNewNotes("");
         },
@@ -289,7 +292,7 @@ const CapitalStrategyRoadmap = () => {
     setEditTitle(task.title);
     setEditDomain((task.phase ?? "Discover") as Domain);
     setEditStatus(task.status);
-    setEditAssigneeId(task.assignee_id ?? "");
+    setEditAssigneeId(task.assignee_id ?? "__none__");
     setEditDueDate(task.due_date ?? "");
     setEditNotes(task.notes ?? "");
   };
@@ -303,7 +306,7 @@ const CapitalStrategyRoadmap = () => {
         title:       editTitle.trim(),
         phase:       editDomain,
         status:      editStatus,
-        assignee_id: editAssigneeId || null,
+        assignee_id: editAssigneeId === "__none__" ? null : editAssigneeId,
         due_date:    editDueDate || null,
         notes:       editNotes.trim() || null,
       },
@@ -324,7 +327,8 @@ const CapitalStrategyRoadmap = () => {
     setImportStep(1);
     setCsvHeaders([]);
     setCsvRows([]);
-    setColumnMapping({ title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "" });
+    setColumnMapping({ title: "__none__", assignee: "__none__", due_date: "__none__", priority: "__none__", domain: "__none__", notes: "__none__" });
+    setImportClientId(selectedClientId);
     setValidatedRows([]);
     setSkippedCount(0);
     setImportProgress(null);
@@ -338,7 +342,7 @@ const CapitalStrategyRoadmap = () => {
   };
 
   const autoDetectMapping = (headers: string[]): ColumnMapping => {
-    const mapping: ColumnMapping = { title: "", assignee: "", due_date: "", priority: "", domain: "", notes: "" };
+    const mapping: ColumnMapping = { title: "__none__", assignee: "__none__", due_date: "__none__", priority: "__none__", domain: "__none__", notes: "__none__" };
     for (const field of IMPORT_FIELDS) {
       const matched = headers.find((h) => h.toLowerCase() === field.key.toLowerCase());
       if (matched) mapping[field.key] = matched;
@@ -394,25 +398,27 @@ const CapitalStrategyRoadmap = () => {
     const validated: ValidatedImportRow[] = [];
     let skipped = 0;
 
+    const isMapped = (v: string) => v && v !== "__none__";
+
     for (const row of csvRows) {
-      const rawTitle = columnMapping.title ? (row[columnMapping.title] ?? "").trim() : "";
+      const rawTitle = isMapped(columnMapping.title) ? (row[columnMapping.title] ?? "").trim() : "";
       if (!rawTitle) { skipped++; continue; }
 
-      const rawPriority = columnMapping.priority ? (row[columnMapping.priority] ?? "").trim().toLowerCase() : "";
+      const rawPriority = isMapped(columnMapping.priority) ? (row[columnMapping.priority] ?? "").trim().toLowerCase() : "";
       const priority    = VALID_PRIORITIES.has(rawPriority) ? rawPriority : "medium";
 
-      const rawDomain = columnMapping.domain ? (row[columnMapping.domain] ?? "").trim() : "";
+      const rawDomain = isMapped(columnMapping.domain) ? (row[columnMapping.domain] ?? "").trim() : "";
       const domain    = (VALID_DOMAINS.has(rawDomain) ? rawDomain : "Discover") as Domain;
 
-      const rawDate   = columnMapping.due_date ? (row[columnMapping.due_date] ?? "").trim() : "";
+      const rawDate   = isMapped(columnMapping.due_date) ? (row[columnMapping.due_date] ?? "").trim() : "";
       let   due_date: string | null = null;
       if (rawDate) {
         const parsed = new Date(rawDate);
         due_date = isNaN(parsed.getTime()) ? null : rawDate;
       }
 
-      const rawAssignee = columnMapping.assignee ? (row[columnMapping.assignee] ?? "").trim() : "";
-      const rawNotes    = columnMapping.notes    ? (row[columnMapping.notes]    ?? "").trim() : "";
+      const rawAssignee = isMapped(columnMapping.assignee) ? (row[columnMapping.assignee] ?? "").trim() : "";
+      const rawNotes    = isMapped(columnMapping.notes)    ? (row[columnMapping.notes]    ?? "").trim() : "";
 
       validated.push({
         title:    rawTitle,
@@ -438,7 +444,7 @@ const CapitalStrategyRoadmap = () => {
       setImportProgress(i + 1);
       try {
         await createTask.mutateAsync({
-          client_id:   selectedClientId,
+          client_id:   importClientId,
           title:       row.title,
           assignee_id: (teamMembers as TeamMember[]).find(
             (m) => m.name?.toLowerCase() === row.assignee?.toLowerCase()
@@ -835,7 +841,7 @@ const CapitalStrategyRoadmap = () => {
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
                   {teamMembers.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                   ))}
@@ -921,10 +927,19 @@ const CapitalStrategyRoadmap = () => {
             {/* ── Step 1: Upload ── */}
             {importStep === 1 && (
               <div className="space-y-4 py-2">
-                {/* Client attribution */}
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-muted/50 border border-border text-sm mb-4">
-                  <span className="text-muted-foreground">Importing tasks for:</span>
-                  <span className="font-semibold text-foreground">{selectedClient?.name ?? "Unknown client"}</span>
+                {/* Client selector */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-foreground">Import tasks for</label>
+                  <Select value={importClientId} onValueChange={setImportClientId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(clients as { id: string; name: string }[]).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Dropzone */}
@@ -1013,7 +1028,7 @@ const CapitalStrategyRoadmap = () => {
                           <SelectValue placeholder="— Not mapped —" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">— Not mapped —</SelectItem>
+                          <SelectItem value="__none__">— Not mapped —</SelectItem>
                           {csvHeaders.map((h) => (
                             <SelectItem key={h} value={h}>{h}</SelectItem>
                           ))}
@@ -1152,7 +1167,7 @@ const CapitalStrategyRoadmap = () => {
                 {importStep === 2 && (
                   <Button
                     onClick={handleMappingNext}
-                    disabled={!columnMapping.title}
+                    disabled={!columnMapping.title || columnMapping.title === "__none__"}
                   >
                     Next
                   </Button>
@@ -1234,7 +1249,7 @@ const CapitalStrategyRoadmap = () => {
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
                   {teamMembers.map((m) => (
                     <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
                   ))}
