@@ -7,6 +7,7 @@ export interface Document {
   prospect_id?: string | null;
   name: string;
   category: string | null;
+  subfolder: string | null;
   file_url: string | null;
   size: string | null;
   size_bytes: number;
@@ -25,6 +26,7 @@ export interface StagedFile {
   id: string;
   file: File;
   category: string;
+  subfolder?: string;
 }
 
 // ── Queries ───────────────────────────────────────────────────────────────────
@@ -76,12 +78,13 @@ export function useUploadDocuments() {
       const results: Document[] = [];
 
       for (let i = 0; i < stagedFiles.length; i++) {
-        const { file, category } = stagedFiles[i];
+        const { file, category, subfolder } = stagedFiles[i];
 
         const formData = new FormData();
         formData.append("file", file);
         formData.append("client_id", clientId);
         formData.append("category", category);
+        formData.append("subfolder", subfolder ?? "");
         formData.append("uploaded_by_role", uploadedByRole);
 
         const token = localStorage.getItem("tfo-access-token");
@@ -145,6 +148,24 @@ export function useDeleteDocument() {
       if (vars.prospectId) {
         qc.invalidateQueries({ queryKey: ["documents", "prospect", vars.prospectId] });
       }
+    },
+  });
+}
+
+export function useUpdateDocument() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, category, subfolder }: { id: string; category?: string; subfolder?: string }) => {
+      const res = await apiFetch(`/documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, subfolder }),
+      });
+      if (!res.ok) throw new Error("Failed to update document");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["documents"] });
     },
   });
 }

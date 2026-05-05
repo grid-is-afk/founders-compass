@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import sharp from "sharp";
 import { query } from "../db.js";
 
 const router = Router();
@@ -79,6 +80,21 @@ function getFileType(filename: string): string {
   return "document";
 }
 
+async function compressImageIfNeeded(filePath: string, ext: string): Promise<number> {
+  const imageExts = new Set([".jpg", ".jpeg", ".png"]);
+  if (!imageExts.has(ext)) return fs.statSync(filePath).size;
+  const tempPath = filePath + ".tmp";
+  const s = sharp(filePath);
+  if (ext === ".png") {
+    await s.png({ compressionLevel: 9 }).toFile(tempPath);
+  } else {
+    await s.jpeg({ quality: 80 }).toFile(tempPath);
+  }
+  fs.unlinkSync(filePath);
+  fs.renameSync(tempPath, filePath);
+  return fs.statSync(filePath).size;
+}
+
 // ── GET /api/documents?client_id=xxx OR ?prospect_id=xxx ─────────────────────
 router.get("/", async (req, res) => {
   const { client_id, prospect_id } = req.query;
@@ -93,7 +109,7 @@ router.get("/", async (req, res) => {
         return res.status(404).json({ error: "Prospect not found" });
       }
       const result = await query(
-        `SELECT id, prospect_id, client_id, name, category, file_url, size, size_bytes, type,
+        `SELECT id, prospect_id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
                 uploaded_by_role, uploaded_at
          FROM documents
          WHERE prospect_id = $1
@@ -109,7 +125,7 @@ router.get("/", async (req, res) => {
     }
 
     const result = await query(
-      `SELECT id, client_id, name, category, file_url, size, size_bytes, type,
+      `SELECT id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
               uploaded_by_role, uploaded_at
        FROM documents
        WHERE client_id = $1
@@ -168,7 +184,7 @@ router.post(
     });
   },
   async (req, res) => {
-    const { client_id, prospect_id, category, uploaded_by_role } = req.body;
+    const { client_id, prospect_id, category, uploaded_by_role, subfolder } = req.body;
 
     if (!client_id && !prospect_id) {
       if (req.file) fs.unlinkSync(req.file.path);
@@ -186,22 +202,26 @@ router.post(
           return res.status(404).json({ error: "Prospect not found" });
         }
 
+        const ext = path.extname(req.file.originalname).toLowerCase();
+        const actualSize = await compressImageIfNeeded(req.file.path, ext);
+
         const fileUrl = `/uploads/${req.file.filename}`;
-        const sizeLabel = formatFileSize(req.file.size);
+        const sizeLabel = formatFileSize(actualSize);
         const fileType = getFileType(req.file.originalname);
 
         const docResult = await query(
           `INSERT INTO documents
-             (prospect_id, client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
-           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)
+             (prospect_id, client_id, name, category, subfolder, file_url, size, size_bytes, type, uploaded_by_role)
+           VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9)
            RETURNING *`,
           [
             prospect_id,
             req.file.originalname,
             category ?? null,
+            subfolder ?? null,
             fileUrl,
             sizeLabel,
-            req.file.size,
+            actualSize,
             fileType,
             "advisor",
           ]
@@ -215,13 +235,16 @@ router.post(
         return res.status(404).json({ error: "Client not found" });
       }
 
-      // Enforce 100 MB per-client cap
+      const clientExt = path.extname(req.file.originalname).toLowerCase();
+      const actualSize = await compressImageIfNeeded(req.file.path, clientExt);
+
+      // Enforce 100 MB per-client cap (use compressed size)
       const usageResult = await query(
         `SELECT COALESCE(SUM(size_bytes), 0)::bigint AS used_bytes FROM documents WHERE client_id = $1`,
         [client_id]
       );
       const usedBytes = Number(usageResult.rows[0].used_bytes);
-      if (usedBytes + req.file.size > MAX_CLIENT_BYTES) {
+      if (usedBytes + actualSize > MAX_CLIENT_BYTES) {
         fs.unlinkSync(req.file.path);
         return res.status(413).json({
           error: `Data Room is full. Maximum 100 MB per client. Currently using ${formatFileSize(usedBytes)}.`,
@@ -229,22 +252,23 @@ router.post(
       }
 
       const fileUrl = `/uploads/${req.file.filename}`;
-      const sizeLabel = formatFileSize(req.file.size);
+      const sizeLabel = formatFileSize(actualSize);
       const fileType = getFileType(req.file.originalname);
       const role = uploaded_by_role === "client" ? "client" : "advisor";
 
       const docResult = await query(
         `INSERT INTO documents
-           (client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           (client_id, name, category, subfolder, file_url, size, size_bytes, type, uploaded_by_role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
         [
           client_id,
           req.file.originalname,
           category ?? null,
+          subfolder ?? null,
           fileUrl,
           sizeLabel,
-          req.file.size,
+          actualSize,
           fileType,
           role,
         ]
@@ -306,6 +330,34 @@ router.post(
     }
   }
 );
+
+// ── PATCH /api/documents/:id ──────────────────────────────────────────────────
+router.patch("/:id", async (req, res) => {
+  const { category, subfolder } = req.body;
+  try {
+    const dResult = await query("SELECT * FROM documents WHERE id = $1", [req.params.id]);
+    if (dResult.rows.length === 0) return res.status(404).json({ error: "Document not found" });
+    const doc = dResult.rows[0];
+    if (doc.client_id) {
+      if (!(await verifyClient(doc.client_id, req.user!.id, req.user!.role)))
+        return res.status(403).json({ error: "Access denied" });
+    } else if (doc.prospect_id) {
+      if (!(await verifyProspect(doc.prospect_id, req.user!.id)))
+        return res.status(403).json({ error: "Access denied" });
+    }
+    const updated = await query(
+      `UPDATE documents SET
+         category = COALESCE($1, category),
+         subfolder = $2
+       WHERE id = $3 RETURNING *`,
+      [category ?? null, subfolder !== undefined ? (subfolder || null) : doc.subfolder, req.params.id]
+    );
+    return res.json(updated.rows[0]);
+  } catch (err) {
+    console.error("PATCH /documents/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 // ── DELETE /api/documents/:id ─────────────────────────────────────────────────
 router.delete("/:id", async (req, res) => {
