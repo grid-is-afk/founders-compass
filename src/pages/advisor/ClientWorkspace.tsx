@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Navigate, NavLink, Outlet, useParams } from "react-router-dom";
-import { Clock, Building2, AlertCircle } from "lucide-react";
+import { Clock, Building2, AlertCircle, Plus } from "lucide-react";
 import { useClient } from "@/hooks/useClients";
+import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 import { cn } from "@/lib/utils";
 import { daysRemaining, countdownChipClass } from "@/lib/q1Utils";
+import ChapterCreateDialog from "@/components/chapters/ChapterCreateDialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,12 +36,27 @@ const TABS = [
 // Component
 // ---------------------------------------------------------------------------
 
+interface DbPlan {
+  id: string;
+  quarter: number;
+  year: number;
+  label: string | null;
+  status: string;
+}
+
 export default function ClientWorkspace() {
   const { id } = useParams<{ id: string }>();
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   if (!id) return <Navigate to="/advisor/clients" replace />;
 
   const { data: client, isLoading, isError } = useClient(id);
+  const { data: plansRaw = [] } = useClientQuarterlyPlans(id);
+  const plans = plansRaw as DbPlan[];
+  const extraPlans = plans
+    .slice()
+    .sort((a, b) => a.year !== b.year ? a.year - b.year : a.quarter - b.quarter)
+    .slice(4);
 
   if (isLoading) {
     return (
@@ -96,7 +114,7 @@ export default function ClientWorkspace() {
         </div>
 
         {/* Tab bar */}
-        <nav className="flex gap-1" aria-label="Client workspace tabs">
+        <nav className="flex flex-wrap gap-1 items-center" aria-label="Client workspace tabs">
           {TABS.map((tab) => (
             <NavLink
               key={tab.path}
@@ -113,11 +131,42 @@ export default function ClientWorkspace() {
               {tab.label}
             </NavLink>
           ))}
+          {extraPlans.map((plan, i) => (
+            <NavLink
+              key={plan.id}
+              to={`/advisor/clients/${id}/chapter/${plan.id}`}
+              className={({ isActive }) =>
+                cn(
+                  "px-4 py-2 rounded-md text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                )
+              }
+            >
+              {plan.label ?? `Chapter ${5 + i}`}
+            </NavLink>
+          ))}
+          <button
+            onClick={() => setDialogOpen(true)}
+            className="flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+            aria-label="New Chapter"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New Chapter
+          </button>
         </nav>
       </div>
 
       {/* Active tab content */}
       <Outlet context={{ client: c }} />
+
+      <ChapterCreateDialog
+        clientId={id}
+        existingPlans={plans}
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+      />
     </div>
   );
 }
