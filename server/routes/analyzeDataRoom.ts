@@ -95,7 +95,7 @@ Otherwise return a concise plain-text summary of findings only. No JSON. No head
   });
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 1024,
     system:
       "You are a financial document analyst for a founder advisory platform. Extract key business, financial, and legal insights from the documents provided. If documents contain no relevant financial or business information, say so briefly.",
@@ -116,7 +116,7 @@ async function synthesize(
     .join("\n\n");
 
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 2048,
     system:
       "You are the Quarterback Copilot for The Founders Office. Synthesize document findings into structured dashboard scores. Be conservative — only score what the findings support. Use null for anything that cannot be determined.",

@@ -156,7 +156,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     while (true) {
       if (clientDisconnected) break;
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system: systemPrompt,
         tools: tools as Anthropic.Tool[],
