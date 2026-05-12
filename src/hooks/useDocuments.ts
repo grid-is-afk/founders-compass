@@ -27,6 +27,7 @@ export interface StagedFile {
   file: File;
   category: string;
   subfolder?: string;
+  sourceFolderName?: string;
 }
 
 // ── Queries ───────────────────────────────────────────────────────────────────

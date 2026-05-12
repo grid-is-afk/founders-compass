@@ -167,6 +167,11 @@ const DocumentCard = ({ doc, onView, onDownload, onDelete }: DocCardProps) => {
         <p className="text-xs font-medium text-foreground leading-snug line-clamp-2 break-words">
           {doc.name}
         </p>
+        {doc.subfolder && (
+          <span className="inline-block text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+            {doc.subfolder}
+          </span>
+        )}
         <div className="flex items-center gap-1.5 flex-wrap">
           {doc.uploaded_by_role === "client" && <ClientBadge />}
           <span className="text-[10px] text-muted-foreground">{doc.size ?? "—"}</span>
@@ -492,13 +497,17 @@ export const AdvisorDataRoom = ({
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const staged: StagedFile[] = Array.from(files).map((file, i) => {
-      // When uploading a folder, webkitRelativePath = "FolderName/file.pdf"
       const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-      const folderName = relativePath?.includes("/") ? relativePath.split("/")[0] : null;
+      const parts = relativePath?.split("/") ?? [];
+      const folderName = parts.length > 1 ? parts[0] : null;
+      // e.g. "Sendgrid/Reports/file.pdf" → subfolder = "Reports"
+      const nestedSubfolder = parts.length > 2 ? parts.slice(1, -1).join("/") : undefined;
       return {
         id: `pending-${Date.now()}-${i}`,
         file,
         category: folderName ?? folderView ?? "Reports",
+        subfolder: nestedSubfolder,
+        sourceFolderName: folderName ?? undefined,
       };
     });
     setPendingFiles((prev) => [...prev, ...staged]);
@@ -722,49 +731,83 @@ export const AdvisorDataRoom = ({
           </div>
         ) : (
           <div className="rounded-lg border border-border bg-card overflow-hidden">
-            <div className="flex items-start justify-between px-4 py-3 border-b border-border bg-muted/30">
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {pendingFiles.length} file
-                  {pendingFiles.length > 1 ? "s" : ""} selected
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Choose a category for each file — this determines where it
-                  appears in the Data Room.
-                </p>
-              </div>
-              <button
-                className="text-xs text-primary hover:underline mt-0.5"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                + Add more
-              </button>
-            </div>
+            {(() => {
+              const folderName =
+                pendingFiles.length > 0 &&
+                pendingFiles[0].sourceFolderName &&
+                pendingFiles.every((pf) => pf.sourceFolderName === pendingFiles[0].sourceFolderName)
+                  ? pendingFiles[0].sourceFolderName
+                  : null;
+              return (
+                <>
+                  <div className="flex items-start justify-between px-4 py-3 border-b border-border bg-muted/30">
+                    <div>
+                      {folderName ? (
+                        <>
+                          <div className="flex items-center gap-1.5">
+                            <FolderOpen className="w-4 h-4 text-[#2D5F4F]" />
+                            <p className="text-sm font-medium text-foreground">
+                              {folderName}
+                              <span className="ml-1.5 text-muted-foreground font-normal">
+                                — {pendingFiles.length} file{pendingFiles.length > 1 ? "s" : ""}
+                              </span>
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Files will be organized in the &lsquo;{folderName}&rsquo; folder in your Data Room.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-foreground">
+                            {pendingFiles.length} file
+                            {pendingFiles.length > 1 ? "s" : ""} selected
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Choose a category for each file — this determines where it
+                            appears in the Data Room.
+                          </p>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      className="text-xs text-primary hover:underline mt-0.5"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      + Add more
+                    </button>
+                  </div>
 
-            {pendingFiles.length > 1 && (
-              <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/10">
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  Apply category to all:
-                </span>
-                <select
-                  value={bulkCategory}
-                  onChange={(e) => {
-                    setBulkCategory(e.target.value);
-                    setPendingFiles((prev) =>
-                      prev.map((p) => ({ ...p, category: e.target.value }))
-                    );
-                  }}
-                  className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                >
-                  <option value="">— choose —</option>
-                  {DATA_ROOM_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+                  {pendingFiles.length > 1 && (
+                    <div className="flex items-center gap-3 px-4 py-2.5 border-b border-border bg-muted/10">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        Apply category to all:
+                      </span>
+                      <select
+                        value={bulkCategory || (folderName ?? "")}
+                        onChange={(e) => {
+                          setBulkCategory(e.target.value);
+                          setPendingFiles((prev) =>
+                            prev.map((p) => ({ ...p, category: e.target.value }))
+                          );
+                        }}
+                        className="rounded-md border border-input bg-background text-xs px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      >
+                        <option value="">— choose —</option>
+                        {folderName && !(DATA_ROOM_CATEGORIES as readonly string[]).includes(folderName) && (
+                          <option value={folderName}>{folderName} (folder)</option>
+                        )}
+                        {DATA_ROOM_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             <div className="divide-y divide-border/60">
               {pendingFiles.map((pf) => {
@@ -810,24 +853,45 @@ export const AdvisorDataRoom = ({
                       disabled={uploadMutation.isPending}
                       className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                     >
+                      {pf.sourceFolderName && !(DATA_ROOM_CATEGORIES as readonly string[]).includes(pf.sourceFolderName) && (
+                        <option value={pf.sourceFolderName}>{pf.sourceFolderName} (folder)</option>
+                      )}
                       {DATA_ROOM_CATEGORIES.map((c) => (
                         <option key={c} value={c}>
                           {c}
                         </option>
                       ))}
                     </select>
-                    <input
-                      type="text"
-                      placeholder="Subfolder (optional)"
-                      value={pf.subfolder ?? ""}
-                      onChange={(e) =>
-                        setPendingFiles((prev) =>
-                          prev.map((p) => p.id === pf.id ? { ...p, subfolder: e.target.value } : p)
-                        )
-                      }
-                      disabled={uploadMutation.isPending}
-                      className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 w-36"
-                    />
+                    {pf.sourceFolderName ? (
+                      <select
+                        value={pf.subfolder ?? ""}
+                        onChange={(e) =>
+                          setPendingFiles((prev) =>
+                            prev.map((p) => p.id === pf.id ? { ...p, subfolder: e.target.value || undefined } : p)
+                          )
+                        }
+                        disabled={uploadMutation.isPending}
+                        className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 w-36"
+                      >
+                        <option value="">No tag</option>
+                        {DATA_ROOM_CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Subfolder (optional)"
+                        value={pf.subfolder ?? ""}
+                        onChange={(e) =>
+                          setPendingFiles((prev) =>
+                            prev.map((p) => p.id === pf.id ? { ...p, subfolder: e.target.value } : p)
+                          )
+                        }
+                        disabled={uploadMutation.isPending}
+                        className="rounded-md border border-input bg-background text-sm px-2 py-1.5 text-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 w-36"
+                      />
+                    )}
                     <button
                       className="text-muted-foreground hover:text-foreground transition-colors ml-1 disabled:opacity-30"
                       disabled={uploadMutation.isPending}
