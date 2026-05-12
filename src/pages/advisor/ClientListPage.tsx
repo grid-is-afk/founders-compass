@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, Search, Plus, Building2, Mail, Clock, Trash2 } from "lucide-react";
+import { Users, Search, Plus, Building2, Mail, Clock, Archive, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
-import { useClients, useCreateClient, useDeleteClient } from "@/hooks/useClients";
+import { useClients, useCreateClient, useArchiveClient } from "@/hooks/useClients";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,25 +74,25 @@ const fadeIn = {
 };
 
 // ---------------------------------------------------------------------------
-// Delete Confirm Dialog
+// Archive Confirm Dialog
 // ---------------------------------------------------------------------------
 
-interface DeleteConfirmDialogProps {
+interface ArchiveConfirmDialogProps {
   target: { id: string; name: string } | null;
   onClose: () => void;
 }
 
-function DeleteConfirmDialog({ target, onClose }: DeleteConfirmDialogProps) {
-  const deleteClient = useDeleteClient();
+function ArchiveConfirmDialog({ target, onClose }: ArchiveConfirmDialogProps) {
+  const archiveClient = useArchiveClient();
 
   const handleConfirm = async () => {
     if (!target) return;
     try {
-      await deleteClient.mutateAsync(target.id);
-      toast.success(`"${target.name}" removed`);
+      await archiveClient.mutateAsync(target.id);
+      toast.success(`"${target.name}" archived`);
       onClose();
     } catch {
-      toast.error("Failed to delete client");
+      toast.error("Failed to archive client");
     }
   };
 
@@ -100,9 +100,9 @@ function DeleteConfirmDialog({ target, onClose }: DeleteConfirmDialogProps) {
     <Dialog open={!!target} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="font-display">Delete {target?.name}?</DialogTitle>
+          <DialogTitle className="font-display">Archive {target?.name}?</DialogTitle>
           <DialogDescription>
-            This will permanently remove the client and all their data. This cannot be undone.
+            This client will be hidden from your active portfolio. Their data is preserved and can be restored from Archived Clients.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -112,10 +112,10 @@ function DeleteConfirmDialog({ target, onClose }: DeleteConfirmDialogProps) {
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={deleteClient.isPending}
+            disabled={archiveClient.isPending}
           >
-            <Trash2 className="w-4 h-4 mr-2" />
-            {deleteClient.isPending ? "Deleting..." : "Delete"}
+            <Archive className="w-4 h-4 mr-2" />
+            {archiveClient.isPending ? "Archiving..." : "Archive Client"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -140,6 +140,7 @@ function AddClientDialog({ open, onClose }: AddClientDialogProps) {
     contact_email: "",
     revenue: "",
     entity_type: "" as "corp" | "llc" | "",
+    sendInvite: true,
   });
   const [credentials, setCredentials] = useState<{
     email: string;
@@ -170,11 +171,12 @@ function AddClientDialog({ open, onClose }: AddClientDialogProps) {
         entity_type: form.entity_type || null,
         onboarded_at: new Date().toISOString(),
         q1_phase: "kickoff",
+        sendInvite: form.sendInvite,
       });
       if (result.generatedCredentials) {
         setCredentials(result.generatedCredentials);
       } else {
-        toast.success(`Client "${form.name}" added`);
+        toast.success(`Client "${form.name}" added — invite not sent`);
         handleClose();
       }
     } catch (err) {
@@ -184,7 +186,7 @@ function AddClientDialog({ open, onClose }: AddClientDialogProps) {
   };
 
   const handleClose = () => {
-    setForm({ name: "", contact_name: "", contact_email: "", revenue: "", entity_type: "" });
+    setForm({ name: "", contact_name: "", contact_email: "", revenue: "", entity_type: "", sendInvite: true });
     setCredentials(null);
     onClose();
   };
@@ -264,6 +266,16 @@ function AddClientDialog({ open, onClose }: AddClientDialogProps) {
                   </SelectContent>
                 </Select>
               </div>
+
+              <label className="flex items-center gap-2.5 cursor-pointer select-none pt-1">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded border-border accent-primary"
+                  checked={form.sendInvite}
+                  onChange={(e) => setForm((f) => ({ ...f, sendInvite: e.target.checked }))}
+                />
+                <span className="text-sm text-foreground">Send portal invite email now</span>
+              </label>
             </div>
 
             <DialogFooter>
@@ -433,16 +445,16 @@ export default function ClientListPage() {
                       <Progress value={client.capital_readiness ?? 0} className="h-1" />
                     </div>
 
-                    {/* Delete — only own clients or admin */}
+                    {/* Archive — only own clients or admin */}
                     {(client.advisor_id === user?.id || user?.role === "admin") && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                         onClick={() => setDeleteTarget({ id: client.id, name: client.name })}
                       >
-                        <Trash2 className="w-3 h-3 mr-1" />
-                        Delete
+                        <Archive className="w-3 h-3 mr-1" />
+                        Archive
                       </Button>
                     )}
                   </div>
@@ -454,7 +466,7 @@ export default function ClientListPage() {
       )}
 
       <AddClientDialog open={addOpen} onClose={() => setAddOpen(false)} />
-      <DeleteConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      <ArchiveConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </div>
   );
 }

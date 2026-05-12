@@ -2,6 +2,7 @@ import { Outlet } from "react-router-dom";
 import AdvisorSidebar from "./AdvisorSidebar";
 import TopBar from "./TopBar";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
+import CopilotPanel from "@/components/copilot/CopilotPanel";
 import { ClientProvider, useClientContext } from "@/hooks/useClientContext";
 
 // Inner component that reads selectedClientId from ClientContext
@@ -20,6 +21,7 @@ const AdvisorLayoutInner = () => {
           </main>
         </div>
       </div>
+      <CopilotPanel />
     </CopilotProvider>
   );
 };
