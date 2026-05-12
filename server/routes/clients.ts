@@ -48,7 +48,7 @@ router.get("/", async (req, res) => {
     // Advisors see all their clients; clients are redirected to /me
     if (req.user!.role === "client") {
       const result = await query(
-        "SELECT * FROM clients WHERE user_id = $1",
+        "SELECT * FROM clients WHERE user_id = $1 AND (archived IS NULL OR archived = false)",
         [req.user!.id]
       );
       return res.json(result.rows);
@@ -56,8 +56,8 @@ router.get("/", async (req, res) => {
 
     const seeAll = await canSeeAll(req.user!.id, req.user!.role);
     const result = seeAll
-      ? await query("SELECT * FROM clients ORDER BY name")
-      : await query("SELECT * FROM clients WHERE advisor_id = $1 ORDER BY name", [req.user!.id]);
+      ? await query("SELECT * FROM clients WHERE (archived IS NULL OR archived = false) ORDER BY name")
+      : await query("SELECT * FROM clients WHERE advisor_id = $1 AND (archived IS NULL OR archived = false) ORDER BY name", [req.user!.id]);
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /clients error:", err);
@@ -82,6 +82,7 @@ router.post("/", async (req, res) => {
     q1_phase,
     onboarded_at,
     source_prospect_id,
+    sendInvite = true,
   } = req.body;
 
   if (!name) {
@@ -122,8 +123,8 @@ router.post("/", async (req, res) => {
       `INSERT INTO clients
          (advisor_id, user_id, name, contact_name, contact_email, revenue, stage,
           current_quarter, current_year, capital_readiness, customer_capital, performance_score,
-          entity_type, q1_phase, onboarded_at, source_prospect_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          entity_type, q1_phase, onboarded_at, source_prospect_id, portal_invite_sent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        RETURNING *`,
       [
         req.user!.id,
@@ -142,6 +143,7 @@ router.post("/", async (req, res) => {
         q1_phase ?? "kickoff",
         onboarded_at ?? new Date().toISOString(),
         source_prospect_id ?? null,
+        sendInvite !== false,
       ]
     );
 
@@ -160,13 +162,15 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Return the client record + generated credentials (shown once to advisor)
+    // Return the client record; include credentials only when invite was requested
     return res.status(201).json({
       ...clientResult.rows[0],
-      generatedCredentials: {
-        email: contact_email.toLowerCase(),
-        password: generatedPassword,
-      },
+      ...(sendInvite !== false && {
+        generatedCredentials: {
+          email: contact_email.toLowerCase(),
+          password: generatedPassword,
+        },
+      }),
     });
   } catch (err) {
     console.error("POST /clients error:", err);
@@ -220,6 +224,29 @@ router.get("/:id", async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("GET /clients/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/clients/:id/archive
+router.patch("/:id/archive", async (req, res) => {
+  try {
+    const isAdmin = req.user!.role === "admin";
+    const result = isAdmin
+      ? await query(
+          "UPDATE clients SET archived = true, updated_at = NOW() WHERE id = $1 RETURNING id",
+          [req.params.id]
+        )
+      : await query(
+          "UPDATE clients SET archived = true, updated_at = NOW() WHERE id = $1 AND advisor_id = $2 RETURNING id",
+          [req.params.id, req.user!.id]
+        );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found or access denied" });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /clients/:id/archive error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

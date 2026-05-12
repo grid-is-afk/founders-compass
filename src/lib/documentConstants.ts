@@ -14,6 +14,8 @@ export const DATA_ROOM_CATEGORIES = [
   "Governance",
   "Meeting Notes",
   "Agreements",
+  "Project Management",
+  "Liability",
   "Other",
 ] as const;
 

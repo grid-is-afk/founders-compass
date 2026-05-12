@@ -33,10 +33,13 @@ export function useUpdateClient() {
   });
 }
 
-export function useDeleteClient() {
+export function useArchiveClient() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.delete(`/clients/${id}`),
+    mutationFn: (id: string) => api.patch(`/clients/${id}/archive`, {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
   });
 }
+
+/** @deprecated Use useArchiveClient instead */
+export const useDeleteClient = useArchiveClient;

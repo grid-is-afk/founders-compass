@@ -19,7 +19,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;        // 25 MB per file
 const MAX_CLIENT_BYTES = 800 * 1024 * 1024;      // 800 MB per client data room
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".xlsx", ".xls", ".csv",
-  ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png",
+  ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png", ".html",
 ]);
 
 // ── Multer config (memory storage — no disk writes) ───────────────────────────
@@ -215,7 +215,7 @@ router.post(
             category ?? null,
             bucketPath,
             sizeLabel,
-            actualSize,
+            req.file.size,
             fileType,
             "advisor",
           ]
@@ -261,7 +261,7 @@ router.post(
           category ?? null,
           bucketPath,
           sizeLabel,
-          actualSize,
+          req.file.size,
           fileType,
           role,
         ]
