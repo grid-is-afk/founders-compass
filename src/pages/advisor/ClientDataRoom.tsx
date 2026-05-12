@@ -56,14 +56,16 @@ interface CategoryStyle {
 }
 
 const CATEGORY_COLORS: Record<string, CategoryStyle> = {
-  "Reports":           { bg: "bg-slate-100",  text: "text-slate-600", border: "border-slate-300" },
-  "Financials":        { bg: "bg-slate-200",  text: "text-slate-700", border: "border-slate-400" },
-  "Customer Capital":  { bg: "bg-blue-50",    text: "text-blue-700",  border: "border-blue-300"  },
-  "Legal & Structure": { bg: "bg-slate-100",  text: "text-slate-600", border: "border-slate-400" },
-  "Governance":        { bg: "bg-slate-200",  text: "text-slate-800", border: "border-slate-500" },
-  "Meeting Notes":     { bg: "bg-blue-100",   text: "text-blue-800",  border: "border-blue-400"  },
-  "Agreements":        { bg: "bg-slate-300",  text: "text-slate-800", border: "border-slate-600" },
-  "Other":             { bg: "bg-slate-50",   text: "text-slate-500", border: "border-slate-200" },
+  "Reports":            { bg: "bg-slate-100",   text: "text-slate-600",  border: "border-slate-300"  },
+  "Financials":         { bg: "bg-slate-200",   text: "text-slate-700",  border: "border-slate-400"  },
+  "Customer Capital":   { bg: "bg-blue-50",     text: "text-blue-700",   border: "border-blue-300"   },
+  "Legal & Structure":  { bg: "bg-slate-100",   text: "text-slate-600",  border: "border-slate-400"  },
+  "Governance":         { bg: "bg-slate-200",   text: "text-slate-800",  border: "border-slate-500"  },
+  "Meeting Notes":      { bg: "bg-blue-100",    text: "text-blue-800",   border: "border-blue-400"   },
+  "Agreements":         { bg: "bg-slate-300",   text: "text-slate-800",  border: "border-slate-600"  },
+  "Project Management": { bg: "bg-amber-50",    text: "text-amber-700",  border: "border-amber-300"  },
+  "Liability":          { bg: "bg-orange-50",   text: "text-orange-700", border: "border-orange-300" },
+  "Other":              { bg: "bg-slate-50",    text: "text-slate-500",  border: "border-slate-200"  },
 };
 
 const DEFAULT_CATEGORY_STYLE: CategoryStyle = {
@@ -406,6 +408,8 @@ export const AdvisorDataRoom = ({
   const allDocs = docs as Document[];
 
   // Build folder map: category → docs
+  // Predefined categories always appear (even when empty); custom folder-upload categories
+  // appear only when they have documents.
   const folderMap = new Map<string, Document[]>();
   for (const cat of DATA_ROOM_CATEGORIES) {
     folderMap.set(cat, []);
@@ -413,9 +417,13 @@ export const AdvisorDataRoom = ({
   const uncategorized: Document[] = [];
   for (const doc of allDocs) {
     const cat = doc.category?.trim() ?? "";
-    if (!cat || !DATA_ROOM_CATEGORIES.includes(cat as (typeof DATA_ROOM_CATEGORIES)[number])) {
+    if (!cat) {
       uncategorized.push(doc);
+    } else if (folderMap.has(cat)) {
+      folderMap.get(cat)!.push(doc);
     } else {
+      // Custom category (e.g. from folder upload) — create a new folder entry
+      if (!folderMap.has(cat)) folderMap.set(cat, []);
       folderMap.get(cat)!.push(doc);
     }
   }
@@ -483,12 +491,16 @@ export const AdvisorDataRoom = ({
 
   const handleFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const staged: StagedFile[] = Array.from(files).map((file, i) => ({
-      id: `pending-${Date.now()}-${i}`,
-      file,
-      // Default to the current folder category so dropped files land in the right place
-      category: folderView ?? "Reports",
-    }));
+    const staged: StagedFile[] = Array.from(files).map((file, i) => {
+      // When uploading a folder, webkitRelativePath = "FolderName/file.pdf"
+      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
+      const folderName = relativePath?.includes("/") ? relativePath.split("/")[0] : null;
+      return {
+        id: `pending-${Date.now()}-${i}`,
+        file,
+        category: folderName ?? folderView ?? "Reports",
+      };
+    });
     setPendingFiles((prev) => [...prev, ...staged]);
   };
 
@@ -634,7 +646,7 @@ export const AdvisorDataRoom = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png"
+        accept=".pdf,.xlsx,.xls,.csv,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.html"
         className="hidden"
         onChange={(e) => {
           handleFiles(e.target.files);
@@ -695,7 +707,7 @@ export const AdvisorDataRoom = ({
                 : "Drag files here or click to browse"}
             </p>
             <p className="text-xs text-muted-foreground mb-3">
-              PDF, Excel, Word, PowerPoint, JPG, PNG — up to 25 MB per file
+              PDF, Excel, Word, PowerPoint, JPG, PNG, HTML — up to 25 MB per file
             </p>
             <Button
               size="sm"
