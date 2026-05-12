@@ -33,11 +33,30 @@ export function useUpdateClient() {
   });
 }
 
+export function useArchivedClients() {
+  return useQuery({
+    queryKey: ["clients", "archived"],
+    queryFn: () => api.get("/clients?archived=true"),
+  });
+}
+
 export function useArchiveClient() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.patch(`/clients/${id}/archive`, {}),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}
+
+export function useRestoreClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.patch(`/clients/${id}/restore`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
   });
 }
 

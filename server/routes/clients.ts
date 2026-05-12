@@ -45,10 +45,15 @@ function generatePassword(): string {
 // GET /api/clients
 router.get("/", async (req, res) => {
   try {
+    const showArchived = req.query.archived === "true";
+    const archivedFilter = showArchived
+      ? "archived = true"
+      : "(archived IS NULL OR archived = false)";
+
     // Advisors see all their clients; clients are redirected to /me
     if (req.user!.role === "client") {
       const result = await query(
-        "SELECT * FROM clients WHERE user_id = $1 AND (archived IS NULL OR archived = false)",
+        `SELECT * FROM clients WHERE user_id = $1 AND ${archivedFilter}`,
         [req.user!.id]
       );
       return res.json(result.rows);
@@ -56,8 +61,8 @@ router.get("/", async (req, res) => {
 
     const seeAll = await canSeeAll(req.user!.id, req.user!.role);
     const result = seeAll
-      ? await query("SELECT * FROM clients WHERE (archived IS NULL OR archived = false) ORDER BY name")
-      : await query("SELECT * FROM clients WHERE advisor_id = $1 AND (archived IS NULL OR archived = false) ORDER BY name", [req.user!.id]);
+      ? await query(`SELECT * FROM clients WHERE ${archivedFilter} ORDER BY name`)
+      : await query(`SELECT * FROM clients WHERE advisor_id = $1 AND ${archivedFilter} ORDER BY name`, [req.user!.id]);
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /clients error:", err);
@@ -247,6 +252,29 @@ router.patch("/:id/archive", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("PATCH /clients/:id/archive error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/clients/:id/restore
+router.patch("/:id/restore", async (req, res) => {
+  try {
+    const isAdmin = req.user!.role === "admin";
+    const result = isAdmin
+      ? await query(
+          "UPDATE clients SET archived = false, updated_at = NOW() WHERE id = $1 RETURNING id",
+          [req.params.id]
+        )
+      : await query(
+          "UPDATE clients SET archived = false, updated_at = NOW() WHERE id = $1 AND advisor_id = $2 RETURNING id",
+          [req.params.id, req.user!.id]
+        );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Client not found or access denied" });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /clients/:id/restore error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

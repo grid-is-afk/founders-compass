@@ -34,7 +34,8 @@ const navGroups = [
   {
     label: "Clients",
     items: [
-      { to: "/advisor/clients-list", icon: Users, label: "Clients" },
+      { to: "/advisor/clients-list", icon: Users, label: "Active Clients" },
+      { to: "/advisor/clients-archived", icon: Archive, label: "Archived Clients" },
     ],
   },
   {
@@ -116,6 +117,9 @@ const AdvisorSidebar = () => {
                 const isActive = (() => {
                   if (item.to === "/advisor/clients-list") {
                     return location.pathname === item.to || location.pathname.startsWith("/advisor/clients/");
+                  }
+                  if (item.to === "/advisor/clients-archived") {
+                    return location.pathname === item.to;
                   }
                   if (item.to === "/advisor/prospects?view=off-pipeline") {
                     return location.pathname === "/advisor/prospects" && location.search === "?view=off-pipeline";
