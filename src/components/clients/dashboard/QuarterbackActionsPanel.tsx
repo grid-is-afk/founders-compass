@@ -1,6 +1,6 @@
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
+import { useCopilotContext } from "@/components/copilot/CopilotProvider";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,7 +22,7 @@ const PLACEHOLDER_ACTIONS = [
 // ---------------------------------------------------------------------------
 
 export function QuarterbackActionsPanel({ clientName }: QuarterbackActionsPanelProps) {
-  const navigate = useNavigate();
+  const { togglePanel } = useCopilotContext();
 
   return (
     <div className="rounded-lg border border-border bg-sidebar p-4 space-y-4">
@@ -48,7 +48,7 @@ export function QuarterbackActionsPanel({ clientName }: QuarterbackActionsPanelP
       <Button
         size="sm"
         className="w-full gap-2 text-xs bg-gradient-to-r from-amber-500 to-yellow-400 text-black font-semibold hover:opacity-90 border-0"
-        onClick={() => navigate("/advisor/copilot")}
+        onClick={togglePanel}
       >
         <Sparkles className="w-3.5 h-3.5" />
         Open Quarterback

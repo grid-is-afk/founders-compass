@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS clients (
 -- Migration: add user_id column to existing clients tables
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
+-- Migration: soft-delete (archive) support
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT false;
+-- Migration: track whether portal invite email was sent
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS portal_invite_sent BOOLEAN NOT NULL DEFAULT true;
+
 CREATE INDEX IF NOT EXISTS idx_clients_advisor ON clients(advisor_id);
 
 -- ============================================================

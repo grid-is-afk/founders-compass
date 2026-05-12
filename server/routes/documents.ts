@@ -19,7 +19,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;        // 25 MB per file
 const MAX_CLIENT_BYTES = 100 * 1024 * 1024;      // 100 MB per client data room
 const ALLOWED_EXTENSIONS = new Set([
   ".pdf", ".xlsx", ".xls", ".csv",
-  ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png",
+  ".doc", ".docx", ".ppt", ".pptx", ".jpg", ".jpeg", ".png", ".html",
 ]);
 
 // ── Multer config ─────────────────────────────────────────────────────────────
@@ -76,7 +76,7 @@ function getFileType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   if (ext === ".pdf") return "pdf";
   if ([".xlsx", ".xls", ".csv"].includes(ext)) return "spreadsheet";
-  // .doc, .docx, .ppt, .pptx, and all other allowed types map to "document"
+  if (ext === ".html") return "document";
   return "document";
 }
 
@@ -221,7 +221,7 @@ router.post(
             subfolder ?? null,
             fileUrl,
             sizeLabel,
-            actualSize,
+            req.file.size,
             fileType,
             "advisor",
           ]
@@ -268,7 +268,7 @@ router.post(
           subfolder ?? null,
           fileUrl,
           sizeLabel,
-          actualSize,
+          req.file.size,
           fileType,
           role,
         ]

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ClientRow from "@/components/dashboard/ClientRow";
-import { Lock, Plus, Trash2, Users } from "lucide-react";
+import { Archive, Lock, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useClients, useCreateClient, useDeleteClient } from "@/hooks/useClients";
+import { useClients, useCreateClient, useArchiveClient } from "@/hooks/useClients";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 
@@ -21,26 +21,26 @@ interface GeneratedCredentials {
 }
 
 // ---------------------------------------------------------------------------
-// Delete Confirm Dialog
+// Archive Confirm Dialog
 // ---------------------------------------------------------------------------
 
-function DeleteConfirmDialog({
+function ArchiveConfirmDialog({
   target,
   onClose,
 }: {
   target: { id: string; name: string } | null;
   onClose: () => void;
 }) {
-  const deleteClient = useDeleteClient();
+  const archiveClient = useArchiveClient();
 
   const handleConfirm = async () => {
     if (!target) return;
     try {
-      await deleteClient.mutateAsync(target.id);
-      toast.success(`"${target.name}" removed`);
+      await archiveClient.mutateAsync(target.id);
+      toast.success(`"${target.name}" archived`);
       onClose();
     } catch {
-      toast.error("Failed to delete client");
+      toast.error("Failed to archive client");
     }
   };
 
@@ -48,9 +48,9 @@ function DeleteConfirmDialog({
     <Dialog open={!!target} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle className="font-display">Delete {target?.name}?</DialogTitle>
+          <DialogTitle className="font-display">Archive {target?.name}?</DialogTitle>
           <DialogDescription>
-            This will permanently remove the client and all their data. This cannot be undone.
+            This client will be hidden from your active portfolio. Their data is preserved and can be restored by an admin if needed.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -58,10 +58,10 @@ function DeleteConfirmDialog({
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={deleteClient.isPending}
+            disabled={archiveClient.isPending}
           >
-            <Trash2 className="w-4 h-4 mr-2" />
-            {deleteClient.isPending ? "Deleting..." : "Delete"}
+            <Archive className="w-4 h-4 mr-2" />
+            {archiveClient.isPending ? "Archiving..." : "Archive Client"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -87,6 +87,7 @@ const AdvisorClients = () => {
     contact_name: "",
     contact_email: "",
     revenue: "",
+    sendInvite: true,
   });
 
   const handleCreate = async () => {
@@ -105,15 +106,16 @@ const AdvisorClients = () => {
         contact_name: form.contact_name.trim() || null,
         contact_email: form.contact_email.trim(),
         revenue: form.revenue.trim() || null,
+        sendInvite: form.sendInvite,
       }) as any;
 
-      setForm({ name: "", contact_name: "", contact_email: "", revenue: "" });
+      setForm({ name: "", contact_name: "", contact_email: "", revenue: "", sendInvite: true });
       setOpen(false);
 
       if (result?.generatedCredentials) {
         setCredentials(result.generatedCredentials);
       } else {
-        toast.success(`Client "${form.name}" created`);
+        toast.success(`Client "${form.name}" created — invite not sent`);
       }
     } catch {
       toast.error("Failed to create client");
@@ -214,8 +216,8 @@ const AdvisorClients = () => {
                         onClick={() => setDeleteTarget({ id: c.id, name: c.name })}
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
+                        <Archive className="w-3.5 h-3.5" />
+                        Archive
                       </button>
                     )}
                   </td>
@@ -277,6 +279,15 @@ const AdvisorClients = () => {
                 onChange={(e) => setForm((f) => ({ ...f, revenue: e.target.value }))}
               />
             </div>
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded border-border accent-primary"
+                checked={form.sendInvite}
+                onChange={(e) => setForm((f) => ({ ...f, sendInvite: e.target.checked }))}
+              />
+              <span className="text-sm text-foreground">Send portal invite email now</span>
+            </label>
           </div>
 
           <DialogFooter>
@@ -329,7 +340,7 @@ const AdvisorClients = () => {
         </DialogContent>
       </Dialog>
 
-      <DeleteConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
+      <ArchiveConfirmDialog target={deleteTarget} onClose={() => setDeleteTarget(null)} />
     </div>
   );
 };
