@@ -1320,11 +1320,21 @@ export const AdvisorDataRoom = ({
                   />
                 );
               }
+              if (ext === "html") {
+                return (
+                  <iframe
+                    src={url}
+                    sandbox="allow-same-origin allow-scripts"
+                    className="w-full h-[500px] rounded border border-border"
+                    title={previewDoc.name}
+                  />
+                );
+              }
               return (
                 <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
                   <FileText className="w-12 h-12 text-muted-foreground/40" />
                   <p className="text-xs text-muted-foreground text-center">
-                    Preview unavailable for this file type. Download to view.
+                    Download to view this file type.
                   </p>
                 </div>
               );

@@ -1,12 +1,7 @@
 import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import pool, { query } from "../db.js";
-import * as fs from "fs";
-import * as path from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOADS_DIR = path.join(__dirname, "../uploads");
+import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 
 const router = Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -22,21 +17,25 @@ type DocRow = { id: string; name: string; file_url: string | null; type: string 
 
 interface ReadableDoc {
   name: string;
-  filePath: string;
+  buffer: Buffer;
   type: string;
 }
 
-function collectReadableDocs(docs: DocRow[]): ReadableDoc[] {
+async function collectReadableDocs(docs: DocRow[]): Promise<ReadableDoc[]> {
   const result: ReadableDoc[] = [];
   for (const doc of docs) {
     if (!doc.file_url) continue;
-    const filePath = path.join(UPLOADS_DIR, path.basename(doc.file_url));
-    if (!fs.existsSync(filePath)) continue;
-    if (doc.type === "pdf") {
-      const stat = fs.statSync(filePath);
-      if (stat.size > MAX_PDF_BYTES) continue;
-    }
-    result.push({ name: doc.name, filePath, type: doc.type });
+    if (doc.file_url.startsWith("/uploads/")) continue; // skip legacy local files
+
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .download(doc.file_url);
+    if (error || !data) continue;
+
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (doc.type === "pdf" && buffer.length > MAX_PDF_BYTES) continue;
+
+    result.push({ name: doc.name, buffer, type: doc.type });
   }
   return result;
 }
@@ -45,15 +44,14 @@ function buildContentBlocks(docs: ReadableDoc[]): Anthropic.Messages.MessagePara
   const blocks: Anthropic.Messages.MessageParam["content"] = [];
   for (const doc of docs) {
     if (doc.type === "pdf") {
-      const buffer = fs.readFileSync(doc.filePath);
       blocks.push({
         type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") },
+        source: { type: "base64", media_type: "application/pdf", data: doc.buffer.toString("base64") },
         title: doc.name,
       } as Anthropic.Messages.DocumentBlockParam);
     } else {
       try {
-        const raw = fs.readFileSync(doc.filePath).toString("utf-8").slice(0, 8000);
+        const raw = doc.buffer.toString("utf-8").slice(0, 8000);
         if (raw.trim()) {
           blocks.push({ type: "text", text: `=== ${doc.name} ===\n${raw.trim()}` });
         }
@@ -213,7 +211,7 @@ router.post("/:clientId/analyze-data-room", async (req, res) => {
     }
 
     const allDocs = docsResult.rows as DocRow[];
-    const readable = collectReadableDocs(allDocs);
+    const readable = await collectReadableDocs(allDocs);
 
     if (readable.length === 0) {
       send({ type: "error", message: "No readable documents found. Make sure PDF files are uploaded to the Data Room." });
