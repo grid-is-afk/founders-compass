@@ -1,6 +1,8 @@
 import path from "path";
 import { createRequire } from "module";
 import mammoth from "mammoth";
+import * as XLSX from "xlsx";
+import officeParser from "officeparser";
 import { supabase, STORAGE_BUCKET } from "./supabase.js";
 
 const require = createRequire(import.meta.url);
@@ -72,6 +74,23 @@ async function extractText(buffer: Buffer, fileType: string): Promise<string> {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   }
+  if (fileType === "xlsx") {
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheets: string[] = [];
+    for (const sheetName of workbook.SheetNames) {
+      const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+      if (csv.trim()) sheets.push(`=== ${sheetName} ===\n${csv}`);
+    }
+    return sheets.join("\n\n");
+  }
+  if (fileType === "pptx") {
+    return new Promise<string>((resolve, reject) => {
+      officeParser.parseOffice(buffer, (text: string, err: Error | null) => {
+        if (err) reject(err);
+        else resolve(text ?? "");
+      });
+    });
+  }
   // Plain text files (.txt, .csv, .md)
   return buffer.toString("utf-8");
 }
@@ -99,8 +118,10 @@ export async function ingestDocument(
   const ext = path.extname(fileUrl).toLowerCase();
   const isPdf = ext === ".pdf";
   const isDocx = ext === ".docx";
+  const isXlsx = [".xlsx", ".xls"].includes(ext);
+  const isPptx = [".pptx", ".ppt"].includes(ext);
   const isPlainText = [".txt", ".csv", ".md"].includes(ext);
-  if (!isPdf && !isDocx && !isPlainText) return; // skip images, xlsx, pptx, etc.
+  if (!isPdf && !isDocx && !isXlsx && !isPptx && !isPlainText) return; // skip images, etc.
 
   // Download from Supabase storage
   const { data, error } = await supabase.storage
@@ -115,7 +136,7 @@ export async function ingestDocument(
 
   let text: string;
   try {
-    const fileType = isPdf ? "pdf" : isDocx ? "docx" : "txt";
+    const fileType = isPdf ? "pdf" : isDocx ? "docx" : isXlsx ? "xlsx" : isPptx ? "pptx" : "txt";
     text = await extractText(buffer, fileType);
   } catch (err) {
     console.error(`Ingestion: failed to extract text from ${docName}:`, err);

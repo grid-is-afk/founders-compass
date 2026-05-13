@@ -12,7 +12,7 @@ import dotenv from "dotenv";
 import { authMiddleware } from "./middleware/auth.js";
 import { buildClientStructuredContext } from "./platformContext.js";
 import { retrieveChunks } from "./lib/retrieval.js";
-import { fetchClientImageDocs } from "./lib/vision.js";
+import { fetchClientVisualDocs } from "./lib/vision.js";
 import authRoutes from "./routes/auth.js";
 import clientRoutes from "./routes/clients.js";
 import assessmentRoutes from "./routes/assessments.js";
@@ -182,19 +182,19 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     // Prepend image PDFs as a synthetic context turn so Claude can read
     // scanned documents using vision alongside the RAG text chunks
     if (clientId) {
-      const imageDocs = await fetchClientImageDocs(clientId as string, req.user!.id);
-      if (imageDocs.length > 0) {
-        const docBlocks = imageDocs.map((doc, i) => ({
-          type: "document" as const,
+      const visualDocs = await fetchClientVisualDocs(clientId as string, req.user!.id);
+      if (visualDocs.length > 0) {
+        const docBlocks = visualDocs.map((doc, i) => ({
+          type: doc.blockType as "document" | "image",
           source: {
             type: "base64" as const,
-            media_type: "application/pdf" as const,
+            media_type: doc.mediaType,
             data: doc.buffer.toString("base64"),
           },
-          title: doc.name,
-          // Mark the last block for prompt caching — Anthropic caches
-          // everything up to and including this marker (5-min TTL)
-          ...(i === imageDocs.length - 1
+          // document blocks support title; image blocks do not
+          ...(doc.blockType === "document" ? { title: doc.name } : {}),
+          // Cache the last block for the 5-min Anthropic prompt cache window
+          ...(i === visualDocs.length - 1
             ? { cache_control: { type: "ephemeral" as const } }
             : {}),
         }));
@@ -206,7 +206,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
               ...docBlocks,
               {
                 type: "text",
-                text: "The above are scanned/image documents from this client's Data Room. Use them alongside any other context to answer questions.",
+                text: "The above are visual files (scanned PDFs and images) from this client's Data Room. Use them alongside any other context to answer questions.",
               },
             ],
           },
