@@ -152,7 +152,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
           (messages as Array<{ role: string; content: string }>)
             .filter((m) => m.role === "user")
             .at(-1)?.content ?? "",
-          clientId as string
+          clientId as string,
+          15
         ),
       ]);
 
