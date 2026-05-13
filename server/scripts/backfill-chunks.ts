@@ -33,10 +33,7 @@ async function backfill() {
       console.error(`  ✗ Failed: ${doc.name} (${doc.id}) ${msg.slice(0, 120)}`);
       failed++;
     }
-    // 21s delay to respect Voyage AI free tier limit (3 RPM)
-    if (docs.indexOf(doc) < docs.length - 1) {
-      await new Promise((r) => setTimeout(r, 21_000));
-    }
+    // Rate limiting handled inside voyageai.ts — no manual delay needed here
   }
 
   console.log(`\nBackfill complete: ${succeeded} processed, ${skipped} skipped, ${failed} failed.`);
