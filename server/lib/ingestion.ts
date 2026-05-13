@@ -115,7 +115,13 @@ export async function ingestDocument(
     return;
   }
 
-  if (!text.trim()) return;
+  if (!text.trim()) {
+    // No extractable text — image/scanned PDF. Mark it so the chat
+    // endpoint can pass it directly to Claude for vision-based reading.
+    await query("UPDATE documents SET is_image_pdf = true WHERE id = $1", [documentId]);
+    console.log(`Ingestion: ${docName} → marked as image PDF (no extractable text)`);
+    return;
+  }
 
   const chunks = chunkText(text);
   if (chunks.length === 0) return;
