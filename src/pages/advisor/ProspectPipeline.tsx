@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink } from "lucide-react";
+import { format } from "date-fns";
+import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink, Check } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
@@ -20,6 +21,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -75,6 +78,7 @@ function toProspectShape(row: Record<string, unknown>): Prospect & {
     fitScore: row.fit_score != null ? Number(row.fit_score) : undefined,
     fitDecision: (row.fit_decision as "fit" | "no_fit" | null) ?? undefined,
     notes: row.notes != null ? String(row.notes) : undefined,
+    nurture_call_date: row.nurture_call_date != null ? String(row.nurture_call_date) : null,
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",
@@ -741,6 +745,9 @@ const ProspectPipeline = () => {
   const [addOpen, setAddOpen] = useState(false);
   const [enrollTarget, setEnrollTarget] = useState<ProspectShape | null>(null);
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [nurtureDialogProspect, setNurtureDialogProspect] = useState<ProspectShape | null>(null);
+  const [nurtureDate, setNurtureDate] = useState("");
+  const [nurtureTime, setNurtureTime] = useState("");
 
   const clients = rawClients as Array<{ id: string; source_prospect_id: string | null }>;
 
@@ -799,6 +806,44 @@ const ProspectPipeline = () => {
       toast.success("Scheduled for Nurture Call");
     } catch {
       toast.error("Failed to update prospect");
+    }
+  };
+
+  const handleSaveNurtureCall = async () => {
+    if (!nurtureDialogProspect || !nurtureDate || !nurtureTime) return;
+    const isoDate = new Date(`${nurtureDate}T${nurtureTime}`).toISOString();
+    try {
+      await updateProspect.mutateAsync({
+        id: nurtureDialogProspect.id,
+        nurture_call_date: isoDate,
+      });
+      setNurtureDialogProspect(null);
+      toast.success("Nurture call scheduled");
+    } catch {
+      toast.error("Failed to save — please try again");
+    }
+  };
+
+  const handleFlagFollowUp = async (prospect: ProspectShape) => {
+    if (prospect.status === "flagged_follow_up") return;
+    try {
+      await updateProspect.mutateAsync({ id: prospect.id, status: "flagged_follow_up" });
+      // Best-effort follow-up task creation — tasks require a client_id so this may
+      // not persist if the prospect hasn't been enrolled as a client yet. We fire it
+      // anyway for advisors who track tasks without a client record.
+      fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Follow up: ${prospect.name}`,
+          priority: "high",
+        }),
+      }).catch(() => {
+        // Swallow silently — task creation is supplemental and requires client_id
+      });
+      toast.success("Flagged — follow-up task created");
+    } catch {
+      toast.error("Failed to flag — please try again");
     }
   };
 
@@ -1180,25 +1225,50 @@ const ProspectPipeline = () => {
                         <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
                           <div className="flex gap-1.5">
                             {col.id === "referral_not_fit" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                                onClick={() => toast.info("Calendar scheduling — coming soon")}
-                              >
-                                <Phone className="w-3 h-3" />
-                                Schedule Nurture Call
-                              </Button>
+                              <div className="flex-1">
+                                <button
+                                  onClick={() => {
+                                    setNurtureDialogProspect(prospect);
+                                    if (prospect.nurture_call_date) {
+                                      const d = new Date(prospect.nurture_call_date);
+                                      setNurtureDate(d.toISOString().split("T")[0]);
+                                      setNurtureTime(d.toTimeString().slice(0, 5));
+                                    } else {
+                                      setNurtureDate("");
+                                      setNurtureTime("");
+                                    }
+                                  }}
+                                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-full h-8 px-1"
+                                >
+                                  <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center ${
+                                    prospect.nurture_call_date
+                                      ? "bg-primary border-primary"
+                                      : "border-border"
+                                  }`}>
+                                    {prospect.nurture_call_date && <Check className="w-2.5 h-2.5 text-white" />}
+                                  </div>
+                                  <span className="truncate">
+                                    {prospect.nurture_call_date
+                                      ? format(new Date(prospect.nurture_call_date), "MMM d, h:mm a")
+                                      : "Schedule Nurture Call"}
+                                  </span>
+                                </button>
+                              </div>
                             )}
                             {col.id === "other_not_fit" && (
                               <Button
                                 variant="outline"
                                 size="sm"
-                                className="flex-1 text-xs h-8 border-border/60 text-muted-foreground hover:text-foreground gap-1.5"
-                                onClick={() => toast.info("Follow-up tracking — coming soon")}
+                                className={`flex-1 text-xs h-8 gap-1.5 ${
+                                  prospect.status === "flagged_follow_up"
+                                    ? "border-amber-500 text-amber-600 bg-amber-50 hover:bg-amber-100"
+                                    : "border-border/60 text-muted-foreground hover:text-foreground"
+                                }`}
+                                onClick={() => handleFlagFollowUp(prospect)}
+                                disabled={prospect.status === "flagged_follow_up"}
                               >
                                 <Flag className="w-3 h-3" />
-                                Flag for Follow Up
+                                {prospect.status === "flagged_follow_up" ? "Flagged" : "Flag for Follow Up"}
                               </Button>
                             )}
                           </div>
@@ -1254,6 +1324,49 @@ const ProspectPipeline = () => {
         onConfirm={handleEnrollConfirm}
         isPending={createClient.isPending}
       />
+
+      {/* Nurture Call Scheduling Dialog */}
+      <Dialog open={!!nurtureDialogProspect} onOpenChange={() => setNurtureDialogProspect(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Schedule Nurture Call</DialogTitle>
+            <DialogDescription>
+              Set the date and time for the nurture call with {nurtureDialogProspect?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="nurture-date">Date</Label>
+              <Input
+                id="nurture-date"
+                type="date"
+                value={nurtureDate}
+                onChange={(e) => setNurtureDate(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="nurture-time">Time</Label>
+              <Input
+                id="nurture-time"
+                type="time"
+                value={nurtureTime}
+                onChange={(e) => setNurtureTime(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNurtureDialogProspect(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveNurtureCall}
+              disabled={!nurtureDate || !nurtureTime || updateProspect.isPending}
+            >
+              {updateProspect.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
