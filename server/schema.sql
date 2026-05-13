@@ -636,3 +636,9 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS see_all_clients BOOLEAN NOT NULL DEFA
 -- ============================================================
 
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS subfolder TEXT;
+
+-- ============================================================
+-- Nurture Call Scheduling — date/time picker on off-pipeline view
+-- ============================================================
+
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS nurture_call_date TIMESTAMPTZ;

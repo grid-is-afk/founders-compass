@@ -13,6 +13,7 @@ const ALLOWED_COLUMNS = new Set([
   "fit_score",
   "fit_decision",
   "notes",
+  "nurture_call_date",
 ]);
 
 const VALID_STATUSES = new Set([
