@@ -89,6 +89,7 @@ export interface Prospect {
   fitDecision?: "fit" | "no_fit" | null;
   notes?: string;
   nurture_call_date?: string | null;
+  advisor_name?: string;
 }
 
 export interface GrowEngagement {

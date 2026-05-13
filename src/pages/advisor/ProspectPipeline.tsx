@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
-import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink, Check } from "lucide-react";
+import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink, Check, User } from "lucide-react";
 import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
@@ -79,6 +79,7 @@ function toProspectShape(row: Record<string, unknown>): Prospect & {
     fitDecision: (row.fit_decision as "fit" | "no_fit" | null) ?? undefined,
     notes: row.notes != null ? String(row.notes) : undefined,
     nurture_call_date: row.nurture_call_date != null ? String(row.nurture_call_date) : null,
+    advisor_name: row.advisor_name != null ? String(row.advisor_name) : undefined,
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",
@@ -828,20 +829,7 @@ const ProspectPipeline = () => {
     if (prospect.status === "flagged_follow_up") return;
     try {
       await updateProspect.mutateAsync({ id: prospect.id, status: "flagged_follow_up" });
-      // Best-effort follow-up task creation — tasks require a client_id so this may
-      // not persist if the prospect hasn't been enrolled as a client yet. We fire it
-      // anyway for advisors who track tasks without a client record.
-      fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `Follow up: ${prospect.name}`,
-          priority: "high",
-        }),
-      }).catch(() => {
-        // Swallow silently — task creation is supplemental and requires client_id
-      });
-      toast.success("Flagged — follow-up task created");
+      toast.success(`Flagged — ${prospect.advisor_name ?? "the advisor"} will be notified`);
     } catch {
       toast.error("Failed to flag — please try again");
     }
@@ -1220,6 +1208,14 @@ const ProspectPipeline = () => {
                         >
                           <ProspectCard prospect={prospect as Prospect} />
                         </div>
+
+                        {/* Owner label — only shown in off-pipeline view */}
+                        {prospect.advisor_name && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1 px-0.5">
+                            <User className="w-3 h-3" />
+                            {prospect.advisor_name}
+                          </span>
+                        )}
 
                         {/* Zone 2 action buttons — outside the clickable card */}
                         <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>

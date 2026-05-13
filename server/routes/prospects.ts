@@ -34,9 +34,18 @@ router.get("/", async (req, res) => {
   const isTeamMember = req.user!.role !== "client";
   try {
     const result = isTeamMember
-      ? await query("SELECT * FROM prospects ORDER BY created_at DESC")
+      ? await query(
+          `SELECT p.*, u.name AS advisor_name
+           FROM prospects p
+           LEFT JOIN users u ON u.id = p.advisor_id
+           ORDER BY p.created_at DESC`
+        )
       : await query(
-          "SELECT * FROM prospects WHERE advisor_id = $1 ORDER BY created_at DESC",
+          `SELECT p.*, u.name AS advisor_name
+           FROM prospects p
+           LEFT JOIN users u ON u.id = p.advisor_id
+           WHERE p.advisor_id = $1
+           ORDER BY p.created_at DESC`,
           [req.user!.id]
         );
     return res.json(result.rows);
@@ -117,6 +126,20 @@ router.patch("/:id", async (req, res) => {
   }
 
   try {
+    // Fetch current prospect state before updating so we can detect a fresh flag
+    const currentResult = await query(
+      "SELECT advisor_id, name, status FROM prospects WHERE id = $1",
+      [req.params.id]
+    );
+    if (currentResult.rows.length === 0) {
+      return res.status(404).json({ error: "Prospect not found" });
+    }
+    const current = currentResult.rows[0] as {
+      advisor_id: string;
+      name: string;
+      status: string;
+    };
+
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
 
@@ -130,6 +153,23 @@ router.patch("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Prospect not found" });
     }
+
+    // Insert a notification when a prospect is freshly flagged for follow-up
+    const isFreshFlag =
+      fields.status === "flagged_follow_up" &&
+      current.status !== "flagged_follow_up";
+
+    if (isFreshFlag) {
+      await query(
+        `INSERT INTO notifications (advisor_id, client_id, type, message)
+         VALUES ($1, NULL, 'follow_up_flagged', $2)`,
+        [
+          current.advisor_id,
+          `Follow-up flagged for prospect: ${current.name}`,
+        ]
+      );
+    }
+
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("PATCH /prospects/:id error:", err);

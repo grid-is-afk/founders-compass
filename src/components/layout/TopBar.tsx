@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   FileText,
+  Flag,
   FolderOpen,
   GitBranch,
   LayoutDashboard,
@@ -211,31 +212,36 @@ const TopBar = () => {
 
             <div className="max-h-[340px] overflow-y-auto divide-y divide-border">
               {/* Client-triggered notifications */}
-              {clientNotifications.slice(0, 8).map((notif) => (
-                <div
-                  key={notif.id}
-                  className={cn(
-                    "flex items-start gap-2.5 px-3 py-2.5 transition-colors",
-                    !notif.read && "bg-blue-50/50 dark:bg-blue-950/20"
-                  )}
-                >
-                  <Activity className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs leading-snug">{notif.message}</p>
-                    {notif.client_name && (
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{notif.client_name}</p>
+              {clientNotifications.slice(0, 8).map((notif) => {
+                const isFlagNotif = notif.type === "follow_up_flagged";
+                const NotifIcon = isFlagNotif ? Flag : Activity;
+                const iconColor = isFlagNotif ? "text-amber-500" : "text-blue-500";
+                return (
+                  <div
+                    key={notif.id}
+                    className={cn(
+                      "flex items-start gap-2.5 px-3 py-2.5 transition-colors",
+                      !notif.read && "bg-blue-50/50 dark:bg-blue-950/20"
                     )}
+                  >
+                    <NotifIcon className={cn("w-4 h-4 mt-0.5 shrink-0", iconColor)} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs leading-snug">{notif.message}</p>
+                      {notif.client_name && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">{notif.client_name}</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(notif.created_at).toLocaleDateString()}
+                      </span>
+                      {!notif.read && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(notif.created_at).toLocaleDateString()}
-                    </span>
-                    {!notif.read && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Risk alerts */}
               {riskNotifications.map((alert: any) => (
