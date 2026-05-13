@@ -7,17 +7,58 @@ export interface RetrievedChunk {
   similarity: number;
 }
 
+// Common document-type keywords that may appear in queries but not in
+// document content — used to trigger name-based fallback retrieval.
+const DOC_NAME_KEYWORDS = [
+  "operating agreement",
+  "articles of organization",
+  "formation filing",
+  "articles of incorporation",
+  "buy-sell",
+  "buy sell",
+  "shareholder agreement",
+  "membership interest",
+  "engagement letter",
+  "retainer",
+  "letter of intent",
+  "loi",
+  "promissory note",
+  "loan agreement",
+  "security agreement",
+  "sba",
+  "balance sheet",
+  "income statement",
+  "p&l",
+  "profit and loss",
+  "tax return",
+  "w-2",
+  "1099",
+  "contract",
+  "agreement",
+  "amendment",
+  "addendum",
+  "invoice",
+  "statement of work",
+  "sow",
+];
+
+function extractDocNameKeywords(userQuery: string): string[] {
+  const lower = userQuery.toLowerCase();
+  return DOC_NAME_KEYWORDS.filter((kw) => lower.includes(kw));
+}
+
 export async function retrieveChunks(
   userQuery: string,
   clientId: string,
-  topK = 8
+  topK = 15
 ): Promise<RetrievedChunk[]> {
   if (!userQuery.trim()) return [];
 
   const embedding = await embedQuery(userQuery);
   const vectorLiteral = `[${embedding.join(",")}]`;
 
-  const result = await query(
+  // --- Pass 1: vector similarity search ---
+  const vectorResult = await query(
     `SELECT chunk_text,
             metadata,
             1 - (embedding <=> $1::vector) AS similarity
@@ -28,5 +69,43 @@ export async function retrieveChunks(
     [vectorLiteral, clientId, topK]
   );
 
-  return result.rows as RetrievedChunk[];
+  const vectorChunks = vectorResult.rows as RetrievedChunk[];
+
+  // --- Pass 2: keyword match on document names ---
+  // Catches cases where the user's terminology differs from document content
+  // (e.g. "equity splits" vs "membership interests" in an operating agreement)
+  const docKeywords = extractDocNameKeywords(userQuery);
+  let nameChunks: RetrievedChunk[] = [];
+
+  if (docKeywords.length > 0) {
+    const likePatterns = docKeywords.map((kw) => `%${kw}%`);
+    // Build OR conditions for each keyword
+    const whereClauses = likePatterns
+      .map((_, i) => `metadata->>'document_name' ILIKE $${i + 3}`)
+      .join(" OR ");
+
+    const nameResult = await query(
+      `SELECT chunk_text,
+              metadata,
+              0.5 AS similarity
+       FROM document_chunks
+       WHERE client_id = $1
+         AND (${whereClauses})
+       LIMIT $2`,
+      [clientId, topK, ...likePatterns]
+    );
+    nameChunks = nameResult.rows as RetrievedChunk[];
+  }
+
+  // --- Merge: vector results first, then name-matched chunks not already included ---
+  const seen = new Set(vectorChunks.map((c) => c.chunk_text));
+  const merged = [...vectorChunks];
+  for (const c of nameChunks) {
+    if (!seen.has(c.chunk_text)) {
+      merged.push(c);
+      seen.add(c.chunk_text);
+    }
+  }
+
+  return merged.slice(0, topK);
 }
