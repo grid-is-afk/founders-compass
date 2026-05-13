@@ -9,11 +9,11 @@ export default function CopilotTrigger() {
   return (
     <button
       onClick={togglePanel}
-      className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full gradient-gold flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow focus-visible:ring-2 focus-visible:ring-ring outline-none"
-      title="Open Quarterback Copilot"
+      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 h-11 rounded-full gradient-gold shadow-lg hover:shadow-xl transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-ring outline-none"
       aria-label="Open Quarterback Copilot"
     >
-      <Sparkles className="w-5 h-5 text-accent-foreground" />
+      <Sparkles className="w-4 h-4 text-accent-foreground flex-shrink-0" />
+      <span className="text-sm font-medium text-accent-foreground font-display">Quarterback</span>
     </button>
   );
 }
