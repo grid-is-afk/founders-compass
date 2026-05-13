@@ -2,6 +2,7 @@ import { embedQuery } from "./voyageai.js";
 import { query } from "../db.js";
 
 export interface RetrievedChunk {
+  document_id: string;
   chunk_text: string;
   metadata: Record<string, unknown>;
   similarity: number;
@@ -59,7 +60,8 @@ export async function retrieveChunks(
 
   // --- Pass 1: vector similarity search ---
   const vectorResult = await query(
-    `SELECT chunk_text,
+    `SELECT document_id,
+            chunk_text,
             metadata,
             1 - (embedding <=> $1::vector) AS similarity
      FROM document_chunks
@@ -85,7 +87,8 @@ export async function retrieveChunks(
       .join(" OR ");
 
     const nameResult = await query(
-      `SELECT chunk_text,
+      `SELECT document_id,
+              chunk_text,
               metadata,
               0.5 AS similarity
        FROM document_chunks

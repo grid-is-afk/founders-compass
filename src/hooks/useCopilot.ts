@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
-import { streamChat, type ChatMessage, type ChatAction } from "@/lib/copilotApi";
+import { streamChat, type ChatMessage, type ChatAction, type ChatSource } from "@/lib/copilotApi";
 
 let messageCounter = 0;
 
@@ -124,6 +124,18 @@ export function useCopilot(clientContext?: string, clientId?: string) {
               (action.clientName as string | undefined) ??
               "";
             toast(label, { description: description || undefined });
+          } else if (event.kind === "sources") {
+            const sources = event.sources as ChatSource[];
+
+            // Attach RAG source citations to the current assistant message
+            setMessages((prev) => {
+              const updated = [...prev];
+              const last = updated[updated.length - 1];
+              if (last && last.role === "assistant") {
+                updated[updated.length - 1] = { ...last, sources };
+              }
+              return updated;
+            });
           }
         }
       } catch (err: unknown) {

@@ -169,6 +169,23 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
             )
             .join("\n\n");
         systemPrompt += "\n\n" + ragCtx;
+
+        // Deduplicate by document_id and emit a sources event so the
+        // frontend can render clickable citation pills beneath the reply.
+        const ragSources = [
+          ...new Map(
+            ragChunks.map((c) => [
+              c.document_id,
+              {
+                name: (c.metadata.document_name as string | undefined) ?? "Document",
+                documentId: c.document_id,
+              },
+            ])
+          ).values(),
+        ];
+        res.write(
+          `data: ${JSON.stringify({ type: "sources", sources: ragSources })}\n\n`
+        );
       }
     }
 

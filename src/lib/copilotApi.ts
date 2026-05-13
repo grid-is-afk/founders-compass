@@ -3,6 +3,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   actions?: ChatAction[];
+  sources?: ChatSource[];
 }
 
 export interface ChatAction {
@@ -11,9 +12,15 @@ export interface ChatAction {
   [key: string]: unknown;
 }
 
+export interface ChatSource {
+  name: string;
+  documentId: string;
+}
+
 export type StreamEvent =
   | { kind: "text"; text: string }
-  | { kind: "action"; action: ChatAction };
+  | { kind: "action"; action: ChatAction }
+  | { kind: "sources"; sources: ChatSource[] };
 
 export async function* streamChat(
   messages: Array<{ role: "user" | "assistant"; content: string }>,
@@ -66,6 +73,8 @@ export async function* streamChat(
                 ...parsed.action,
               },
             };
+          } else if (parsed.type === "sources") {
+            yield { kind: "sources", sources: parsed.sources as ChatSource[] };
           } else if (parsed.type === "error") {
             throw new Error(parsed.error);
           } else if (parsed.type === "done") {

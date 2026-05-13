@@ -7,6 +7,7 @@ interface CopilotContextType {
   isStreaming: boolean;
   isOpen: boolean;
   error: string | null;
+  clientId: string | undefined;
   sendMessage: (text: string) => Promise<void>;
   cancelStream: () => void;
   clearConversation: () => void;
@@ -30,7 +31,7 @@ export function CopilotProvider({
   const togglePanel = () => setIsOpen((prev) => !prev);
 
   return (
-    <CopilotContext.Provider value={{ ...copilot, isOpen, setIsOpen, togglePanel }}>
+    <CopilotContext.Provider value={{ ...copilot, clientId, isOpen, setIsOpen, togglePanel }}>
       {children}
     </CopilotContext.Provider>
   );

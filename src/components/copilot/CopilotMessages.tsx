@@ -11,9 +11,10 @@ import {
   Zap,
   Download,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useCopilotContext } from "./CopilotProvider";
 import { cn } from "@/lib/utils";
-import type { ChatAction } from "@/lib/copilotApi";
+import type { ChatAction, ChatSource } from "@/lib/copilotApi";
 
 // ── Action badge ────────────────────────────────────────────────────────────
 
@@ -93,10 +94,46 @@ function downloadReport(
   URL.revokeObjectURL(url);
 }
 
+// ── Source citation pills ────────────────────────────────────────────────────
+
+interface Document {
+  id: string;
+  file_url: string;
+  name: string;
+}
+
+async function openDoc(source: ChatSource, clientId: string | undefined) {
+  if (!clientId) {
+    toast.error("No client selected — cannot open document.");
+    return;
+  }
+
+  const token = localStorage.getItem("tfo-access-token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  try {
+    const res = await fetch(`/api/documents?client_id=${encodeURIComponent(clientId)}`, { headers });
+    if (!res.ok) {
+      toast.error("Failed to load document list.");
+      return;
+    }
+    const docs = (await res.json()) as Document[];
+    const match = docs.find((d) => d.id === source.documentId);
+    if (!match?.file_url) {
+      toast.error(`Could not find a URL for "${source.name}".`);
+      return;
+    }
+    window.open(match.file_url, "_blank", "noopener,noreferrer");
+  } catch {
+    toast.error("An error occurred while opening the document.");
+  }
+}
+
 // ── Main component ──────────────────────────────────────────────────────────
 
 export default function CopilotMessages() {
-  const { messages, isStreaming } = useCopilotContext();
+  const { messages, isStreaming, clientId } = useCopilotContext();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -110,6 +147,7 @@ export default function CopilotMessages() {
         const showCursor =
           isStreaming && isLast && msg.role === "assistant" && !msg.content;
         const actions: ChatAction[] = msg.actions ?? [];
+        const sources: ChatSource[] = msg.sources ?? [];
         const reportAction = actions.find((a) => a.type === "report_generated");
 
         if (msg.role === "user") {
@@ -162,6 +200,23 @@ export default function CopilotMessages() {
                 <div className="flex flex-wrap gap-1.5">
                   {actions.map((action, i) => (
                     <ActionBadge key={i} action={action} />
+                  ))}
+                </div>
+              )}
+
+              {/* Source citation pills */}
+              {sources.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-1 pt-2 border-t border-border/40">
+                  <span className="text-xs text-muted-foreground w-full mb-0.5">Sources</span>
+                  {sources.map((src) => (
+                    <button
+                      key={src.documentId}
+                      onClick={() => openDoc(src, clientId)}
+                      className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      <FileText className="w-3 h-3 flex-shrink-0" />
+                      <span className="max-w-[160px] truncate">{src.name}</span>
+                    </button>
                   ))}
                 </div>
               )}
