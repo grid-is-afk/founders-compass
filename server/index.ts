@@ -10,6 +10,8 @@ import { query } from "./db.js";
 import dotenv from "dotenv";
 
 import { authMiddleware } from "./middleware/auth.js";
+import { buildClientStructuredContext } from "./platformContext.js";
+import { retrieveChunks } from "./lib/retrieval.js";
 import authRoutes from "./routes/auth.js";
 import clientRoutes from "./routes/clients.js";
 import assessmentRoutes from "./routes/assessments.js";
@@ -139,9 +141,36 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
 
   try {
     // Build a fresh system prompt with real DB data for this advisor
-    const systemPrompt = await buildSystemPrompt(req.user!.id);
+    let systemPrompt = await buildSystemPrompt(req.user!.id);
 
-    let currentMessages: Anthropic.MessageParam[] = messages.map(
+    // When scoped to a specific client, inject deep client context + RAG results
+    if (clientId) {
+      const [structuredCtx, ragChunks] = await Promise.all([
+        buildClientStructuredContext(clientId as string, req.user!.id),
+        retrieveChunks(
+          (messages as Array<{ role: string; content: string }>)
+            .filter((m) => m.role === "user")
+            .at(-1)?.content ?? "",
+          clientId as string
+        ),
+      ]);
+
+      if (structuredCtx) systemPrompt += "\n\n" + structuredCtx;
+
+      if (ragChunks.length > 0) {
+        const ragCtx =
+          "## RELEVANT DOCUMENT EXCERPTS (from client's Data Room)\n" +
+          ragChunks
+            .map(
+              (c, i) =>
+                `[Source ${i + 1}: ${(c.metadata.document_name as string | undefined) ?? "Document"}]\n${c.chunk_text}`
+            )
+            .join("\n\n");
+        systemPrompt += "\n\n" + ragCtx;
+      }
+    }
+
+    let currentMessages: Anthropic.MessageParam[] = (messages as Array<{ role: string; content: string }>).map(
       (m: { role: string; content: string }) => ({
         role: m.role as "user" | "assistant",
         content: m.content,
@@ -158,7 +187,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       const response = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
-        system: systemPrompt,
+        system: systemPrompt as string,
         tools: tools as Anthropic.Tool[],
         messages: currentMessages,
       });

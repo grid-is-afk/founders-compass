@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcryptjs from "bcryptjs";
 import { query } from "../db.js";
+import { ingestDocument } from "../lib/ingestion.js";
 
 const router = Router();
 
@@ -105,6 +106,43 @@ router.delete("/users/:id", async (req, res) => {
     return res.status(204).send();
   } catch (err) {
     console.error("DELETE /admin/users/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/admin/backfill-chunks
+// One-time endpoint to ingest all existing client Data Room documents into pgvector.
+// Run once after deploying the RAG feature, then leave in place (it's idempotent).
+router.post("/backfill-chunks", async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const docsResult = await query(
+      `SELECT id, client_id FROM documents
+       WHERE client_id IS NOT NULL
+         AND file_url IS NOT NULL
+         AND file_url NOT LIKE '/uploads/%'
+       ORDER BY uploaded_at ASC`
+    );
+
+    const docs = docsResult.rows as Array<{ id: string; client_id: string }>;
+    res.json({ message: `Backfill started for ${docs.length} documents.` });
+
+    // Process in background after responding
+    let succeeded = 0;
+    let failed = 0;
+    for (const doc of docs) {
+      try {
+        await ingestDocument(doc.id, doc.client_id);
+        succeeded++;
+      } catch (err) {
+        failed++;
+        console.error(`Backfill failed for doc ${doc.id}:`, err);
+      }
+    }
+    console.log(`Backfill complete: ${succeeded} succeeded, ${failed} failed.`);
+  } catch (err) {
+    console.error("POST /admin/backfill-chunks error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

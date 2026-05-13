@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import sharp from "sharp";
 import { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
+import { ingestDocument } from "../lib/ingestion.js";
 
 const router = Router();
 
@@ -313,7 +314,13 @@ router.post(
         console.warn("Activity log / notification write failed:", logErr);
       }
 
-      return res.status(201).json(docResult.rows[0]);
+      // Trigger async ingestion for QB AI — fire and forget, never blocks the response
+      const insertedDoc = docResult.rows[0];
+      ingestDocument(insertedDoc.id, client_id).catch((err) =>
+        console.error("QB ingestion failed for doc", insertedDoc.id, err)
+      );
+
+      return res.status(201).json(insertedDoc);
     } catch (err) {
       console.error("POST /documents error:", err);
       return res.status(500).json({ error: "Internal server error" });
