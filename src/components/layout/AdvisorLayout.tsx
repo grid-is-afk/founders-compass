@@ -1,17 +1,19 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useMatch } from "react-router-dom";
 import AdvisorSidebar from "./AdvisorSidebar";
 import TopBar from "./TopBar";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
 import CopilotPanel from "@/components/copilot/CopilotPanel";
-import { ClientProvider, useClientContext } from "@/hooks/useClientContext";
+import CopilotTrigger from "@/components/copilot/CopilotTrigger";
+import { ClientProvider } from "@/hooks/useClientContext";
 
-// Inner component that reads selectedClientId from ClientContext
-// and forwards it to CopilotProvider so the AI knows which client is active.
+// Reads the active clientId from the URL when inside a client workspace,
+// so QB always knows which client the advisor is viewing.
 const AdvisorLayoutInner = () => {
-  const { selectedClientId } = useClientContext();
+  const clientMatch = useMatch("/advisor/clients/:id/*");
+  const clientId = clientMatch?.params.id;
 
   return (
-    <CopilotProvider clientContext="" clientId={selectedClientId || undefined}>
+    <CopilotProvider clientContext="" clientId={clientId}>
       <div className="flex min-h-screen bg-background">
         <AdvisorSidebar />
         <div className="flex-1 flex flex-col min-w-0">
@@ -21,6 +23,7 @@ const AdvisorLayoutInner = () => {
           </main>
         </div>
       </div>
+      <CopilotTrigger />
       <CopilotPanel />
     </CopilotProvider>
   );
