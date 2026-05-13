@@ -1,5 +1,6 @@
 import path from "path";
 import { createRequire } from "module";
+import mammoth from "mammoth";
 import { supabase, STORAGE_BUCKET } from "./supabase.js";
 
 const require = createRequire(import.meta.url);
@@ -67,7 +68,11 @@ async function extractText(buffer: Buffer, fileType: string): Promise<string> {
     const parsed = await pdfParse(buffer);
     return parsed.text;
   }
-  // Plain text files
+  if (fileType === "docx") {
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  }
+  // Plain text files (.txt, .csv, .md)
   return buffer.toString("utf-8");
 }
 
@@ -93,8 +98,9 @@ export async function ingestDocument(
   // Determine processability from the actual file extension in the storage path
   const ext = path.extname(fileUrl).toLowerCase();
   const isPdf = ext === ".pdf";
+  const isDocx = ext === ".docx";
   const isPlainText = [".txt", ".csv", ".md"].includes(ext);
-  if (!isPdf && !isPlainText) return; // skip images, Office docs, etc.
+  if (!isPdf && !isDocx && !isPlainText) return; // skip images, xlsx, pptx, etc.
 
   // Download from Supabase storage
   const { data, error } = await supabase.storage
@@ -109,7 +115,8 @@ export async function ingestDocument(
 
   let text: string;
   try {
-    text = await extractText(buffer, isPdf ? "pdf" : "txt");
+    const fileType = isPdf ? "pdf" : isDocx ? "docx" : "txt";
+    text = await extractText(buffer, fileType);
   } catch (err) {
     console.error(`Ingestion: failed to extract text from ${docName}:`, err);
     return;

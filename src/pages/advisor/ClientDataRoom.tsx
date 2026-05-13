@@ -1368,11 +1368,26 @@ export const AdvisorDataRoom = ({
               }
               if (ext === "pdf") {
                 return (
-                  <iframe
-                    src={url}
+                  <object
+                    data={url}
+                    type="application/pdf"
                     className="w-full h-[500px] rounded border border-border"
-                    title={previewDoc.name}
-                  />
+                  >
+                    <div className="rounded-lg bg-muted/40 border border-border p-6 h-[500px] flex flex-col items-center justify-center gap-3">
+                      <FileText className="w-12 h-12 text-muted-foreground/40" />
+                      <p className="text-xs text-muted-foreground text-center">
+                        PDF preview unavailable in this browser.
+                      </p>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary underline"
+                      >
+                        Open in new tab
+                      </a>
+                    </div>
+                  </object>
                 );
               }
               if (["jpg", "jpeg", "png"].includes(ext)) {
