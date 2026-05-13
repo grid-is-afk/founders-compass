@@ -20,6 +20,11 @@ async function backfill() {
   const docs = docsResult.rows as Array<{ id: string; client_id: string; name: string }>;
   console.log(`Found ${docs.length} un-indexed documents to process.`);
 
+  if (docs.length > 0) {
+    console.log("Waiting 30s for Voyage AI rate limit window to reset...");
+    await new Promise((r) => setTimeout(r, 30_000));
+  }
+
   let succeeded = 0;
   let skipped = 0;
   let failed = 0;

@@ -3,7 +3,7 @@ const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 // Minimum gap between API calls to respect Voyage AI free tier (3 RPM).
 // Once a payment method is added, this becomes a non-issue — but it
 // keeps things safe regardless of plan.
-const MIN_CALL_GAP_MS = 21_000;
+const MIN_CALL_GAP_MS = 25_000;
 let lastCallAt = 0;
 
 async function throttle() {
