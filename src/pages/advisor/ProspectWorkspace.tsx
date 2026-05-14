@@ -1,5 +1,5 @@
 import { Navigate, NavLink, Outlet, useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, Users, UserCircle } from "lucide-react";
 import { useProspect } from "@/hooks/useProspects";
 import { cn } from "@/lib/utils";
 import type { ProspectStatus } from "@/lib/types/journey";
@@ -20,6 +20,7 @@ export interface ProspectShape {
   fitDecision?: "fit" | "no_fit" | null;
   notes?: string;
   date: string;
+  advisor_name?: string;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -60,6 +61,7 @@ function toProspectShape(row: Record<string, unknown>): ProspectShape {
     fitScore: row.fit_score != null ? Number(row.fit_score) : undefined,
     fitDecision: (row.fit_decision as "fit" | "no_fit" | null) ?? undefined,
     notes: row.notes != null ? String(row.notes) : undefined,
+    advisor_name: row.advisor_name != null ? String(row.advisor_name) : undefined,
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",
@@ -132,11 +134,19 @@ export default function ProspectWorkspace() {
               <h1 className="text-2xl font-display font-semibold text-foreground">
                 {prospect.name}
               </h1>
-              {prospect.company && prospect.company !== "—" && (
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                  {prospect.company}
-                </span>
-              )}
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                {prospect.company && prospect.company !== "—" && (
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                    {prospect.company}
+                  </span>
+                )}
+                {prospect.advisor_name && (
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <UserCircle className="w-3 h-3" />
+                    {prospect.advisor_name}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
