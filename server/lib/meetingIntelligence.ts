@@ -320,7 +320,7 @@ Analyze the meeting notes and extract:
 For new_task items:
 - suggested_assignee: exact name from team list, or null
 - suggested_due_date: ISO date YYYY-MM-DD, or null
-- suggested_phase: must exactly match one of the phase values above (e.g. "discover"), or null
+- suggested_phase: must exactly match one of the phase values above (e.g. "discover"). Capitalize it to match the roadmap domain tabs: "Discover", "Protect", "Grow", "Prove & Align", or null
 - suggested_dependencies: brief note if this task depends on another (e.g. "Depends on: Finalize LOI"), or null
 - source_excerpt: the exact sentence(s) from the notes this came from
 - source_timestamp: if the notes contain a timestamp near this excerpt (e.g. "[00:05:32]"), include it; otherwise null
