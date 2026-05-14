@@ -169,6 +169,7 @@ const CapitalStrategyRoadmap = () => {
   const [editingTask, setEditingTask] = useState<RoadmapTask | null>(null);
 
   // Add task form state
+  const [newClientId, setNewClientId] = useState<string>(selectedClientId);
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState<Domain>("Discover");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
@@ -264,7 +265,7 @@ const CapitalStrategyRoadmap = () => {
     if (!newTitle.trim()) return;
     createTask.mutate(
       {
-        client_id:   selectedClientId,
+        client_id:   newClientId || selectedClientId,
         title:       newTitle.trim(),
         phase:       newDomain,
         status:      newStatus,
@@ -276,6 +277,7 @@ const CapitalStrategyRoadmap = () => {
         onSuccess: () => {
           toast("Task created");
           setDialogOpen(false);
+          setNewClientId(selectedClientId);
           setNewTitle("");
           setNewDomain("Discover");
           setNewStatus("todo");
@@ -788,6 +790,21 @@ const CapitalStrategyRoadmap = () => {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* Client */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-foreground">Client</label>
+              <Select value={newClientId} onValueChange={setNewClientId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select client..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {(clients as Array<{ id: string; name: string }>).map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Title */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-foreground">
