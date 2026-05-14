@@ -61,8 +61,19 @@ router.get("/", async (req, res) => {
 
     const seeAll = await canSeeAll(req.user!.id, req.user!.role);
     const result = seeAll
-      ? await query(`SELECT * FROM clients WHERE ${archivedFilter} ORDER BY name`)
-      : await query(`SELECT * FROM clients WHERE advisor_id = $1 AND ${archivedFilter} ORDER BY name`, [req.user!.id]);
+      ? await query(
+          `SELECT c.*, u.name AS advisor_name
+           FROM clients c
+           LEFT JOIN users u ON u.id = c.advisor_id
+           WHERE ${archivedFilter} ORDER BY c.name`
+        )
+      : await query(
+          `SELECT c.*, u.name AS advisor_name
+           FROM clients c
+           LEFT JOIN users u ON u.id = c.advisor_id
+           WHERE c.advisor_id = $1 AND ${archivedFilter} ORDER BY c.name`,
+          [req.user!.id]
+        );
     return res.json(result.rows);
   } catch (err) {
     console.error("GET /clients error:", err);
