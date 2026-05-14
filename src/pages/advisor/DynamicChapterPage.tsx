@@ -71,7 +71,7 @@ export default function DynamicChapterPage() {
   const plans = plansRaw as DbPlan[];
 
   const { data: tasksRaw = [] } = useClientTasks(client.id);
-  const unassignedTasks = (tasksRaw as AdvisorTask[]).filter((t) => t.phase === null);
+  const unassignedTasks = (tasksRaw as AdvisorTask[]);
 
   const plan = plans.find((p) => p.id === planId);
   const chapterNumber = plans.findIndex((p) => p.id === planId) + 1;

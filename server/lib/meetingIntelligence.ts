@@ -394,7 +394,13 @@ Return ONLY valid JSON (no markdown):
     response.content[0].type === "text" ? response.content[0].text : "{}";
 
   try {
-    const result = JSON.parse(rawText) as CaptureResult;
+    // Strip markdown code fences Claude sometimes adds despite instructions
+    const cleanText = rawText
+      .replace(/^```(?:json)?\s*/m, "")
+      .replace(/\s*```$/m, "")
+      .trim();
+
+    const result = JSON.parse(cleanText) as CaptureResult;
 
     // Gap 3: Enrich task_update changes with a snapshot of the existing task
     for (const change of result.proposed_changes) {
