@@ -84,12 +84,9 @@ async function extractText(buffer: Buffer, fileType: string): Promise<string> {
     return sheets.join("\n\n");
   }
   if (fileType === "pptx") {
-    return new Promise<string>((resolve, reject) => {
-      officeParser.parseOffice(buffer, (text: string, err: Error | null) => {
-        if (err) reject(err);
-        else resolve(text ?? "");
-      });
-    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (officeParser as any).parseOffice(buffer);
+    return typeof result === "string" ? result : "";
   }
   // Plain text files (.txt, .csv, .md)
   return buffer.toString("utf-8");
