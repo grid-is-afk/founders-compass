@@ -48,38 +48,42 @@ function PriorityActionsPanel({ clientId }: { clientId: string }) {
     })
     .slice(0, 3);
 
-  if (priorityTasks.length === 0) return null;
-
   return (
     <div className="bg-card rounded-xl border border-border p-5 space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Priority Actions</h3>
         <a
-          href={`/advisor/tools/capital-strategy`}
+          href="/advisor/capital-strategy-roadmap"
           className="text-xs text-primary hover:underline"
         >
           View full roadmap →
         </a>
       </div>
-      <div className="space-y-2">
-        {priorityTasks.map((task) => {
-          const isOverdue = task.due_date ? new Date(task.due_date) < today : false;
-          return (
-            <div key={task.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-muted/40">
-              <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", isOverdue ? "bg-destructive" : "bg-amber-500")} />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
-                {task.due_date && (
-                  <p className={cn("text-[10px] mt-0.5", isOverdue ? "text-destructive" : "text-muted-foreground")}>
-                    {isOverdue ? "Overdue · " : "Due · "}
-                    {new Date(task.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </p>
-                )}
+      {priorityTasks.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No overdue or high-priority tasks — all on track.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {priorityTasks.map((task) => {
+            const isOverdue = task.due_date ? new Date(task.due_date) < today : false;
+            return (
+              <div key={task.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-muted/40">
+                <div className={cn("w-1.5 h-1.5 rounded-full mt-1.5 shrink-0", isOverdue ? "bg-destructive" : "bg-amber-500")} />
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-foreground truncate">{task.title}</p>
+                  {task.due_date && (
+                    <p className={cn("text-[10px] mt-0.5", isOverdue ? "text-destructive" : "text-muted-foreground")}>
+                      {isOverdue ? "Overdue · " : "Due · "}
+                      {new Date(task.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
