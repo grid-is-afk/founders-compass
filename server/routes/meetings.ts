@@ -216,11 +216,16 @@ router.post("/:id/capture/apply", async (req, res) => {
 
     const clientId = meeting.client_id;
     const createdTasks: unknown[] = [];
-    const decisions: string[] = [];
+    const decisionsAndQuestions: Array<{ text: string; type: string; recorded_at: string }> = [];
+
+    // Fetch approving advisor's name for attribution
+    const advisorRes = await query(`SELECT name FROM users WHERE id = $1`, [req.user!.id]);
+    const advisorName: string = advisorRes.rows[0]?.name ?? "Advisor";
+    const captureDate = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const attribution = `\n[QB capture — ${captureDate}. Approved by ${advisorName}.]`;
 
     for (const change of approved_changes) {
       if (change.type === "new_task") {
-        // Resolve assignee_id from name if provided
         let assigneeId: string | null = null;
         if (change.suggested_assignee) {
           const userRes = await query(
@@ -230,45 +235,52 @@ router.post("/:id/capture/apply", async (req, res) => {
           assigneeId = userRes.rows[0]?.id ?? null;
         }
 
+        // Build notes: detail + optional dependencies + attribution
+        const noteParts = [change.detail ?? null];
+        if (change.suggested_dependencies) noteParts.push(`Dependencies: ${change.suggested_dependencies}`);
+        noteParts.push(attribution);
+        const taskNotes = noteParts.filter(Boolean).join("\n");
+
         const taskRes = await query(
           `INSERT INTO tasks (client_id, title, status, priority, due_date, phase, notes, assignee_id)
            VALUES ($1, $2, 'todo', 'medium', $3, $4, $5, $6)
            RETURNING *`,
-          [
-            clientId,
-            change.title,
-            change.suggested_due_date ?? null,
-            change.suggested_phase ?? null,
-            change.detail ?? null,
-            assigneeId,
-          ]
+          [clientId, change.title, change.suggested_due_date ?? null, change.suggested_phase ?? null, taskNotes, assigneeId]
         );
         createdTasks.push(taskRes.rows[0]);
 
-        // Log to activity feed
         await query(
-          `INSERT INTO activity_log (client_id, advisor_id, text)
-           VALUES ($1, $2, $3)`,
+          `INSERT INTO activity_log (client_id, advisor_id, text) VALUES ($1, $2, $3)`,
           [clientId, req.user!.id, `QB capture: created task "${change.title}" from meeting notes`]
         );
       } else if (change.type === "task_update" && change.existing_task_id) {
         await query(
           `UPDATE tasks SET notes = CONCAT(COALESCE(notes, ''), $1), updated_at = NOW()
            WHERE id = $2 AND client_id = $3`,
-          [`\n[From meeting]: ${change.detail}`, change.existing_task_id, clientId]
+          [`\n[From meeting — ${change.detail}]${attribution}`, change.existing_task_id, clientId]
         );
       } else if (change.type === "decision") {
-        decisions.push(change.detail ?? change.title);
+        decisionsAndQuestions.push({
+          text: change.detail ?? change.title,
+          type: "decision",
+          recorded_at: new Date().toISOString(),
+        });
+      } else if (change.type === "open_question") {
+        // Gap 8: Store open questions alongside decisions in the meeting record
+        decisionsAndQuestions.push({
+          text: `[Open Question] ${change.title}: ${change.detail ?? ""}`,
+          type: "open_question",
+          recorded_at: new Date().toISOString(),
+        });
       }
     }
 
-    // Save decisions to the meeting record
-    if (decisions.length > 0) {
+    if (decisionsAndQuestions.length > 0) {
       await query(
         `UPDATE meetings
          SET decisions = decisions || $1::jsonb, processed_at = NOW(), updated_at = NOW()
          WHERE id = $2`,
-        [JSON.stringify(decisions.map((d) => ({ text: d, recorded_at: new Date().toISOString() }))), req.params.id]
+        [JSON.stringify(decisionsAndQuestions), req.params.id]
       );
     } else {
       await query(
@@ -277,7 +289,11 @@ router.post("/:id/capture/apply", async (req, res) => {
       );
     }
 
-    return res.json({ created_tasks: createdTasks, decisions_recorded: decisions.length });
+    return res.json({
+      created_tasks: createdTasks,
+      decisions_recorded: decisionsAndQuestions.filter((d) => d.type === "decision").length,
+      open_questions_recorded: decisionsAndQuestions.filter((d) => d.type === "open_question").length,
+    });
   } catch (err) {
     console.error("POST /meetings/:id/capture/apply error:", err);
     return res.status(500).json({ error: "Internal server error" });
