@@ -3,9 +3,14 @@ import { query } from "../db.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+export interface AgendaItem {
+  text: string;
+  source?: string;
+}
+
 export interface AgendaSection {
   title: string;
-  items: string[];
+  items: AgendaItem[];
 }
 
 export interface ProposedChange {
@@ -140,26 +145,56 @@ RECENT ACTIVITY:
 ${activity.map((a) => `  • ${a.text}`).join("\n") || "  No recent activity."}
 
 INSTRUCTIONS:
-Generate a structured meeting agenda with exactly these sections (in this order):
-1. Client Updates & Requests — items the client likely wants to raise (infer from recent activity and notes)
-2. Outstanding Commitments Review — overdue and blocked tasks, open items from prior meetings
-3. Workplan Status — progress summary, what's on track, what needs attention
-4. Forward-Looking Decisions — risk alerts, items needing advisor or client decisions
+Generate a structured meeting agenda with exactly these 5 sections (in this order):
+1. Client Updates & Requests — items the client likely wants to raise; infer from recent activity, notes, and communications.
+2. Outstanding Commitments Review — overdue tasks, blocked tasks, and open items from prior meeting notes that haven't been resolved.
+3. Workplan Status — progress summary by phase: what's on track, what's slipping, what just completed.
+4. Methodology-Aligned Topics — based on the current quarterly phase, identify TFO methodology activities that are due, missing, or should be advanced this meeting. Reference the Capital Alignment Method phases (Prove, Diagnose, Design TFO, Protect, Grow, Align) and flag what should be happening now.
+5. Forward-Looking Decisions — risk alerts, items where the advisor or client needs to make a decision or take a position before the next meeting.
 
-For each section, provide 2–5 bullet point agenda items. Be specific and actionable, not generic.
+Rules:
+- 2–5 items per section. Be specific and actionable — reference real task names, real dates, real risk titles from the context above.
+- For EVERY item, include a brief "source" note (one sentence max) that explains why this item is on the agenda — e.g. "From overdue task: Finalize LOI", "From risk alert: Cash runway < 90 days", "From prior meeting note (May 9): client mentioned X", "Methodology: Diagnose phase requires completion of FBI instrument".
+- Never generate generic filler like "Review progress" without a specific reference.
 
 Return ONLY valid JSON in this exact format (no markdown, no explanation):
 [
-  { "title": "Client Updates & Requests", "items": ["...", "..."] },
-  { "title": "Outstanding Commitments Review", "items": ["...", "..."] },
-  { "title": "Workplan Status", "items": ["...", "..."] },
-  { "title": "Forward-Looking Decisions", "items": ["...", "..."] }
+  {
+    "title": "Client Updates & Requests",
+    "items": [
+      { "text": "...", "source": "From activity: ..." }
+    ]
+  },
+  {
+    "title": "Outstanding Commitments Review",
+    "items": [
+      { "text": "...", "source": "From overdue task: ..." }
+    ]
+  },
+  {
+    "title": "Workplan Status",
+    "items": [
+      { "text": "...", "source": "From quarterly plan: ..." }
+    ]
+  },
+  {
+    "title": "Methodology-Aligned Topics",
+    "items": [
+      { "text": "...", "source": "Methodology: ..." }
+    ]
+  },
+  {
+    "title": "Forward-Looking Decisions",
+    "items": [
+      { "text": "...", "source": "From risk alert: ..." }
+    ]
+  }
 ]
 `.trim();
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 1500,
+    max_tokens: 2500,
     messages: [{ role: "user", content: context }],
   });
 
@@ -170,20 +205,32 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
     const parsed = JSON.parse(rawText) as AgendaSection[];
     return parsed;
   } catch {
-    // If JSON parse fails, return a safe fallback
     return [
       {
         title: "Client Updates & Requests",
-        items: ["Review client updates since last meeting"],
+        items: [{ text: "Review client updates since last meeting", source: "Inferred from recent activity" }],
       },
       {
         title: "Outstanding Commitments Review",
-        items: overdueTasks.slice(0, 3).map((t) => `Review status: ${t.title}`),
+        items: overdueTasks.slice(0, 3).map((t) => ({
+          text: `Review status: ${t.title}`,
+          source: `From overdue task assigned to ${t.assignee_name ?? "unassigned"}`,
+        })),
       },
-      { title: "Workplan Status", items: ["Review quarterly plan progress"] },
+      {
+        title: "Workplan Status",
+        items: [{ text: "Review quarterly plan progress", source: "From quarterly plan status" }],
+      },
+      {
+        title: "Methodology-Aligned Topics",
+        items: [{ text: "Review current TFO methodology phase requirements", source: "TFO Capital Alignment Method" }],
+      },
       {
         title: "Forward-Looking Decisions",
-        items: risks.slice(0, 2).map((r) => `Address: ${r.title}`),
+        items: risks.slice(0, 2).map((r) => ({
+          text: `Address: ${r.title}`,
+          source: `From risk alert [${r.severity}]: ${r.detail ?? ""}`,
+        })),
       },
     ];
   }

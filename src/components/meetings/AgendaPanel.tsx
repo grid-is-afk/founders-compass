@@ -1,8 +1,14 @@
 import { useState } from "react";
-import { Sparkles, Edit3, Lock, Download, Info, Loader2, Plus, X } from "lucide-react";
+import { Sparkles, Edit3, Lock, Download, Info, Loader2, Plus, X, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useGenerateAgenda, useUpdateMeeting, type Meeting, type AgendaSection } from "@/hooks/useMeetingsApi";
+import {
+  useGenerateAgenda,
+  useUpdateMeeting,
+  type Meeting,
+  type AgendaSection,
+  type AgendaItem,
+} from "@/hooks/useMeetingsApi";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -10,10 +16,17 @@ interface Props {
   clientId: string;
 }
 
+// Normalize saved agenda — handles both old string[] and new AgendaItem[] formats
 function parseAgenda(raw: string | null): AgendaSection[] {
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as AgendaSection[];
+    const parsed = JSON.parse(raw) as Array<{ title: string; items: Array<string | AgendaItem> }>;
+    return parsed.map((section) => ({
+      ...section,
+      items: section.items.map((item) =>
+        typeof item === "string" ? { text: item } : item
+      ),
+    }));
   } catch {
     return [];
   }
@@ -33,26 +46,28 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
   const hasDraft = sections.length > 0;
 
   async function handleGenerate() {
-    const result = await generateAgenda.mutateAsync({
-      meetingId: meeting.id,
-      clientId,
-    });
+    const result = await generateAgenda.mutateAsync({ meetingId: meeting.id, clientId });
     setSections(result.sections as AgendaSection[]);
   }
 
   function handleEditSection(idx: number) {
     setEditingSection(idx);
-    setEditValue(sections[idx].items.join("\n"));
+    setEditValue(sections[idx].items.map((i) => i.text).join("\n"));
   }
 
   function handleSaveSection(idx: number) {
     const updated = [...sections];
     updated[idx] = {
       ...updated[idx],
+      // Preserve source on existing items; strip it when text changes (manual edit)
       items: editValue
         .split("\n")
         .map((l) => l.trim())
-        .filter(Boolean),
+        .filter(Boolean)
+        .map((text, i) => ({
+          text,
+          source: sections[idx].items[i]?.text === text ? sections[idx].items[i]?.source : undefined,
+        })),
     };
     setSections(updated);
     setEditingSection(null);
@@ -63,11 +78,11 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
     const updated = [...sections];
     updated[sectionIdx] = {
       ...updated[sectionIdx],
-      items: [...updated[sectionIdx].items, "New item"],
+      items: [...updated[sectionIdx].items, { text: "New item" }],
     };
     setSections(updated);
     setEditingSection(sectionIdx);
-    setEditValue(updated[sectionIdx].items.join("\n"));
+    setEditValue(updated[sectionIdx].items.map((i) => i.text).join("\n"));
   }
 
   function handleRemoveItem(sectionIdx: number, itemIdx: number) {
@@ -98,7 +113,8 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
     for (const section of sections) {
       lines.push(`## ${section.title}`);
       for (const item of section.items) {
-        lines.push(`• ${item}`);
+        lines.push(`• ${item.text}`);
+        if (item.source) lines.push(`  Source: ${item.source}`);
       }
       lines.push("");
     }
@@ -131,24 +147,14 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">No agenda yet</p>
             <p className="text-xs text-muted-foreground mt-1">
-              QB will pull tasks, overdue items, risk alerts, and prior notes to build a draft.
+              QB will pull tasks, overdue items, risk alerts, quarterly plan progress, and methodology phase to build a 5-section draft.
             </p>
           </div>
-          <Button
-            onClick={handleGenerate}
-            disabled={generateAgenda.isPending}
-            className="gap-2"
-          >
+          <Button onClick={handleGenerate} disabled={generateAgenda.isPending} className="gap-2">
             {generateAgenda.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Generating...
-              </>
+              <><Loader2 className="w-4 h-4 animate-spin" />Generating...</>
             ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Generate Agenda with QB
-              </>
+              <><Sparkles className="w-4 h-4" />Generate Agenda with QB</>
             )}
           </Button>
         </div>
@@ -240,26 +246,14 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
                     </div>
                   </div>
                 ) : (
-                  <ul className="space-y-1">
+                  <ul className="space-y-1.5">
                     {section.items.map((item, iIdx) => (
-                      <li
+                      <AgendaItemRow
                         key={iIdx}
-                        className={cn(
-                          "flex items-start gap-2 text-sm text-foreground group",
-                        )}
-                      >
-                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 flex-shrink-0" />
-                        <span className="flex-1">{item}</span>
-                        {!isFinal && (
-                          <button
-                            onClick={() => handleRemoveItem(sIdx, iIdx)}
-                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                            aria-label="Remove item"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </li>
+                        item={item}
+                        isFinal={isFinal}
+                        onRemove={() => handleRemoveItem(sIdx, iIdx)}
+                      />
                     ))}
                     {!isFinal && (
                       <li>
@@ -280,11 +274,72 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
 
           {isFinal && (
             <p className="text-xs text-muted-foreground italic">
-              Agenda is locked. To make changes, contact the advisor.
+              Agenda is locked. Regenerate to make changes.
             </p>
           )}
         </>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AgendaItemRow — single item with expandable context pack
+// ---------------------------------------------------------------------------
+
+function AgendaItemRow({
+  item,
+  isFinal,
+  onRemove,
+}: {
+  item: AgendaItem;
+  isFinal: boolean;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <li className="group">
+      <div className="flex items-start gap-2 text-sm text-foreground">
+        <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-primary/60 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span>{item.text}</span>
+
+          {/* Context pack toggle */}
+          {item.source && (
+            <button
+              onClick={() => setExpanded((p) => !p)}
+              className={cn(
+                "ml-2 inline-flex items-center gap-0.5 text-[10px] font-medium transition-colors",
+                expanded
+                  ? "text-primary"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ChevronDown
+                className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")}
+              />
+              Context
+            </button>
+          )}
+
+          {expanded && item.source && (
+            <p className="mt-1 text-[11px] text-muted-foreground bg-muted/40 rounded px-2 py-1 border-l-2 border-primary/30">
+              {item.source}
+            </p>
+          )}
+        </div>
+
+        {!isFinal && (
+          <button
+            onClick={onRemove}
+            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity flex-shrink-0 mt-0.5"
+            aria-label="Remove item"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
