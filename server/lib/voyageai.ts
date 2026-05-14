@@ -11,7 +11,7 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
       "Authorization": `Bearer ${process.env.VOYAGE_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ input: texts, model: "voyage-4-lite" }),
+    body: JSON.stringify({ input: texts, model: "voyage-4-lite", output_dimension: 512 }),
   });
 
   if (!response.ok) {
