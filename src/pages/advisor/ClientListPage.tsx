@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Users, Search, Plus, Building2, Mail, Clock, Archive, RotateCcw } from "lucide-react";
+import { Users, Search, Plus, Building2, Mail, Clock, Archive, RotateCcw, UserCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useClients, useCreateClient, useArchiveClient } from "@/hooks/useClients";
 import { useAuth } from "@/lib/auth";
@@ -33,6 +33,7 @@ import { daysRemaining, countdownChipClass } from "@/lib/q1Utils";
 interface ClientRow {
   id: string;
   advisor_id: string;
+  advisor_name: string | null;
   name: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -392,6 +393,14 @@ export default function ClientListPage() {
                           <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" />
                           <span className="text-xs text-muted-foreground truncate">
                             {client.contact_email}
+                          </span>
+                        </div>
+                      )}
+                      {client.advisor_name && (
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <UserCircle className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                          <span className="text-xs text-muted-foreground truncate">
+                            {client.advisor_name}
                           </span>
                         </div>
                       )}
