@@ -69,9 +69,17 @@ export default function ClientWorkspace() {
 
   if (isError || !client) {
     return (
-      <div className="flex flex-col items-center justify-center h-48 gap-2 text-muted-foreground">
-        <AlertCircle className="w-6 h-6" />
-        <span className="text-sm">Client not found.</span>
+      <div className="flex flex-col items-center justify-center h-64 gap-3 text-center px-6">
+        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+          <AlertCircle className="w-6 h-6 text-muted-foreground" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">You're not entitled to view this account</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            This client account either doesn't exist or isn't assigned to you.
+            Contact your administrator if you believe this is an error.
+          </p>
+        </div>
       </div>
     );
   }
