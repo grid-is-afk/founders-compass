@@ -53,7 +53,7 @@ function PriorityActionsPanel({ clientId }: { clientId: string }) {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Priority Actions</h3>
         <a
-          href="/advisor/capital-strategy-roadmap"
+          href={`/advisor/capital-strategy-roadmap/${clientId}`}
           className="text-xs text-primary hover:underline"
         >
           View full roadmap →

@@ -126,6 +126,7 @@ const App = () => (
               <Route path="publish" element={<AdvisorPublish />} />
               <Route path="investor-share" element={<AdvisorInvestorShare />} />
               <Route path="capital-strategy-roadmap" element={<CapitalStrategyRoadmap />} />
+              <Route path="capital-strategy-roadmap/:clientId" element={<CapitalStrategyRoadmap />} />
               <Route path="admin/users" element={<UserManagement />} />
             </Route>
 
