@@ -19,9 +19,14 @@ export interface Meeting {
   updated_at: string | null;
 }
 
+export interface AgendaItem {
+  text: string;
+  source?: string;
+}
+
 export interface AgendaSection {
   title: string;
-  items: string[];
+  items: AgendaItem[];
 }
 
 export interface ProposedChange {
