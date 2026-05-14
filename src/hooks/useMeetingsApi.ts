@@ -29,15 +29,28 @@ export interface AgendaSection {
   items: AgendaItem[];
 }
 
+export interface ExistingTaskSnapshot {
+  id: string;
+  title: string;
+  status: string;
+  phase: string | null;
+  notes: string | null;
+  due_date: string | null;
+  assignee_name: string | null;
+}
+
 export interface ProposedChange {
   type: "new_task" | "task_update" | "decision" | "open_question";
   title: string;
   detail: string;
   source_excerpt?: string;
+  source_timestamp?: string | null;
   suggested_assignee?: string | null;
   suggested_due_date?: string | null;
   suggested_phase?: string | null;
+  suggested_dependencies?: string | null;
   existing_task_id?: string;
+  existing_task_snapshot?: ExistingTaskSnapshot;
   confidence: "high" | "medium" | "low";
 }
 

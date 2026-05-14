@@ -13,15 +13,28 @@ export interface AgendaSection {
   items: AgendaItem[];
 }
 
+export interface ExistingTaskSnapshot {
+  id: string;
+  title: string;
+  status: string;
+  phase: string | null;
+  notes: string | null;
+  due_date: string | null;
+  assignee_name: string | null;
+}
+
 export interface ProposedChange {
   type: "new_task" | "task_update" | "decision" | "open_question";
   title: string;
   detail: string;
   source_excerpt?: string;
+  source_timestamp?: string;
   suggested_assignee?: string;
   suggested_due_date?: string;
   suggested_phase?: string;
+  suggested_dependencies?: string;
   existing_task_id?: string;
+  existing_task_snapshot?: ExistingTaskSnapshot;
   confidence: "high" | "medium" | "low";
 }
 
@@ -244,9 +257,9 @@ export async function captureMeeting(
   notes: string,
   advisorId: string
 ): Promise<CaptureResult> {
-  const [tasksRes, teamRes] = await Promise.all([
+  const [tasksRes, teamRes, planRes] = await Promise.all([
     query(
-      `SELECT t.id, t.title, t.status, t.phase, u.name AS assignee_name
+      `SELECT t.id, t.title, t.status, t.phase, t.notes, t.due_date, u.name AS assignee_name
        FROM tasks t
        LEFT JOIN users u ON u.id = t.assignee_id
        WHERE t.client_id = $1
@@ -257,46 +270,76 @@ export async function captureMeeting(
     query(
       `SELECT id, name FROM users WHERE role IN ('advisor', 'admin') ORDER BY name`
     ),
+    query(
+      `SELECT qp.quarter, qp.year,
+              json_agg(json_build_object('phase', qph.phase, 'label', qph.label, 'status', qph.status) ORDER BY qph.sort_order) AS phases
+       FROM quarterly_plans qp
+       LEFT JOIN quarterly_phases qph ON qph.plan_id = qp.id
+       WHERE qp.client_id = $1
+       GROUP BY qp.id
+       ORDER BY qp.year DESC, qp.quarter DESC
+       LIMIT 1`,
+      [clientId]
+    ),
   ]);
 
-  const existingTasks = tasksRes.rows;
-  const teamMembers = teamRes.rows;
+  const existingTasks = tasksRes.rows as Array<{
+    id: string; title: string; status: string; phase: string | null;
+    notes: string | null; due_date: string | null; assignee_name: string | null;
+  }>;
+  const teamMembers = teamRes.rows as Array<{ id: string; name: string }>;
+  const plan = planRes.rows[0];
+  const phases = (plan?.phases as Array<{ phase: string; label: string; status: string }> | null)?.filter((p) => p.phase) ?? [];
+  const phaseLabels = phases.map((p) => `${p.phase} (${p.label ?? p.phase}, ${p.status})`).join(", ");
 
   const context = `
 You are a TFO (The Founders Office) advisory assistant processing notes from a client meeting.
+Today's date: ${new Date().toISOString().split("T")[0]}
 
-EXISTING OPEN TASKS (for reference when proposing updates):
-${existingTasks.map((t) => `  [ID: ${t.id}] ${t.title} (${t.status}, phase: ${t.phase ?? "none"}, assignee: ${t.assignee_name ?? "unassigned"})`).join("\n") || "  No open tasks."}
+CURRENT QUARTERLY PLAN PHASES (use these exact phase values in suggested_phase):
+${phaseLabels || "No active quarterly plan phases."}
 
-TEAM MEMBERS (for assignee suggestions):
-${teamMembers.map((m) => `  ${m.name} (id: ${m.id})`).join("\n")}
+EXISTING OPEN TASKS:
+${existingTasks.map((t) => `  [ID: ${t.id}] "${t.title}" — status: ${t.status}, phase: ${t.phase ?? "none"}, assignee: ${t.assignee_name ?? "unassigned"}, due: ${t.due_date ?? "none"}`).join("\n") || "  No open tasks."}
+
+TEAM MEMBERS (use exact names for assignee suggestions):
+${teamMembers.map((m) => m.name).join(", ")}
 
 MEETING NOTES / TRANSCRIPT:
 ${notes}
 
 INSTRUCTIONS:
-Analyze the meeting notes above and extract:
-1. A concise summary (2–4 sentences) of what was discussed.
-2. Proposed workplan changes, classified as:
+Analyze the meeting notes and extract:
+1. A concise summary (2–4 sentences) of what was discussed and decided.
+2. Proposed workplan changes, classified as one of:
    - new_task: a new action item to add to the workplan
-   - task_update: an update to an existing task (reference its ID from the list above)
-   - decision: a decision recorded (no workplan change needed)
-   - open_question: something unresolved that needs follow-up
+   - task_update: an update to an existing task (must match an ID above)
+   - decision: a decision recorded (no workplan action needed)
+   - open_question: something unresolved — ESPECIALLY use this when a commitment is mentioned but has no concrete owner or no due date
 
 For new_task items:
-- Suggest an assignee (from the team list), a due date (use ISO format, relative to today ${new Date().toISOString().split("T")[0]}), and a phase (discover/grow/strengthen/elevate or null)
-- Extract the specific source excerpt from the notes
+- suggested_assignee: exact name from team list, or null
+- suggested_due_date: ISO date YYYY-MM-DD, or null
+- suggested_phase: must exactly match one of the phase values above (e.g. "discover"), or null
+- suggested_dependencies: brief note if this task depends on another (e.g. "Depends on: Finalize LOI"), or null
+- source_excerpt: the exact sentence(s) from the notes this came from
+- source_timestamp: if the notes contain a timestamp near this excerpt (e.g. "[00:05:32]"), include it; otherwise null
 
 For task_update items:
-- Reference the existing_task_id from the task list above
-- Describe what changed (status, notes, etc.)
+- existing_task_id: UUID from the task list above
+- detail: what specifically is changing (status, new info, blocker removed, etc.)
+- source_excerpt and source_timestamp: same as above
 
-Rate confidence as:
-- high: explicitly stated with clear owner/date
-- medium: implied or inferred
-- low: ambiguous or speculative
+For open_question items (missing owner/date):
+- Use confidence "low"
+- detail: explain what's missing, e.g. "Commitment mentioned but no owner assigned" or "Action item has no due date"
 
-Return ONLY valid JSON (no markdown, no explanation):
+Rate confidence:
+- high: explicitly stated, clear owner AND date
+- medium: implied or partially specified
+- low: ambiguous, vague, or missing owner/date
+
+Return ONLY valid JSON (no markdown):
 {
   "summary": "...",
   "proposed_changes": [
@@ -305,16 +348,19 @@ Return ONLY valid JSON (no markdown, no explanation):
       "title": "...",
       "detail": "...",
       "source_excerpt": "...",
+      "source_timestamp": "00:05:32 or null",
       "suggested_assignee": "Name or null",
       "suggested_due_date": "YYYY-MM-DD or null",
       "suggested_phase": "discover or null",
+      "suggested_dependencies": "Depends on: X or null",
       "confidence": "high"
     },
     {
       "type": "task_update",
       "title": "Update: ...",
-      "detail": "...",
+      "detail": "What is changing: ...",
       "source_excerpt": "...",
+      "source_timestamp": null,
       "existing_task_id": "uuid",
       "confidence": "high"
     },
@@ -323,7 +369,16 @@ Return ONLY valid JSON (no markdown, no explanation):
       "title": "...",
       "detail": "...",
       "source_excerpt": "...",
+      "source_timestamp": null,
       "confidence": "high"
+    },
+    {
+      "type": "open_question",
+      "title": "...",
+      "detail": "Commitment mentioned but no owner assigned",
+      "source_excerpt": "...",
+      "source_timestamp": null,
+      "confidence": "low"
     }
   ]
 }
@@ -331,7 +386,7 @@ Return ONLY valid JSON (no markdown, no explanation):
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 2000,
+    max_tokens: 2500,
     messages: [{ role: "user", content: context }],
   });
 
@@ -339,7 +394,27 @@ Return ONLY valid JSON (no markdown, no explanation):
     response.content[0].type === "text" ? response.content[0].text : "{}";
 
   try {
-    return JSON.parse(rawText) as CaptureResult;
+    const result = JSON.parse(rawText) as CaptureResult;
+
+    // Gap 3: Enrich task_update changes with a snapshot of the existing task
+    for (const change of result.proposed_changes) {
+      if (change.type === "task_update" && change.existing_task_id) {
+        const existing = existingTasks.find((t) => t.id === change.existing_task_id);
+        if (existing) {
+          change.existing_task_snapshot = {
+            id: existing.id,
+            title: existing.title,
+            status: existing.status,
+            phase: existing.phase,
+            notes: existing.notes,
+            due_date: existing.due_date,
+            assignee_name: existing.assignee_name,
+          };
+        }
+      }
+    }
+
+    return result;
   } catch {
     return {
       summary: "Unable to parse meeting notes. Please review manually.",
