@@ -8,6 +8,7 @@ import sharp from "sharp";
 import { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
+import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
 
@@ -38,18 +39,7 @@ const upload = multer({
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-async function verifyClient(clientId: string, userId: string, userRole: string) {
-  if (userRole === "admin") {
-    const result = await query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
-    return result.rows.length > 0;
-  }
-  const col = userRole === "client" ? "user_id" : "advisor_id";
-  const result = await query(
-    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
-    [clientId, userId]
-  );
-  return result.rows.length > 0;
-}
+const verifyClient = verifyClientAccess;
 
 async function verifyProspect(prospectId: string, userId: string) {
   const result = await query(
