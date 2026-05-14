@@ -253,7 +253,7 @@ const CapitalStrategyRoadmap = () => {
   const filteredTasks =
     activeFilter === "All"
       ? tasks
-      : tasks.filter((t) => t.phase === activeFilter);
+      : tasks.filter((t) => t.phase?.toLowerCase() === activeFilter.toLowerCase());
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -682,7 +682,7 @@ const CapitalStrategyRoadmap = () => {
         </div>
 
         {/* Task table */}
-        <div className="bg-card rounded-lg border border-border overflow-hidden">
+        <div className="bg-card rounded-lg border border-border overflow-hidden flex-shrink-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/40">
