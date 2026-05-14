@@ -118,9 +118,9 @@ export async function buildClientStructuredContext(
     }
   }
 
-  // Meetings (last 10 with full notes)
+  // Meetings (last 10 with notes and decisions)
   const meetingsRes = await query(
-    `SELECT type, date, status, notes
+    `SELECT type, date, status, notes, decisions
      FROM meetings WHERE client_id = $1
      ORDER BY date DESC LIMIT 10`,
     [clientId]
@@ -130,6 +130,9 @@ export async function buildClientStructuredContext(
     for (const m of meetingsRes.rows) {
       ctx += `- ${m.type ?? "Meeting"} on ${m.date} [${m.status ?? "unknown"}]`;
       if (m.notes) ctx += `\n  Notes: ${m.notes}`;
+      if (Array.isArray(m.decisions) && m.decisions.length > 0) {
+        ctx += `\n  Decisions: ${(m.decisions as Array<{ text: string }>).map((d) => d.text).join("; ")}`;
+      }
       ctx += "\n";
     }
   }
@@ -178,6 +181,24 @@ export async function buildClientStructuredContext(
           ctx += `  ${ph.label ?? ph.phase}: ${ph.status} (${ph.completed_tasks ?? 0}/${ph.total_tasks ?? 0} tasks)\n`;
         }
       }
+    }
+  }
+
+  // Stakeholders
+  const stakeholdersRes = await query(
+    `SELECT name, role, email, notes, tier FROM stakeholders
+     WHERE client_id = $1 ORDER BY tier ASC, name ASC`,
+    [clientId]
+  );
+  if (stakeholdersRes.rows.length > 0) {
+    ctx += "\n### Key Stakeholders\n";
+    for (const s of stakeholdersRes.rows) {
+      ctx += `- ${s.name}`;
+      if (s.role) ctx += ` (${s.role})`;
+      if (s.tier && s.tier !== "primary") ctx += ` [${s.tier}]`;
+      if (s.email) ctx += ` — ${s.email}`;
+      if (s.notes) ctx += `\n  Notes: ${s.notes}`;
+      ctx += "\n";
     }
   }
 

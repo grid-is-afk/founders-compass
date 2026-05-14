@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Calendar } from "lucide-react";
+import { Building2, Calendar, UserCircle } from "lucide-react";
 import type { Prospect } from "@/lib/types/journey";
 
 interface ProspectCardProps {
@@ -76,6 +76,14 @@ const ProspectCard = ({ prospect }: ProspectCardProps) => {
           </span>
         )}
       </div>
+
+      {/* Advisor */}
+      {prospect.advisor_name && (
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground border-t border-border/60 pt-2">
+          <UserCircle className="w-3 h-3 flex-shrink-0" />
+          <span>{prospect.advisor_name}</span>
+        </div>
+      )}
 
       {/* Notes */}
       {prospect.notes && (

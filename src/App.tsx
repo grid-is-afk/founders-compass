@@ -23,6 +23,7 @@ import Q4Page from "./pages/advisor/Q4Page";
 import DynamicChapterPage from "./pages/advisor/DynamicChapterPage";
 import ClientDashboardTab from "./pages/advisor/ClientDashboardTab";
 import ClientDataRoomTab from "./pages/advisor/ClientDataRoomTab";
+import ClientMeetingsTab from "./pages/advisor/ClientMeetingsTab";
 import ProspectPipeline from "./pages/advisor/ProspectPipeline";
 import ProspectWorkspace from "./pages/advisor/ProspectWorkspace";
 import ProspectOverviewTab from "./pages/advisor/ProspectOverviewTab";
@@ -97,6 +98,7 @@ const App = () => (
                 <Route path="q4" element={<Q4Page />} />
                 <Route path="chapter/:planId" element={<DynamicChapterPage />} />
                 <Route path="data-room" element={<ClientDataRoomTab />} />
+                <Route path="meetings" element={<ClientMeetingsTab />} />
               </Route>
 
               {/* TFO pages */}

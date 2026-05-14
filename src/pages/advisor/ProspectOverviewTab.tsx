@@ -9,6 +9,7 @@ import {
   XCircle,
   ChevronRight,
   Loader2,
+  UserCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -152,6 +153,17 @@ export default function ProspectOverviewTab() {
           </div>
           <p className="text-sm font-semibold text-foreground">{prospect.revenue}</p>
         </div>
+        {prospect.advisor_name && (
+          <div className="rounded-lg bg-muted/40 border border-border p-3 col-span-2">
+            <div className="flex items-center gap-1.5 mb-1">
+              <UserCircle className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                Advisor
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-foreground">{prospect.advisor_name}</p>
+          </div>
+        )}
       </div>
 
       {/* Contact block */}

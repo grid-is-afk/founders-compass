@@ -29,6 +29,7 @@ const TABS = [
   { label: "Chapter 2: Grow", path: "q2" },
   { label: "Chapter 3: Strengthen", path: "q3" },
   { label: "Chapter 4: Elevate", path: "q4" },
+  { label: "Meetings", path: "meetings" },
   { label: "Data Room", path: "data-room" },
 ] as const;
 
