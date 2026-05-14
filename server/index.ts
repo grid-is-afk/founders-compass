@@ -47,6 +47,7 @@ import clientAssessmentSummaryRoutes from "./routes/clientAssessmentSummary.js";
 import notificationRoutes from "./routes/notifications.js";
 import adminRoutes from "./routes/admin.js";
 import clientIpValueFrameworkRoutes from "./routes/clientIpValueFramework.js";
+import stakeholderRoutes from "./routes/stakeholders.js";
 
 dotenv.config();
 
@@ -110,6 +111,7 @@ app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
 app.use("/api/admin", authMiddleware, adminRoutes);
+app.use("/api/stakeholders", authMiddleware, stakeholderRoutes);
 
 // ---------------------------------------------------------------------------
 // GET /api/q1-phase-config — public config for the Gantt chart
