@@ -371,7 +371,6 @@ export default function CapturePanel({ meeting, clientId }: Props) {
                 </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">— None —</SelectItem>
                 {(documents as Array<{ id: string; name: string }>).map((doc) => (
                   <SelectItem key={doc.id} value={doc.id}>
                     {doc.name}
