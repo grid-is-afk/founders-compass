@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
@@ -13,7 +14,10 @@ import {
   Sparkles,
   Upload,
   FileText,
+  Building2,
+  UserCircle,
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import Papa from "papaparse";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -151,8 +155,17 @@ const statusLabels: Record<TaskStatus, string> = {
 // ---------------------------------------------------------------------------
 
 const CapitalStrategyRoadmap = () => {
-  const { selectedClient, selectedClientId, clients } = useClientContext();
-  const { data: rawTasks = [], isLoading } = useClientTasks(selectedClientId);
+  const { clientId: urlClientId } = useParams<{ clientId?: string }>();
+  const navigate = useNavigate();
+  const { selectedClient: _selectedClient, selectedClientId, clients } = useClientContext();
+
+  // Resolve the active client from URL param — falls back to picker if missing/invalid
+  const activeClient = urlClientId
+    ? (clients as Array<{ id: string; name: string; entity_type: string | null; q1_phase: string | null; capital_readiness: number; advisor_name?: string }>).find((c) => c.id === urlClientId) ?? null
+    : null;
+  const activeClientId = activeClient?.id ?? "";
+
+  const { data: rawTasks = [], isLoading } = useClientTasks(activeClientId);
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
@@ -169,7 +182,7 @@ const CapitalStrategyRoadmap = () => {
   const [editingTask, setEditingTask] = useState<RoadmapTask | null>(null);
 
   // Add task form state
-  const [newClientId, setNewClientId] = useState<string>(selectedClientId);
+  const [newClientId, setNewClientId] = useState<string>(activeClientId || selectedClientId);
   const [newTitle, setNewTitle] = useState("");
   const [newDomain, setNewDomain] = useState<Domain>("Discover");
   const [newStatus, setNewStatus] = useState<TaskStatus>("todo");
@@ -193,7 +206,7 @@ const CapitalStrategyRoadmap = () => {
   const [columnMapping, setColumnMapping]     = useState<ColumnMapping>({
     title: "__none__", assignee: "__none__", due_date: "__none__", priority: "__none__", domain: "__none__", notes: "__none__",
   });
-  const [importClientId, setImportClientId]   = useState<string>(selectedClientId);
+  const [importClientId, setImportClientId]   = useState<string>(activeClientId || selectedClientId);
   const [validatedRows, setValidatedRows]     = useState<ValidatedImportRow[]>([]);
   const [skippedCount, setSkippedCount]       = useState(0);
   const [importProgress, setImportProgress]   = useState<number | null>(null);
@@ -249,14 +262,14 @@ const CapitalStrategyRoadmap = () => {
   const handleCycleStatus = (task: RoadmapTask) => {
     const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(task.status) + 1) % STATUS_CYCLE.length];
     updateTask.mutate(
-      { id: task.id, clientId: selectedClientId, status: next },
+      { id: task.id, clientId: activeClientId, status: next },
       { onSuccess: () => toast("Status updated") }
     );
   };
 
   const handleDelete = (task: RoadmapTask) => {
     deleteTask.mutate(
-      { id: task.id, clientId: selectedClientId },
+      { id: task.id, clientId: activeClientId },
       { onSuccess: () => toast("Task deleted") }
     );
   };
@@ -277,7 +290,7 @@ const CapitalStrategyRoadmap = () => {
         onSuccess: () => {
           toast("Task created");
           setDialogOpen(false);
-          setNewClientId(selectedClientId);
+          setNewClientId(activeClientId || selectedClientId);
           setNewTitle("");
           setNewDomain("Discover");
           setNewStatus("todo");
@@ -304,7 +317,7 @@ const CapitalStrategyRoadmap = () => {
     updateTask.mutate(
       {
         id:          editingTask.id,
-        clientId:    selectedClientId,
+        clientId:    activeClientId,
         title:       editTitle.trim(),
         phase:       editDomain,
         status:      editStatus,
@@ -330,7 +343,7 @@ const CapitalStrategyRoadmap = () => {
     setCsvHeaders([]);
     setCsvRows([]);
     setColumnMapping({ title: "__none__", assignee: "__none__", due_date: "__none__", priority: "__none__", domain: "__none__", notes: "__none__" });
-    setImportClientId(selectedClientId);
+    setImportClientId(activeClientId || selectedClientId);
     setValidatedRows([]);
     setSkippedCount(0);
     setImportProgress(null);
@@ -470,6 +483,65 @@ const CapitalStrategyRoadmap = () => {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+  // Client picker — shown when no clientId in URL
+  // ---------------------------------------------------------------------------
+  if (!activeClient) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-display font-semibold text-foreground">
+            Capital Strategy Architecture — Roadmap
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Select a client to view their roadmap.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {(clients as Array<{ id: string; name: string; entity_type: string | null; q1_phase: string | null; capital_readiness: number; advisor_name?: string }>).map((c) => (
+            <button
+              key={c.id}
+              onClick={() => navigate(`/advisor/capital-strategy-roadmap/${c.id}`)}
+              className="text-left rounded-lg border border-border bg-card p-4 cursor-pointer hover:border-primary/40 hover:bg-muted/20 transition-colors space-y-3"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Building2 className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
+                  {c.advisor_name && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <UserCircle className="w-3 h-3 flex-shrink-0" />
+                      {c.advisor_name}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {c.entity_type && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded border font-semibold uppercase bg-blue-50 text-blue-700 border-blue-200">
+                    {c.entity_type}
+                  </span>
+                )}
+                {c.q1_phase && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded border bg-muted text-muted-foreground">
+                    {c.q1_phase}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-muted-foreground">Capital Readiness</span>
+                  <span className="font-semibold text-foreground">{c.capital_readiness ?? 0}%</span>
+                </div>
+                <Progress value={c.capital_readiness ?? 0} className="h-1" />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex gap-6 h-[calc(100vh-3.5rem-4rem)]">
@@ -488,7 +560,7 @@ const CapitalStrategyRoadmap = () => {
                 Capital Strategy Architecture — Roadmap
               </h1>
               <p className="text-sm text-muted-foreground">
-                Project roadmap for {selectedClient.name}
+                Project roadmap for {activeClient?.name ?? ""}
               </p>
             </div>
           </div>
@@ -588,7 +660,7 @@ const CapitalStrategyRoadmap = () => {
         {/* Full Project Tasks heading */}
         <div className="flex-shrink-0">
           <h2 className="text-lg font-display font-semibold text-foreground">Full Project Tasks</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">All tasks for {selectedClient.name}, filtered by domain</p>
+          <p className="text-sm text-muted-foreground mt-0.5">All tasks for {activeClient?.name ?? ""}, filtered by domain</p>
         </div>
 
         {/* Domain filter tabs */}
