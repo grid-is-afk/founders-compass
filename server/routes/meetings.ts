@@ -6,6 +6,7 @@ import { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
 import { generateAgenda, captureMeeting } from "../lib/meetingIntelligence.js";
+import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
 
@@ -26,18 +27,7 @@ const upload = multer({
   },
 });
 
-async function verifyClient(clientId: string, userId: string, userRole: string) {
-  if (userRole === "admin") {
-    const r = await query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
-    return r.rows.length > 0;
-  }
-  const col = userRole === "client" ? "user_id" : "advisor_id";
-  const result = await query(
-    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
-    [clientId, userId]
-  );
-  return result.rows.length > 0;
-}
+const verifyClient = verifyClientAccess;
 
 async function getMeetingAndVerify(meetingId: string, userId: string, userRole: string) {
   const mResult = await query("SELECT * FROM meetings WHERE id = $1", [meetingId]);
