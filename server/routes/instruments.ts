@@ -1,22 +1,12 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
 
 const ALLOWED_COLUMNS = new Set(["status", "completed_date", "linked_phase"]);
 
-async function verifyClient(clientId: string, userId: string, userRole: string) {
-  if (userRole === "admin") {
-    const r = await query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
-    return r.rows.length > 0;
-  }
-  const col = userRole === "client" ? "user_id" : "advisor_id";
-  const result = await query(
-    `SELECT id FROM clients WHERE id = $1 AND ${col} = $2`,
-    [clientId, userId]
-  );
-  return result.rows.length > 0;
-}
+const verifyClient = verifyClientAccess;
 
 // GET /api/instruments?client_id=xxx
 router.get("/", async (req, res) => {
