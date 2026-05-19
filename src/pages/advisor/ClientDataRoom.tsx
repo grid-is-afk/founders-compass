@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import {
-  FileText, Upload, FolderOpen, Search, Download,
+  FileText, Upload, FolderOpen, FolderPlus, Search, Download,
   CheckCircle2, Circle, FileSpreadsheet, FileIcon,
   Eye, Zap, X, Trash2, Loader2, ChevronRight,
   LayoutGrid, List,
@@ -35,8 +35,12 @@ import {
   useUploadDocuments,
   useDeleteDocument,
   useUpdateDocument,
+  useClientFolders,
+  useCreateFolder,
+  useDeleteFolder,
   type StagedFile,
   type Document,
+  type DataRoomFolder,
 } from "@/hooks/useDocuments";
 import { isAfter, subHours } from "date-fns";
 import ShareInvestorPortal from "@/components/ShareInvestorPortal";
@@ -366,6 +370,9 @@ export const AdvisorDataRoom = ({
     isPending: isAnalyzing,
     progress: analyzeProgress,
   } = useAnalyzeDataRoom(clientId);
+  const { data: folderStubs = [] } = useClientFolders(clientId) as { data: DataRoomFolder[] };
+  const createFolderMutation = useCreateFolder();
+  const deleteFolderMutation = useDeleteFolder();
 
   // ── Upload & staging state ──────────────────────────────────────────────
   const [showUpload, setShowUpload] = useState(false);
@@ -379,7 +386,13 @@ export const AdvisorDataRoom = ({
   // ── Browsing state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [folderView, setFolderView] = useState<string | null>(null); // null = folder grid
+  const [currentSubfolder, setCurrentSubfolder] = useState<string | null>(null);
   const [layout, setLayout] = useState<"grid" | "list">("grid");
+
+  // ── Folder dialog state ─────────────────────────────────────────────────
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
 
   // ── Dialog state ────────────────────────────────────────────────────────
   const [previewDoc, setPreviewDoc] = useState<{
@@ -487,6 +500,12 @@ export const AdvisorDataRoom = ({
     });
   }
 
+  const handleUploadToSubfolder = (subfolder: string) => {
+    setCurrentSubfolder(subfolder);
+    setShowUpload(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const getFileType = (name: string): "pdf" | "spreadsheet" | "document" => {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
     if (ext === "pdf") return "pdf";
@@ -506,7 +525,7 @@ export const AdvisorDataRoom = ({
         id: `pending-${Date.now()}-${i}`,
         file,
         category: folderName ?? folderView ?? "Reports",
-        subfolder: nestedSubfolder,
+        subfolder: nestedSubfolder ?? currentSubfolder ?? undefined,
         sourceFolderName: folderName ?? undefined,
       };
     });
@@ -540,6 +559,7 @@ export const AdvisorDataRoom = ({
       setPendingFiles([]);
       setBulkCategory("");
       setFileProgress({});
+      setCurrentSubfolder(null);
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "An error occurred";
@@ -633,7 +653,10 @@ export const AdvisorDataRoom = ({
             variant="outline"
             size="sm"
             className="gap-2"
-            onClick={() => setShowUpload(!showUpload)}
+            onClick={() => {
+              if (showUpload) setCurrentSubfolder(null);
+              setShowUpload(!showUpload);
+            }}
           >
             <Upload className="w-3.5 h-3.5" />
             {showUpload ? "Hide Upload" : "Upload Files"}
@@ -763,10 +786,20 @@ export const AdvisorDataRoom = ({
                             {pendingFiles.length} file
                             {pendingFiles.length > 1 ? "s" : ""} selected
                           </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Choose a category for each file — this determines where it
-                            appears in the Data Room.
-                          </p>
+                          {currentSubfolder ? (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Uploading to:{" "}
+                              <span className="font-medium text-foreground">
+                                {folderView ?? "Data Room"} › {currentSubfolder}
+                              </span>
+                              {" "}— adjust tags below if needed.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Choose a category for each file — this determines where it
+                              appears in the Data Room.
+                            </p>
+                          )}
                         </>
                       )}
                     </div>
@@ -917,6 +950,7 @@ export const AdvisorDataRoom = ({
                   setPendingFiles([]);
                   setBulkCategory("");
                   setFileProgress({});
+                  setCurrentSubfolder(null);
                 }}
               >
                 Cancel
@@ -1208,10 +1242,10 @@ export const AdvisorDataRoom = ({
           {/* Breadcrumb + layout toggle */}
           <div className="flex items-center justify-between gap-4">
             {/* Breadcrumb */}
-            <nav className="flex items-center gap-1.5 text-sm">
+            <nav className="flex items-center gap-1.5 text-sm flex-1 min-w-0">
               <button
                 className="text-primary hover:underline font-medium"
-                onClick={() => setFolderView(null)}
+                onClick={() => { setFolderView(null); setCurrentSubfolder(null); }}
               >
                 Data Room
               </button>
@@ -1221,6 +1255,12 @@ export const AdvisorDataRoom = ({
                 ({currentFolderDocs.length} doc
                 {currentFolderDocs.length !== 1 ? "s" : ""})
               </span>
+              <button
+                className="ml-3 flex items-center gap-1 text-xs text-primary hover:underline whitespace-nowrap"
+                onClick={() => { setNewFolderName(""); setShowCreateFolder(true); }}
+              >
+                <FolderPlus className="w-3.5 h-3.5" /> New Subfolder
+              </button>
             </nav>
 
             {/* Layout toggle */}
@@ -1278,8 +1318,8 @@ export const AdvisorDataRoom = ({
             </div>
           )}
 
-          {/* Documents — grouped by subfolder */}
-          {currentFolderDocs.length > 0 && (() => {
+          {/* Documents — grouped by subfolder (includes empty folder stubs) */}
+          {(currentFolderDocs.length > 0 || folderStubs.some(f => f.category === folderView)) && (() => {
             const noSub: Document[] = [];
             const subMap = new Map<string, Document[]>();
             for (const doc of currentFolderDocs) {
@@ -1289,6 +1329,10 @@ export const AdvisorDataRoom = ({
                 if (!subMap.has(sf)) subMap.set(sf, []);
                 subMap.get(sf)!.push(doc);
               }
+            }
+            // Merge in empty folder stubs for this category
+            for (const stub of folderStubs.filter(f => f.category === folderView)) {
+              if (!subMap.has(stub.name)) subMap.set(stub.name, []);
             }
             return (
               <div className="space-y-6">
@@ -1308,28 +1352,52 @@ export const AdvisorDataRoom = ({
                         </div>
                       </div>
                 )}
-                {Array.from(subMap.entries()).map(([sf, sfDocs]) => (
-                  <div key={sf}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <FolderOpen className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-semibold text-foreground">{sf}</span>
-                      <span className="text-xs text-muted-foreground">({sfDocs.length} doc{sfDocs.length !== 1 ? "s" : ""})</span>
-                    </div>
-                    {layout === "grid"
-                      ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                          {sfDocs.map((doc) => <DocumentCard key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}
+                {Array.from(subMap.entries()).map(([sf, sfDocs]) => {
+                  const stub = folderStubs.find(f => f.category === folderView && f.name === sf);
+                  const isEmpty = sfDocs.length === 0;
+                  return (
+                    <div key={sf}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm font-semibold text-foreground">{sf}</span>
+                        <span className="text-xs text-muted-foreground">({sfDocs.length} doc{sfDocs.length !== 1 ? "s" : ""})</span>
+                        <div className="ml-auto flex items-center gap-3">
+                          <button
+                            className="flex items-center gap-1 text-xs text-primary hover:underline"
+                            onClick={() => handleUploadToSubfolder(sf)}
+                          >
+                            <Upload className="w-3 h-3" /> Upload here
+                          </button>
+                          {stub && isEmpty && (
+                            <button
+                              className="flex items-center gap-1 text-xs text-destructive hover:underline"
+                              onClick={() => setDeletingFolderId(stub.id)}
+                            >
+                              <Trash2 className="w-3 h-3" /> Delete folder
+                            </button>
+                          )}
                         </div>
-                      : <div className="bg-card rounded-lg border border-border overflow-hidden">
-                          <div className="max-h-[520px] overflow-y-auto">
-                            <table className="w-full text-sm">
-                              <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-muted/40"><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Uploaded by</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Date</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Size</th><th className="px-4 py-3" /></tr></thead>
-                              <tbody>{sfDocs.map((doc) => <DocumentTableRow key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}</tbody>
-                            </table>
+                      </div>
+                      {isEmpty ? (
+                        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
+                          No documents yet — click <strong>Upload here</strong> to add files to this subfolder.
+                        </div>
+                      ) : layout === "grid"
+                        ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {sfDocs.map((doc) => <DocumentCard key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}
                           </div>
-                        </div>
-                    }
-                  </div>
-                ))}
+                        : <div className="bg-card rounded-lg border border-border overflow-hidden">
+                            <div className="max-h-[520px] overflow-y-auto">
+                              <table className="w-full text-sm">
+                                <thead className="sticky top-0 z-10"><tr className="border-b border-border bg-muted/40"><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Name</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Uploaded by</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Date</th><th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground">Size</th><th className="px-4 py-3" /></tr></thead>
+                                <tbody>{sfDocs.map((doc) => <DocumentTableRow key={doc.id} doc={doc} onView={() => openPreview(doc)} onDownload={() => handleDownload(doc)} onDelete={() => setPendingDeleteId(doc.id)} />)}</tbody>
+                              </table>
+                            </div>
+                          </div>
+                      }
+                    </div>
+                  );
+                })}
               </div>
             );
           })()}
@@ -1464,6 +1532,83 @@ export const AdvisorDataRoom = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Create Subfolder dialog ── */}
+      <Dialog open={showCreateFolder} onOpenChange={(o) => { if (!o) { setShowCreateFolder(false); setNewFolderName(""); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Subfolder</DialogTitle>
+            <DialogDescription>
+              Create an empty subfolder inside <strong>{folderView}</strong>. You can upload files to it right after.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <input
+              type="text"
+              placeholder="Subfolder name (e.g. Q1 2026)"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newFolderName.trim()) e.currentTarget.form?.requestSubmit();
+              }}
+              className="w-full rounded-md border border-input bg-background text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => { setShowCreateFolder(false); setNewFolderName(""); }}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={!newFolderName.trim() || createFolderMutation.isPending}
+              onClick={async () => {
+                if (!newFolderName.trim() || !clientId || !folderView) return;
+                try {
+                  await createFolderMutation.mutateAsync({ client_id: clientId, category: folderView, name: newFolderName.trim() });
+                  toast(`Subfolder "${newFolderName.trim()}" created`);
+                  setShowCreateFolder(false);
+                  setNewFolderName("");
+                } catch (err) {
+                  toast("Failed to create folder", { description: err instanceof Error ? err.message : undefined });
+                }
+              }}
+            >
+              {createFolderMutation.isPending ? "Creating…" : "Create Folder"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete empty folder confirmation ── */}
+      <AlertDialog
+        open={!!deletingFolderId}
+        onOpenChange={(open) => { if (!open) setDeletingFolderId(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this subfolder?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the empty folder placeholder. Any documents you later assign to this subfolder name will still appear correctly.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!deletingFolderId) return;
+                const stub = folderStubs.find(f => f.id === deletingFolderId);
+                try {
+                  await deleteFolderMutation.mutateAsync({ id: deletingFolderId, client_id: stub?.client_id ?? clientId });
+                  toast("Folder removed");
+                } catch { toast("Failed to remove folder"); }
+                setDeletingFolderId(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Delete confirmation ── */}
       <AlertDialog
