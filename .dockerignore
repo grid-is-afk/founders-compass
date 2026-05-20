@@ -1,0 +1,36 @@
+# Dev tooling & config
+.claude
+.vscode
+.idea
+.DS_Store
+playwright.config.ts
+playwright-fixture.ts
+eslint.config.js
+postcss.config.js
+components.json
+
+# Docs & specs
+docs
+*.md
+!README.md
+reference_docs.txt
+reference_docs_full.txt
+ASSESSMENT_SCORECARD_DESIGN_SPEC.md
+
+# Bun lock files (project uses npm)
+bun.lock
+bun.lockb
+
+# Logs
+*.log
+backfill.log
+
+# Build output & deps (nixpacks handles these)
+dist
+node_modules
+
+# Test & migration scripts (not needed at runtime)
+server/scripts
+server/migrate.ts
+server/create-user.ts
+server/migrations
