@@ -76,6 +76,10 @@ export const tools = [
           enum: ["markdown", "pdf"],
           description: "Output format",
         },
+        subfolder: {
+          type: "string",
+          description: "Optional. Data Room folder to save this report to. Defaults to 'Reports'. Available folders: Reports, Financials, Customer Capital, Legal & Structure, Governance, Meeting Notes, Agreements, Project Management, Liability, Other.",
+        },
       },
       required: ["reportType", "clientName"],
     },
