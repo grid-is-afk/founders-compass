@@ -59,6 +59,9 @@ export async function retrieveChunks(
   const vectorLiteral = `[${embedding.join(",")}]`;
 
   // --- Pass 1: vector similarity search ---
+  // Filter to matching dimension only — old 1024-dim chunks (pre-voyage-4-lite)
+  // cause a Postgres error if compared against a 512-dim query vector.
+  const queryDim = embedding.length;
   const vectorResult = await query(
     `SELECT document_id,
             chunk_text,
@@ -66,9 +69,10 @@ export async function retrieveChunks(
             1 - (embedding <=> $1::vector) AS similarity
      FROM document_chunks
      WHERE client_id = $2
+       AND vector_dims(embedding) = $4
      ORDER BY embedding <=> $1::vector
      LIMIT $3`,
-    [vectorLiteral, clientId, topK]
+    [vectorLiteral, clientId, topK, queryDim]
   );
 
   const vectorChunks = vectorResult.rows as RetrievedChunk[];
