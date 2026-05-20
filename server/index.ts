@@ -72,10 +72,12 @@ const anthropic = new Anthropic({
 async function saveReportToDataRoom(
   clientId: string,
   reportTitle: string,
-  content: string
+  content: string,
+  folder?: string
 ): Promise<void> {
   if (!content.trim()) return;
 
+  const category = folder ?? "Reports";
   const { randomUUID } = await import("crypto");
   const fileName = `${reportTitle.replace(/[^a-zA-Z0-9 _-]/g, "")} — ${new Date().toISOString().slice(0, 10)}.md`;
   const storagePath = `clients/${clientId}/reports/${randomUUID()}.md`;
@@ -97,8 +99,8 @@ async function saveReportToDataRoom(
 
   await query(
     `INSERT INTO documents (client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
-     VALUES ($1, $2, 'Reports', $3, $4, $5, 'document', 'advisor')`,
-    [clientId, fileName, storagePath, sizeLabel, buffer.byteLength]
+     VALUES ($1, $2, $3, $4, $5, $6, 'document', 'advisor')`,
+    [clientId, fileName, category, storagePath, sizeLabel, buffer.byteLength]
   );
 }
 
@@ -276,8 +278,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     let clientDisconnected = false;
     req.on("close", () => { clientDisconnected = true; });
 
-    // Track pending report saves: { clientId, title } set when generate_report fires
-    let pendingReportSave: { savedClientId: string; title: string } | null = null;
+    // Track pending report saves: { clientId, title, folder? } set when generate_report fires
+    let pendingReportSave: { savedClientId: string; title: string; folder?: string } | null = null;
 
     // Tool-use loop: Claude may call tools multiple times before producing final text
     while (true) {
@@ -308,7 +310,7 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
       if (toolUseBlocks.length === 0 || response.stop_reason !== "tool_use") {
         if (pendingReportSave) {
           const fullText = textBlocks.map((b) => b.text).join("\n\n");
-          saveReportToDataRoom(pendingReportSave.savedClientId, pendingReportSave.title, fullText)
+          saveReportToDataRoom(pendingReportSave.savedClientId, pendingReportSave.title, fullText, pendingReportSave.folder)
             .catch((err) => console.error("Report data room save failed:", err));
         }
         break;
@@ -330,8 +332,9 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
           const resolvedTitle = (result.action.reportTitle as string | undefined)
             ?? (result.action.reportType as string | undefined)
             ?? "Report";
+          const resolvedFolder = (result.action.subfolder as string | undefined) ?? undefined;
           if (resolvedClientId) {
-            pendingReportSave = { savedClientId: resolvedClientId, title: resolvedTitle };
+            pendingReportSave = { savedClientId: resolvedClientId, title: resolvedTitle, folder: resolvedFolder };
           }
         }
 
