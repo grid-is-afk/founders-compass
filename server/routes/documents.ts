@@ -387,6 +387,46 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// ── DELETE /api/documents/categories/by-name ─────────────────────────────────
+// Deletes all documents in a custom category and removes any folder stubs for it.
+// Only call for non-core categories — core category guard is enforced client-side.
+router.delete("/categories/by-name", async (req, res) => {
+  const { client_id, category } = req.body as { client_id?: string; category?: string };
+  if (!client_id || !category?.trim()) {
+    return res.status(400).json({ error: "client_id and category are required" });
+  }
+
+  const userId = (req as { user?: { id: string } }).user?.id;
+  if (!userId || !(await verifyClient(client_id, userId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    // Delete all documents in this category from Supabase storage
+    const docsResult = await query(
+      `SELECT file_url FROM documents WHERE client_id = $1 AND category = $2 AND file_url IS NOT NULL AND file_url NOT LIKE '/uploads/%'`,
+      [client_id, category.trim()]
+    );
+    const paths = (docsResult.rows as { file_url: string }[]).map((r) => r.file_url);
+    if (paths.length > 0) {
+      await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+    }
+
+    const deleted = await query(
+      `DELETE FROM documents WHERE client_id = $1 AND category = $2`,
+      [client_id, category.trim()]
+    );
+    await query(
+      `DELETE FROM data_room_folders WHERE client_id = $1 AND category = $2`,
+      [client_id, category.trim()]
+    );
+    return res.json({ ok: true, docsDeleted: deleted.rowCount ?? 0 });
+  } catch (err) {
+    console.error("DELETE /documents/categories/by-name error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── GET /api/documents/folders?client_id=xxx[&category=xxx] ─────────────────
 router.get("/folders", async (req, res) => {
   const { client_id, category } = req.query;

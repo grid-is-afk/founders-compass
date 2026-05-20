@@ -39,6 +39,7 @@ import {
   useCreateFolder,
   useDeleteFolder,
   useDeleteSubfolder,
+  useDeleteCategory,
   type StagedFile,
   type Document,
   type DataRoomFolder,
@@ -375,6 +376,7 @@ export const AdvisorDataRoom = ({
   const createFolderMutation = useCreateFolder();
   const deleteFolderMutation = useDeleteFolder();
   const deleteSubfolderMutation = useDeleteSubfolder();
+  const deleteCategoryMutation = useDeleteCategory();
 
   // ── Upload & staging state ──────────────────────────────────────────────
   const [showUpload, setShowUpload] = useState(false);
@@ -395,6 +397,7 @@ export const AdvisorDataRoom = ({
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [deletingSubfolder, setDeletingSubfolder] = useState<{ category: string; name: string; count: number } | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<{ name: string; count: number } | null>(null);
 
   // ── Dialog state ────────────────────────────────────────────────────────
   const [previewDoc, setPreviewDoc] = useState<{
@@ -1217,14 +1220,29 @@ export const AdvisorDataRoom = ({
             Folders
           </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {Array.from(folderMap.entries()).map(([category, catDocs]) => (
-              <FolderCard
-                key={category}
-                category={category}
-                docs={catDocs}
-                onClick={() => setFolderView(category)}
-              />
-            ))}
+            {Array.from(folderMap.entries()).map(([category, catDocs]) => {
+              const isCoreCategory = (DATA_ROOM_CATEGORIES as readonly string[]).includes(category);
+              return (
+                <div key={category} className="group relative">
+                  <FolderCard
+                    category={category}
+                    docs={catDocs}
+                    onClick={() => setFolderView(category)}
+                  />
+                  {!isCoreCategory && (
+                    <button
+                      className="absolute top-2 right-2 flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-background/90 border border-border text-muted-foreground hover:text-destructive hover:border-destructive/40 opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeletingCategory({ name: category, count: catDocs.length });
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" /> Delete
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {allDocs.length === 0 && (
             <div className="mt-6 flex flex-col items-center justify-center py-12 text-center gap-2">
@@ -1579,6 +1597,44 @@ export const AdvisorDataRoom = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Delete custom category confirmation ── */}
+      <AlertDialog
+        open={!!deletingCategory}
+        onOpenChange={(open) => { if (!open) setDeletingCategory(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{deletingCategory?.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingCategory?.count === 0
+                ? "This folder is empty and will be removed."
+                : `This will permanently delete ${deletingCategory?.count} document${deletingCategory?.count !== 1 ? "s" : ""} inside this folder. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={async () => {
+                if (!deletingCategory) return;
+                const { name, count } = deletingCategory;
+                setDeletingCategory(null);
+                try {
+                  await deleteCategoryMutation.mutateAsync({ client_id: clientId, category: name });
+                  toast(
+                    count > 0
+                      ? `"${name}" deleted — ${count} document${count !== 1 ? "s" : ""} removed`
+                      : `"${name}" deleted`
+                  );
+                } catch { toast("Failed to delete folder"); }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Delete subfolder confirmation ── */}
       <AlertDialog
