@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS deliverables (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id  UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
   title      TEXT NOT NULL,
-  status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'complete')),
+  status     TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'complete', 'ready')),
   engine     TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -11,6 +11,8 @@ import {
   Zap,
   Download,
   FolderOpen,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCopilotContext } from "./CopilotProvider";
@@ -95,6 +97,76 @@ function downloadReport(
   URL.revokeObjectURL(url);
 }
 
+// ── Report card ──────────────────────────────────────────────────────────────
+
+interface ReportCardProps {
+  content: string;
+  reportTitle: string;
+  clientName: string;
+  reportType: string;
+  clientId?: string;
+}
+
+function ReportCard({ content, reportTitle, clientName, reportType, clientId }: ReportCardProps) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mt-1">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5 bg-muted/50 border-b border-border">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-4 h-4 text-primary flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">{reportTitle}</p>
+            {clientName && (
+              <p className="text-[11px] text-muted-foreground truncate">{clientName}</p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+        >
+          {expanded ? (
+            <><ChevronUp className="w-3.5 h-3.5" /> Collapse</>
+          ) : (
+            <><ChevronDown className="w-3.5 h-3.5" /> Expand</>
+          )}
+        </button>
+      </div>
+
+      {/* Body */}
+      {expanded && (
+        <div className="max-h-96 overflow-y-auto px-4 py-3">
+          <div className="prose prose-sm prose-olive max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-a:text-primary prose-code:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:rounded prose-pre:bg-muted prose-pre:border prose-pre:border-border">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
+        </div>
+      )}
+
+      {/* Footer CTAs */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-t border-border">
+        {clientId && (
+          <a
+            href={`/advisor/clients/${clientId}/data-room`}
+            className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary transition-colors"
+          >
+            <FolderOpen className="w-3 h-3" />
+            View in Data Room → Reports
+          </a>
+        )}
+        <button
+          onClick={() => downloadReport(content, clientName, reportType)}
+          className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
+        >
+          <Download className="w-3 h-3" />
+          Download (.md)
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Source citation pills ────────────────────────────────────────────────────
 
 interface Document {
@@ -172,13 +244,36 @@ export default function CopilotMessages() {
 
             {/* Message bubble + action metadata */}
             <div className="flex flex-col gap-2 max-w-[85%]">
-              <div
-                className={cn(
-                  "bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 text-sm border-l-2 border-l-primary",
-                  showCursor && "min-h-[2.5rem]"
-                )}
-              >
-                {showCursor ? (
+              {/* Regular message bubble — hidden when a report card takes over */}
+              {!reportAction && (
+                <div
+                  className={cn(
+                    "bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 text-sm border-l-2 border-l-primary",
+                    showCursor && "min-h-[2.5rem]"
+                  )}
+                >
+                  {showCursor ? (
+                    <div className="flex items-center gap-2 py-1">
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "0ms" }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "150ms" }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "300ms" }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">Quarterback is thinking...</span>
+                    </div>
+                  ) : (
+                    <div className="prose prose-sm prose-olive max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-a:text-primary prose-code:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:rounded prose-pre:bg-muted prose-pre:border prose-pre:border-border">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content || ""}
+                      </ReactMarkdown>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Thinking indicator when streaming a report */}
+              {reportAction && showCursor && (
+                <div className="bg-card border border-border rounded-xl rounded-bl-sm px-4 py-3 text-sm border-l-2 border-l-primary min-h-[2.5rem]">
                   <div className="flex items-center gap-2 py-1">
                     <div className="flex gap-1">
                       <span className="w-2 h-2 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: "0ms" }} />
@@ -187,14 +282,19 @@ export default function CopilotMessages() {
                     </div>
                     <span className="text-xs text-muted-foreground">Quarterback is thinking...</span>
                   </div>
-                ) : (
-                  <div className="prose prose-sm prose-olive max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-a:text-primary prose-code:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:rounded prose-pre:bg-muted prose-pre:border prose-pre:border-border">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content || ""}
-                    </ReactMarkdown>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
+
+              {/* Inline report card — replaces regular bubble for report messages */}
+              {reportAction && msg.content && !showCursor && (
+                <ReportCard
+                  content={msg.content}
+                  reportTitle={(reportAction.reportTitle as string | undefined) ?? (reportAction.reportType as string | undefined) ?? "Report"}
+                  clientName={(reportAction.clientName as string | undefined) ?? ""}
+                  reportType={(reportAction.reportType as string | undefined) ?? "report"}
+                  clientId={reportAction.clientId as string | undefined}
+                />
+              )}
 
               {/* Action badges */}
               {actions.length > 0 && (
@@ -219,34 +319,6 @@ export default function CopilotMessages() {
                       <span className="max-w-[160px] truncate">{src.name}</span>
                     </button>
                   ))}
-                </div>
-              )}
-
-              {/* Report saved — link to Data Room + fallback download */}
-              {reportAction && msg.content && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {(reportAction.clientId as string | undefined) && (
-                    <a
-                      href={`/advisor/clients/${reportAction.clientId as string}/data-room`}
-                      className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary transition-colors"
-                    >
-                      <FolderOpen className="w-3 h-3" />
-                      View in Data Room → Reports
-                    </a>
-                  )}
-                  <button
-                    onClick={() =>
-                      downloadReport(
-                        msg.content,
-                        (reportAction.clientName as string) ?? "Client",
-                        (reportAction.reportType as string) ?? "report"
-                      )
-                    }
-                    className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
-                  >
-                    <Download className="w-3 h-3" />
-                    Download (.md)
-                  </button>
                 </div>
               )}
             </div>
