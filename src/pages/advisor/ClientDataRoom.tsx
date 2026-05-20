@@ -38,6 +38,7 @@ import {
   useClientFolders,
   useCreateFolder,
   useDeleteFolder,
+  useDeleteSubfolder,
   type StagedFile,
   type Document,
   type DataRoomFolder,
@@ -373,6 +374,7 @@ export const AdvisorDataRoom = ({
   const { data: folderStubs = [] } = useClientFolders(clientId) as { data: DataRoomFolder[] };
   const createFolderMutation = useCreateFolder();
   const deleteFolderMutation = useDeleteFolder();
+  const deleteSubfolderMutation = useDeleteSubfolder();
 
   // ── Upload & staging state ──────────────────────────────────────────────
   const [showUpload, setShowUpload] = useState(false);
@@ -392,7 +394,7 @@ export const AdvisorDataRoom = ({
   // ── Folder dialog state ─────────────────────────────────────────────────
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [deletingSubfolder, setDeletingSubfolder] = useState<{ category: string; name: string; count: number } | null>(null);
 
   // ── Dialog state ────────────────────────────────────────────────────────
   const [previewDoc, setPreviewDoc] = useState<{
@@ -1353,11 +1355,11 @@ export const AdvisorDataRoom = ({
                       </div>
                 )}
                 {Array.from(subMap.entries()).map(([sf, sfDocs]) => {
-                  const stub = folderStubs.find(f => f.category === folderView && f.name === sf);
                   const isEmpty = sfDocs.length === 0;
+                  const isCoreFolder = (DATA_ROOM_CATEGORIES as readonly string[]).includes(sf);
                   return (
                     <div key={sf}>
-                      <div className="flex items-center gap-2 mb-3">
+                      <div className="group flex items-center gap-2 mb-3">
                         <FolderOpen className="w-4 h-4 text-muted-foreground" />
                         <span className="text-sm font-semibold text-foreground">{sf}</span>
                         <span className="text-xs text-muted-foreground">({sfDocs.length} doc{sfDocs.length !== 1 ? "s" : ""})</span>
@@ -1368,10 +1370,10 @@ export const AdvisorDataRoom = ({
                           >
                             <Upload className="w-3 h-3" /> Upload here
                           </button>
-                          {stub && isEmpty && (
+                          {!isCoreFolder && (
                             <button
-                              className="flex items-center gap-1 text-xs text-destructive hover:underline"
-                              onClick={() => setDeletingFolderId(stub.id)}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-all"
+                              onClick={() => setDeletingSubfolder({ category: folderView!, name: sf, count: sfDocs.length })}
                             >
                               <Trash2 className="w-3 h-3" /> Delete folder
                             </button>
@@ -1578,16 +1580,18 @@ export const AdvisorDataRoom = ({
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete empty folder confirmation ── */}
+      {/* ── Delete subfolder confirmation ── */}
       <AlertDialog
-        open={!!deletingFolderId}
-        onOpenChange={(open) => { if (!open) setDeletingFolderId(null); }}
+        open={!!deletingSubfolder}
+        onOpenChange={(open) => { if (!open) setDeletingSubfolder(null); }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete this subfolder?</AlertDialogTitle>
+            <AlertDialogTitle>Delete "{deletingSubfolder?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the empty folder placeholder. Any documents you later assign to this subfolder name will still appear correctly.
+              {deletingSubfolder?.count === 0
+                ? "This folder is empty and will be removed."
+                : `This will move ${deletingSubfolder?.count} document${deletingSubfolder?.count !== 1 ? "s" : ""} back to the ${deletingSubfolder?.category} root.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1595,13 +1599,17 @@ export const AdvisorDataRoom = ({
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={async () => {
-                if (!deletingFolderId) return;
-                const stub = folderStubs.find(f => f.id === deletingFolderId);
+                if (!deletingSubfolder) return;
+                const { category, name, count } = deletingSubfolder;
+                setDeletingSubfolder(null);
                 try {
-                  await deleteFolderMutation.mutateAsync({ id: deletingFolderId, client_id: stub?.client_id ?? clientId });
-                  toast("Folder removed");
-                } catch { toast("Failed to remove folder"); }
-                setDeletingFolderId(null);
+                  await deleteSubfolderMutation.mutateAsync({ client_id: clientId, category, name });
+                  toast(
+                    count > 0
+                      ? `Subfolder deleted — ${count} doc${count !== 1 ? "s" : ""} moved to ${category}`
+                      : "Subfolder deleted"
+                  );
+                } catch { toast("Failed to delete subfolder"); }
               }}
             >
               Delete
