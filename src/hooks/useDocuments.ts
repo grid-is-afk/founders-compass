@@ -229,6 +229,26 @@ export function useDeleteFolder() {
   });
 }
 
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ client_id, category }: { client_id: string; category: string }) => {
+      const res = await apiFetch("/documents/categories/by-name", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id, category }),
+      });
+      if (!res.ok) throw new Error("Failed to delete category");
+      return res.json() as Promise<{ ok: boolean; docsDeleted: number }>;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["documents", vars.client_id] });
+      qc.invalidateQueries({ queryKey: ["documents-storage", vars.client_id] });
+      qc.invalidateQueries({ queryKey: ["data-room-folders", vars.client_id] });
+    },
+  });
+}
+
 export function useDeleteSubfolder() {
   const qc = useQueryClient();
   return useMutation({
