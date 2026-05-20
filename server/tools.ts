@@ -258,15 +258,15 @@ export async function executeTool(
         }
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. The report is ready for review and download.`,
-          action: { type: "report_generated", ...input, clientId },
+          result: `Report "${reportTitle}" generated for ${input.clientName}. The report is being saved to the client's Data Room under Reports.`,
+          action: { type: "report_generated", ...input, clientId, reportTitle },
         };
       } catch (err) {
         console.error("generate_report DB error:", err);
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. (Note: deliverable record not saved.)`,
-          action: { type: "report_generated", ...input },
+          result: `Report "${reportTitle}" generated for ${input.clientName}. The report content is in this chat response.`,
+          action: { type: "report_generated", ...input, reportTitle },
         };
       }
     }

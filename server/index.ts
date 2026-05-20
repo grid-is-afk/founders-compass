@@ -10,6 +10,7 @@ import { query } from "./db.js";
 import dotenv from "dotenv";
 
 import { authMiddleware } from "./middleware/auth.js";
+import { supabase, STORAGE_BUCKET } from "./lib/supabase.js";
 import { buildClientStructuredContext } from "./platformContext.js";
 import { retrieveChunks } from "./lib/retrieval.js";
 import { fetchClientVisualDocs } from "./lib/vision.js";
@@ -67,6 +68,39 @@ app.use(express.json());
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+async function saveReportToDataRoom(
+  clientId: string,
+  reportTitle: string,
+  content: string
+): Promise<void> {
+  if (!content.trim()) return;
+
+  const { randomUUID } = await import("crypto");
+  const fileName = `${reportTitle.replace(/[^a-zA-Z0-9 _-]/g, "")} — ${new Date().toISOString().slice(0, 10)}.md`;
+  const storagePath = `clients/${clientId}/reports/${randomUUID()}.md`;
+  const buffer = Buffer.from(content, "utf-8");
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, buffer, { contentType: "text/markdown", upsert: false });
+
+  if (uploadError) {
+    console.error("Report upload to Supabase failed:", uploadError.message);
+    return;
+  }
+
+  const sizeLabel =
+    buffer.byteLength < 1024
+      ? `${buffer.byteLength} B`
+      : `${(buffer.byteLength / 1024).toFixed(0)} KB`;
+
+  await query(
+    `INSERT INTO documents (client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role)
+     VALUES ($1, $2, 'Reports', $3, $4, $5, 'document', 'advisor')`,
+    [clientId, fileName, storagePath, sizeLabel, buffer.byteLength]
+  );
+}
 
 // ============================================================
 // Public routes
@@ -242,6 +276,9 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     let clientDisconnected = false;
     req.on("close", () => { clientDisconnected = true; });
 
+    // Track pending report saves: { clientId, title } set when generate_report fires
+    let pendingReportSave: { savedClientId: string; title: string } | null = null;
+
     // Tool-use loop: Claude may call tools multiple times before producing final text
     while (true) {
       if (clientDisconnected) break;
@@ -267,8 +304,13 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
         }
       }
 
-      // No tool calls — conversation is done
+      // No tool calls — conversation is done; save report content if pending
       if (toolUseBlocks.length === 0 || response.stop_reason !== "tool_use") {
+        if (pendingReportSave) {
+          const fullText = textBlocks.map((b) => b.text).join("\n\n");
+          saveReportToDataRoom(pendingReportSave.savedClientId, pendingReportSave.title, fullText)
+            .catch((err) => console.error("Report data room save failed:", err));
+        }
         break;
       }
 
@@ -281,6 +323,17 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
           req.user!.id,
           clientId as string | undefined
         );
+
+        // Track generate_report calls so we can save the follow-up content
+        if (toolBlock.name === "generate_report" && result.success && result.action) {
+          const resolvedClientId = (result.action.clientId as string | undefined) ?? (clientId as string | undefined);
+          const resolvedTitle = (result.action.reportTitle as string | undefined)
+            ?? (result.action.reportType as string | undefined)
+            ?? "Report";
+          if (resolvedClientId) {
+            pendingReportSave = { savedClientId: resolvedClientId, title: resolvedTitle };
+          }
+        }
 
         // Notify frontend so it can show an action badge / toast
         res.write(

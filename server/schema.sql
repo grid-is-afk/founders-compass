@@ -642,3 +642,16 @@ ALTER TABLE documents ADD COLUMN IF NOT EXISTS subfolder TEXT;
 -- ============================================================
 
 ALTER TABLE prospects ADD COLUMN IF NOT EXISTS nurture_call_date TIMESTAMPTZ;
+
+-- ============================================================
+-- Data Room Folders — explicit folder creation without requiring a document
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS data_room_folders (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  category    TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (client_id, category, name)
+);

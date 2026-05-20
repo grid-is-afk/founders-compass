@@ -171,6 +171,64 @@ export function useUpdateDocument() {
   });
 }
 
+// ── Folder hooks ─────────────────────────────────────────────────────────────
+
+export interface DataRoomFolder {
+  id: string;
+  client_id: string;
+  category: string;
+  name: string;
+  created_at: string;
+}
+
+export function useClientFolders(clientId: string, category?: string) {
+  return useQuery<DataRoomFolder[]>({
+    queryKey: ["data-room-folders", clientId, category ?? "all"],
+    queryFn: async () => {
+      const url = `/documents/folders?client_id=${clientId}${category ? `&category=${encodeURIComponent(category)}` : ""}`;
+      const res = await apiFetch(url);
+      if (!res.ok) throw new Error("Failed to load folders");
+      return res.json();
+    },
+    enabled: !!clientId,
+  });
+}
+
+export function useCreateFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ client_id, category, name }: { client_id: string; category: string; name: string }) => {
+      const res = await apiFetch("/documents/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id, category, name }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? "Failed to create folder");
+      }
+      return res.json() as Promise<DataRoomFolder>;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["data-room-folders", vars.client_id] });
+    },
+  });
+}
+
+export function useDeleteFolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, client_id }: { id: string; client_id: string }) => {
+      const res = await apiFetch(`/documents/folders/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete folder");
+      return { id, client_id };
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["data-room-folders", vars.client_id] });
+    },
+  });
+}
+
 // ── Prospect document hooks ───────────────────────────────────────────────────
 
 export function useProspectDocuments(prospectId: string | null) {

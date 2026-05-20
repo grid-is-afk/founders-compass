@@ -387,4 +387,85 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// ── GET /api/documents/folders?client_id=xxx[&category=xxx] ─────────────────
+router.get("/folders", async (req, res) => {
+  const { client_id, category } = req.query;
+  if (!client_id) return res.status(400).json({ error: "client_id required" });
+
+  const userId = (req as { user?: { id: string } }).user?.id;
+  if (!userId || !(await verifyClient(client_id as string, userId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const params: unknown[] = [client_id];
+    const catClause = category ? " AND category = $2" : "";
+    if (category) params.push(category);
+    const result = await query(
+      `SELECT id, client_id, category, name, created_at FROM data_room_folders WHERE client_id = $1${catClause} ORDER BY category, name`,
+      params
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /documents/folders error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/documents/folders ─────────────────────────────────────────────
+router.post("/folders", async (req, res) => {
+  const { client_id, category, name } = req.body as { client_id?: string; category?: string; name?: string };
+  if (!client_id || !category || !name?.trim()) {
+    return res.status(400).json({ error: "client_id, category, and name are required" });
+  }
+
+  const userId = (req as { user?: { id: string } }).user?.id;
+  if (!userId || !(await verifyClient(client_id, userId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const result = await query(
+      `INSERT INTO data_room_folders (client_id, category, name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (client_id, category, name) DO NOTHING
+       RETURNING *`,
+      [client_id, category, name.trim()]
+    );
+    if (result.rows.length === 0) {
+      const existing = await query(
+        `SELECT * FROM data_room_folders WHERE client_id = $1 AND category = $2 AND name = $3`,
+        [client_id, category, name.trim()]
+      );
+      return res.json(existing.rows[0]);
+    }
+    return res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("POST /documents/folders error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── DELETE /api/documents/folders/:id ────────────────────────────────────────
+router.delete("/folders/:id", async (req, res) => {
+  const userId = (req as { user?: { id: string } }).user?.id;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  try {
+    const folder = await query(
+      `SELECT client_id FROM data_room_folders WHERE id = $1`,
+      [req.params.id]
+    );
+    if (folder.rows.length === 0) return res.status(404).json({ error: "Not found" });
+    if (!(await verifyClient(folder.rows[0].client_id, userId))) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    await query("DELETE FROM data_room_folders WHERE id = $1", [req.params.id]);
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /documents/folders/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

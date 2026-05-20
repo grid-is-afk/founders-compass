@@ -10,6 +10,7 @@ import {
   Calendar,
   Zap,
   Download,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCopilotContext } from "./CopilotProvider";
@@ -221,21 +222,32 @@ export default function CopilotMessages() {
                 </div>
               )}
 
-              {/* Download button for generated reports */}
+              {/* Report saved — link to Data Room + fallback download */}
               {reportAction && msg.content && (
-                <button
-                  onClick={() =>
-                    downloadReport(
-                      msg.content,
-                      (reportAction.clientName as string) ?? "Client",
-                      (reportAction.reportType as string) ?? "report"
-                    )
-                  }
-                  className="self-start flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
-                >
-                  <Download className="w-3 h-3" />
-                  Download Report (.md)
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {(reportAction.clientId as string | undefined) && (
+                    <a
+                      href={`/advisor/clients/${reportAction.clientId as string}/data-room`}
+                      className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary transition-colors"
+                    >
+                      <FolderOpen className="w-3 h-3" />
+                      View in Data Room → Reports
+                    </a>
+                  )}
+                  <button
+                    onClick={() =>
+                      downloadReport(
+                        msg.content,
+                        (reportAction.clientName as string) ?? "Client",
+                        (reportAction.reportType as string) ?? "report"
+                      )
+                    }
+                    className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    Download (.md)
+                  </button>
+                </div>
               )}
             </div>
           </div>
