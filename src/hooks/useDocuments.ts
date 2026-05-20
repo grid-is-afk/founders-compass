@@ -229,6 +229,25 @@ export function useDeleteFolder() {
   });
 }
 
+export function useDeleteSubfolder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ client_id, category, name }: { client_id: string; category: string; name: string }) => {
+      const res = await apiFetch("/documents/folders/by-name", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id, category, name }),
+      });
+      if (!res.ok) throw new Error("Failed to delete subfolder");
+      return res.json() as Promise<{ ok: boolean; docsCleared: number }>;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["data-room-folders", vars.client_id] });
+      qc.invalidateQueries({ queryKey: ["documents", vars.client_id] });
+    },
+  });
+}
+
 // ── Prospect document hooks ───────────────────────────────────────────────────
 
 export function useProspectDocuments(prospectId: string | null) {

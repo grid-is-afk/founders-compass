@@ -446,6 +446,38 @@ router.post("/folders", async (req, res) => {
   }
 });
 
+// ── DELETE /api/documents/folders/by-name ────────────────────────────────────
+// Deletes any subfolder (stub or document-derived) by name.
+// Clears the subfolder tag from all matching documents (moves them to category root)
+// and removes the stub record if one exists.
+router.delete("/folders/by-name", async (req, res) => {
+  const { client_id, category, name } = req.body as { client_id?: string; category?: string; name?: string };
+  if (!client_id || !category || !name?.trim()) {
+    return res.status(400).json({ error: "client_id, category, and name are required" });
+  }
+
+  const userId = (req as { user?: { id: string } }).user?.id;
+  if (!userId || !(await verifyClient(client_id, userId))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const cleared = await query(
+      `UPDATE documents SET subfolder = NULL
+       WHERE client_id = $1 AND category = $2 AND subfolder = $3`,
+      [client_id, category, name.trim()]
+    );
+    await query(
+      `DELETE FROM data_room_folders WHERE client_id = $1 AND category = $2 AND name = $3`,
+      [client_id, category, name.trim()]
+    );
+    return res.json({ ok: true, docsCleared: cleared.rowCount ?? 0 });
+  } catch (err) {
+    console.error("DELETE /documents/folders/by-name error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── DELETE /api/documents/folders/:id ────────────────────────────────────────
 router.delete("/folders/:id", async (req, res) => {
   const userId = (req as { user?: { id: string } }).user?.id;
