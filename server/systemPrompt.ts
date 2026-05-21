@@ -1,4 +1,29 @@
 import { buildPlatformContext } from "./platformContext.js";
+import { TFO_METHODOLOGY } from "./methodology/tfo-methodology.js";
+
+/**
+ * Builds a concise methodology reference block for the system prompt.
+ * Lists all three phases with their quarter mappings, objectives, and required activities.
+ * This is static knowledge — client-specific phase context is injected separately via RAG.
+ */
+function buildMethodologyBlock(): string {
+  const phaseLines = TFO_METHODOLOGY.map((phase) => {
+    const quarters = phase.quarterMapping.map((q) => `Q${q}`).join("/");
+    const required = phase.activities
+      .filter((a) => a.isRequired)
+      .map((a) => a.name)
+      .join(", ");
+    return `- ${phase.name} (${quarters}): ${phase.objective} Required activities: ${required}.`;
+  }).join("\n");
+
+  return `<tfo_methodology>
+The TFO engagement methodology has three phases: Discover → Protect/Grow/Prove → Align.
+
+${phaseLines}
+
+When a client's current quarter is known, tailor your analysis and recommendations to the activities and success criteria for that phase. Methodology reference documents are available in your retrieved context and will be labeled source: 'methodology'.
+</tfo_methodology>`;
+}
 
 export async function buildSystemPrompt(advisorId: string): Promise<string> {
   const context = await buildPlatformContext(advisorId);
@@ -97,6 +122,8 @@ Enterprise Value = Earnings × Multiple. Most founders chase earnings. The Found
 
 ## CURRENT PLATFORM DATA
 ${context}
+
+${buildMethodologyBlock()}
 
 ## BEHAVIORAL RULES
 - Always cite specific data points, scores, and client names when making claims.
