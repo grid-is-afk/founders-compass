@@ -65,6 +65,12 @@ const AdvisorDashboard = () => {
         </button>
       </div>
 
+      {/* Portfolio Intelligence — top of dashboard */}
+      <div>
+        <h2 className="text-lg font-display font-semibold text-foreground mb-4">Portfolio Intelligence</h2>
+        <IntelligencePanel />
+      </div>
+
       {/* Client Journey + Recent Activity */}
       <div className="grid grid-cols-3 gap-6">
         {/* Client table — 2/3 */}
@@ -214,12 +220,6 @@ const AdvisorDashboard = () => {
             View all {(prospects as any[]).length} prospects →
           </button>
         )}
-      </div>
-
-      {/* Intelligence Panel — Priority Actions, Risk Alerts, Data Gaps, Deliverables, Insurance */}
-      <div>
-        <h2 className="text-lg font-display font-semibold text-foreground mb-4">Portfolio Intelligence</h2>
-        <IntelligencePanel />
       </div>
 
       {/* All Tasks — cross-client */}

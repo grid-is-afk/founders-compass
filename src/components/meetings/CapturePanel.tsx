@@ -146,6 +146,11 @@ export default function CapturePanel({ meeting, clientId }: Props) {
 
   // ── Already processed view ────────────────────────────────────────────────
   if (alreadyProcessed && !captureResult) {
+    const decisions = Array.isArray(meeting.decisions) ? meeting.decisions as Array<{ text?: string; title?: string; type?: string }> : [];
+    const hasDecisions = decisions.length > 0;
+    const hasCaptureNotes = !!(meeting as unknown as { capture_notes?: string }).capture_notes?.trim();
+    const captureNotes = (meeting as unknown as { capture_notes?: string }).capture_notes ?? "";
+
     return (
       <div className="p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm text-green-700">
@@ -155,20 +160,38 @@ export default function CapturePanel({ meeting, clientId }: Props) {
             · {new Date(meeting.processed_at!).toLocaleDateString()}
           </span>
         </div>
-        {Array.isArray(meeting.decisions) && meeting.decisions.length > 0 && (
+
+        {/* Capture notes fallback — always show if present */}
+        {hasCaptureNotes && (
+          <div className="rounded-md bg-muted/40 px-3 py-2 space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notes</p>
+            <p className="text-sm text-foreground whitespace-pre-wrap">{captureNotes}</p>
+          </div>
+        )}
+
+        {/* Structured decisions if available */}
+        {hasDecisions && (
           <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recorded</p>
-            {(meeting.decisions as Array<{ text: string; type?: string }>).map((d, i) => (
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recorded Items</p>
+            {decisions.map((d, i) => (
               <div key={i} className="text-sm text-foreground flex items-start gap-2">
                 {d.type === "open_question"
                   ? <AlertCircle className="w-3.5 h-3.5 text-orange-500 mt-0.5 flex-shrink-0" />
                   : <CheckCheck className="w-3.5 h-3.5 text-green-600 mt-0.5 flex-shrink-0" />
                 }
-                {d.text}
+                <span>{d.text ?? d.title ?? JSON.stringify(d)}</span>
               </div>
             ))}
           </div>
         )}
+
+        {/* Fallback when nothing is available */}
+        {!hasDecisions && !hasCaptureNotes && (
+          <p className="text-sm text-muted-foreground italic">
+            No notes or structured decisions were recorded for this meeting.
+          </p>
+        )}
+
         <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => setCaptureResult(null)}>
           <Sparkles className="w-3.5 h-3.5" />
           Re-capture

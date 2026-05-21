@@ -7,6 +7,8 @@ import { SixKeysScoreGrid } from "@/components/clients/dashboard/SixKeysScoreGri
 import { CapitalOptionalityPanel } from "@/components/clients/dashboard/CapitalOptionalityPanel";
 import { AssessmentHistoryWidget } from "@/components/clients/AssessmentHistoryWidget";
 import { useClientTasks } from "@/hooks/useTasks";
+import { useClientRiskAlerts, useRunRiskScan } from "@/hooks/useRiskAlerts";
+import { AlertCircle, AlertTriangle, Info, ScanSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +91,71 @@ function PriorityActionsPanel({ clientId }: { clientId: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Risk Alerts Widget
+// ---------------------------------------------------------------------------
+
+const SEVERITY_ICON = {
+  critical: <AlertCircle className="w-3.5 h-3.5 text-destructive flex-shrink-0 mt-0.5" />,
+  warning: <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />,
+  info: <Info className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />,
+};
+
+const SEVERITY_STYLE = {
+  critical: "border-destructive/20 bg-destructive/5",
+  warning: "border-amber-400/20 bg-amber-400/5",
+  info: "border-blue-400/20 bg-blue-400/5",
+};
+
+function RiskAlertsWidget({ clientId }: { clientId: string }) {
+  const { data: rawAlerts = [] } = useClientRiskAlerts(clientId);
+  const { mutate: runScan, isPending: scanning } = useRunRiskScan(clientId);
+
+  const alerts = (rawAlerts as Array<{ id: string; severity: string; title: string; detail: string | null }>)
+    .map((a) => ({ ...a, severity: (a.severity ?? "info") as "critical" | "warning" | "info" }));
+
+  return (
+    <div className="bg-card rounded-xl border border-border p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">Risk Alerts</h3>
+        <button
+          onClick={() => runScan()}
+          disabled={scanning}
+          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        >
+          <ScanSearch className="w-3.5 h-3.5" />
+          {scanning ? "Scanning..." : "Scan"}
+        </button>
+      </div>
+      {alerts.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No risk alerts. Run a scan to check for issues.</p>
+      ) : (
+        <div className="space-y-2">
+          {alerts.slice(0, 5).map((alert) => (
+            <div key={alert.id} className={cn("p-2.5 rounded-md border text-xs", SEVERITY_STYLE[alert.severity])}>
+              <div className="flex items-start gap-2">
+                {SEVERITY_ICON[alert.severity]}
+                <div>
+                  <p className="font-medium text-foreground leading-snug">{alert.title}</p>
+                  {alert.detail && !alert.detail.startsWith("[auto]") && (
+                    <p className="text-muted-foreground mt-0.5">{alert.detail}</p>
+                  )}
+                  {alert.detail?.startsWith("[auto]") && (
+                    <p className="text-muted-foreground mt-0.5">{alert.detail.replace("[auto]", "").trim()}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+          {alerts.length > 5 && (
+            <p className="text-xs text-muted-foreground text-center">+{alerts.length - 5} more alerts</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -116,6 +183,8 @@ export default function ClientDashboardTab() {
         </div>
 
         <PriorityActionsPanel clientId={client.id} />
+
+        <RiskAlertsWidget clientId={client.id} />
 
       </div>
 
