@@ -29,23 +29,23 @@ export interface InsuranceItem {
   client_name: string;
 }
 
-export function usePriorityActions() {
+export function usePriorityActions(clientId?: string) {
   return useQuery<PriorityAction[]>({
-    queryKey: ["dashboard-priority-actions"],
-    queryFn: () => api.get("/dashboard/priority-actions"),
+    queryKey: ["dashboard-priority-actions", clientId ?? "all"],
+    queryFn: () => api.get(clientId ? `/dashboard/priority-actions?client_id=${clientId}` : "/dashboard/priority-actions"),
   });
 }
 
-export function useDataGaps() {
+export function useDataGaps(clientId?: string) {
   return useQuery<DataGap[]>({
-    queryKey: ["dashboard-data-gaps"],
-    queryFn: () => api.get("/dashboard/data-gaps"),
+    queryKey: ["dashboard-data-gaps", clientId ?? "all"],
+    queryFn: () => api.get(clientId ? `/dashboard/data-gaps?client_id=${clientId}` : "/dashboard/data-gaps"),
   });
 }
 
-export function useDashboardInsurance() {
+export function useDashboardInsurance(clientId?: string) {
   return useQuery<InsuranceItem[]>({
-    queryKey: ["dashboard-insurance"],
-    queryFn: () => api.get("/dashboard/insurance"),
+    queryKey: ["dashboard-insurance", clientId ?? "all"],
+    queryFn: () => api.get(clientId ? `/dashboard/insurance?client_id=${clientId}` : "/dashboard/insurance"),
   });
 }

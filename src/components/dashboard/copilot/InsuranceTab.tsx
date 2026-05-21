@@ -17,9 +17,9 @@ const statusIcon: Record<string, React.ReactNode> = {
   pending: <Shield className="w-3.5 h-3.5" />,
 };
 
-const InsuranceTab = () => {
+const InsuranceTab = ({ clientId }: { clientId?: string }) => {
   const navigate = useNavigate();
-  const { data: items = [], isLoading } = useDashboardInsurance();
+  const { data: items = [], isLoading } = useDashboardInsurance(clientId);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground text-center py-6">Loading...</p>;

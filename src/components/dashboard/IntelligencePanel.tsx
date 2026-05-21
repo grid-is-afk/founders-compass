@@ -10,13 +10,14 @@ import DataGapsTab from "./copilot/DataGapsTab";
 import DeliverablesTab from "./copilot/DeliverablesTab";
 import InsuranceTab from "./copilot/InsuranceTab";
 
-const IntelligencePanel = () => {
+const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
   const { selectedClientId } = useClientContext();
-  const { data: rawAlerts = [] } = useClientRiskAlerts(selectedClientId);
-  const { data: rawDeliverables = [] } = useClientDeliverables(selectedClientId);
-  const { data: priorityActions = [] } = usePriorityActions();
-  const { data: dataGaps = [] } = useDataGaps();
-  const { data: insuranceItems = [] } = useDashboardInsurance();
+  const effectiveClientId = clientId ?? selectedClientId;
+  const { data: rawAlerts = [] } = useClientRiskAlerts(effectiveClientId);
+  const { data: rawDeliverables = [] } = useClientDeliverables(effectiveClientId);
+  const { data: priorityActions = [] } = usePriorityActions(clientId);
+  const { data: dataGaps = [] } = useDataGaps(clientId);
+  const { data: insuranceItems = [] } = useDashboardInsurance(clientId);
 
   const criticalCount = (rawAlerts as Array<{ severity: string }>).filter((r) => r.severity === "critical").length;
   const deliverablesCount = (rawDeliverables as unknown[]).length;
@@ -69,7 +70,7 @@ const IntelligencePanel = () => {
 
         <TabsContent value="actions">
           <div className="max-h-[400px] overflow-y-auto">
-            <PriorityActionsTab />
+            <PriorityActionsTab clientId={clientId} />
           </div>
         </TabsContent>
 
@@ -81,7 +82,7 @@ const IntelligencePanel = () => {
 
         <TabsContent value="gaps">
           <div className="max-h-[400px] overflow-y-auto">
-            <DataGapsTab />
+            <DataGapsTab clientId={clientId} />
           </div>
         </TabsContent>
 
@@ -93,7 +94,7 @@ const IntelligencePanel = () => {
 
         <TabsContent value="insurance">
           <div className="max-h-[400px] overflow-y-auto">
-            <InsuranceTab />
+            <InsuranceTab clientId={clientId} />
           </div>
         </TabsContent>
       </Tabs>

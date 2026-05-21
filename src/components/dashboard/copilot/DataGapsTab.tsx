@@ -2,9 +2,9 @@ import { useNavigate } from "react-router-dom";
 import { Search } from "lucide-react";
 import { useDataGaps } from "@/hooks/useDashboardIntelligence";
 
-const DataGapsTab = () => {
+const DataGapsTab = ({ clientId }: { clientId?: string }) => {
   const navigate = useNavigate();
-  const { data: gaps = [], isLoading } = useDataGaps();
+  const { data: gaps = [], isLoading } = useDataGaps(clientId);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground text-center py-6">Loading...</p>;

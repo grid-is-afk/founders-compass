@@ -15,9 +15,9 @@ const severityStyle = {
   info: "border-blue-400/20 bg-blue-400/5",
 };
 
-const PriorityActionsTab = () => {
+const PriorityActionsTab = ({ clientId }: { clientId?: string }) => {
   const navigate = useNavigate();
-  const { data: actions = [], isLoading } = usePriorityActions();
+  const { data: actions = [], isLoading } = usePriorityActions(clientId);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground text-center py-6">Loading...</p>;

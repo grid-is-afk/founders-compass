@@ -128,10 +128,16 @@ router.get("/", async (req, res) => {
 router.get("/priority-actions", async (req, res) => {
   const advisorId = req.user!.id;
   const isTeamMember = req.user!.role !== "client";
+  const clientId = req.query.client_id as string | undefined;
 
   try {
-    const clientFilter = isTeamMember ? "" : "AND c.advisor_id = $1";
     const params: unknown[] = isTeamMember ? [] : [advisorId];
+    let advisorFilter = isTeamMember ? "" : "AND c.advisor_id = $1";
+
+    if (clientId) {
+      params.push(clientId);
+      advisorFilter += ` AND c.id = $${params.length}`;
+    }
 
     // Overdue tasks (due_date in the past, not complete)
     const overdueResult = await query(
@@ -143,7 +149,7 @@ router.get("/priority-actions", async (req, res) => {
        WHERE t.due_date IS NOT NULL
          AND t.due_date < NOW()
          AND t.status NOT IN ('complete', 'done', 'skipped')
-         ${clientFilter}
+         ${advisorFilter}
        ORDER BY t.due_date ASC
        LIMIT 20`,
       params
@@ -155,7 +161,7 @@ router.get("/priority-actions", async (req, res) => {
               MAX(m.date) AS last_meeting
        FROM clients c
        LEFT JOIN meetings m ON m.client_id = c.id
-       WHERE 1=1 ${clientFilter}
+       WHERE 1=1 ${advisorFilter}
        GROUP BY c.id, c.name
        HAVING MAX(m.date) < NOW() - INTERVAL '30 days' OR MAX(m.date) IS NULL
        ORDER BY last_meeting ASC NULLS FIRST
@@ -211,13 +217,25 @@ router.get("/priority-actions", async (req, res) => {
 router.get("/data-gaps", async (req, res) => {
   const advisorId = req.user!.id;
   const isTeamMember = req.user!.role !== "client";
+  const clientId = req.query.client_id as string | undefined;
 
   try {
-    const clientFilter = isTeamMember ? "" : "WHERE c.advisor_id = $1";
-    const params: unknown[] = isTeamMember ? [] : [advisorId];
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (!isTeamMember) {
+      params.push(advisorId);
+      conditions.push(`c.advisor_id = $${params.length}`);
+    }
+    if (clientId) {
+      params.push(clientId);
+      conditions.push(`c.id = $${params.length}`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const clientsResult = await query(
-      `SELECT c.id, c.name FROM clients c ${clientFilter} ORDER BY c.name`,
+      `SELECT c.id, c.name FROM clients c ${whereClause} ORDER BY c.name`,
       params
     );
 
@@ -262,17 +280,23 @@ router.get("/data-gaps", async (req, res) => {
 router.get("/insurance", async (req, res) => {
   const advisorId = req.user!.id;
   const isTeamMember = req.user!.role !== "client";
+  const clientId = req.query.client_id as string | undefined;
 
   try {
-    const clientFilter = isTeamMember ? "" : "AND c.advisor_id = $1";
     const params: unknown[] = isTeamMember ? [] : [advisorId];
+    let advisorFilter = isTeamMember ? "" : "AND c.advisor_id = $1";
+
+    if (clientId) {
+      params.push(clientId);
+      advisorFilter += ` AND c.id = $${params.length}`;
+    }
 
     const result = await query(
       `SELECT pi.id, pi.category, pi.label, pi.status, pi.risk, pi.recommendation,
               c.id AS client_id, c.name AS client_name
        FROM protection_items pi
        JOIN clients c ON c.id = pi.client_id
-       WHERE 1=1 ${clientFilter}
+       WHERE 1=1 ${advisorFilter}
        ORDER BY c.name, pi.category, pi.label`,
       params
     );
