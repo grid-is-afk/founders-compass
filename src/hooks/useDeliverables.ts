@@ -37,3 +37,13 @@ export function useDeleteDeliverable() {
       qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] }),
   });
 }
+
+export function useGenerateQuarterlyReview() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { clientId: string }) =>
+      api.post("/deliverables/generate-quarterly-review", data),
+    onSuccess: (_, vars) =>
+      qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] }),
+  });
+}

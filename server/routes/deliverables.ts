@@ -1,10 +1,13 @@
 import { Router } from "express";
+import Anthropic from "@anthropic-ai/sdk";
 import { query } from "../db.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
+import { tools, executeTool } from "../tools.js";
+import { saveReportToDataRoom } from "../lib/saveReport.js";
 
 const router = Router();
 
-const ALLOWED_COLUMNS = new Set(["title", "status", "engine"]);
+const ALLOWED_COLUMNS = new Set(["title", "status", "engine", "review_status"]);
 
 const verifyClient = verifyClientAccess;
 
@@ -52,6 +55,105 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("POST /deliverables error:", err);
     return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/deliverables/generate-quarterly-review
+router.post("/generate-quarterly-review", async (req, res) => {
+  const { clientId } = req.body;
+  if (!clientId) {
+    return res.status(400).json({ error: "clientId required" });
+  }
+
+  const advisorId = req.user!.id;
+
+  try {
+    if (!(await verifyClient(clientId, advisorId, req.user!.role))) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const clientResult = await query(
+      "SELECT name FROM clients WHERE id = $1",
+      [clientId]
+    );
+    if (clientResult.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+    const clientName: string = clientResult.rows[0].name;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const generateReportTool = tools.find((t) => t.name === "generate_report")!;
+
+    const userMessage = `Generate a Quarterly Review report for ${clientName}. Save it to the Quarterly Review subfolder under Reports.`;
+
+    // First turn — let Claude call generate_report tool
+    let response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system:
+        "You are QB AI, a financial advisor copilot. When asked to generate a quarterly review, immediately call the generate_report tool with reportType 'quarterly_review', then write the full report content in markdown. Do not ask clarifying questions.",
+      messages: [{ role: "user", content: userMessage }],
+      tools: [generateReportTool as Anthropic.Tool],
+    });
+
+    let textContent = "";
+
+    // Tool-use loop — same pattern as the main chat endpoint
+    while (response.stop_reason === "tool_use") {
+      const toolUseBlocks = response.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+      );
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of toolUseBlocks) {
+        const result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          advisorId,
+          clientId
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: result.result,
+        });
+      }
+
+      // Feed tool results back; Claude writes the actual report in its next response
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system:
+          "You are QB AI, a financial advisor copilot. When asked to generate a quarterly review, immediately call the generate_report tool with reportType 'quarterly_review', then write the full report content in markdown. Do not ask clarifying questions.",
+        messages: [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: response.content },
+          { role: "user", content: toolResults },
+        ],
+        tools: [generateReportTool as Anthropic.Tool],
+      });
+    }
+
+    // Capture Claude's final text as the report body
+    for (const block of response.content) {
+      if (block.type === "text") textContent += block.text;
+    }
+
+    // Save report markdown to Data Room under Reports > Quarterly Review
+    await saveReportToDataRoom(clientId, "Quarterly Review", textContent, "Quarterly Review");
+
+    // Return the deliverable record that was created by executeTool
+    const delResult = await query(
+      `SELECT id, title FROM deliverables
+       WHERE client_id = $1 AND title = 'Quarterly Review'
+       ORDER BY created_at DESC LIMIT 1`,
+      [clientId]
+    );
+
+    return res.json(delResult.rows[0] ?? { id: null, title: "Quarterly Review" });
+  } catch (err) {
+    console.error("POST /deliverables/generate-quarterly-review error:", err);
+    return res.status(500).json({ error: "Report generation failed" });
   }
 });
 
