@@ -1,4 +1,5 @@
 import { Send, FileText, Loader2, CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -25,6 +26,18 @@ interface DbDeliverable {
   review_status?: string | null;
 }
 
+const TITLE_DISPLAY_MAP: Record<string, string> = {
+  capital_readiness_memo: "Capital Readiness Memo",
+  client_brief: "Client Brief",
+  risk_summary: "Risk Summary",
+  board_update: "Board-Style Update",
+  assessment_summary: "Assessment Summary",
+  quarterly_review: "Quarterly Review",
+  meeting_recap: "Meeting Recap",
+  monthly_status_update: "Monthly Status Update",
+  onboarding_brief: "Onboarding Brief",
+};
+
 const REVIEW_STATUS_OPTIONS = [
   { value: "pending_review", label: "Pending Review" },
   { value: "approved", label: "Approved" },
@@ -40,14 +53,16 @@ const DeliverablesTab = () => {
 
   const deliverables = (rawDeliverables as DbDeliverable[]).map((d) => ({
     id: d.id,
-    title: d.title,
+    title: TITLE_DISPLAY_MAP[d.title] ?? d.title,
     client: selectedClient.name,
     status: d.status ?? "needs_data",
     engine: d.engine ?? "",
     review_status: d.review_status ?? null,
   }));
 
-  const quarterlyReview = deliverables.find((d) => d.title === "Quarterly Review") ?? null;
+  const quarterlyReview = deliverables.find(
+    (d) => d.title === "Quarterly Review"
+  ) ?? null;
 
   const handleGenerateQR = () => {
     if (!selectedClientId) return;
@@ -61,6 +76,13 @@ const DeliverablesTab = () => {
       clientId: selectedClientId,
       review_status: value,
     });
+  };
+
+  const handleSend = (id: string) => {
+    updateDeliverable.mutate(
+      { id, clientId: selectedClientId, review_status: "sent_to_client" },
+      { onSuccess: () => toast("Marked as sent to client") }
+    );
   };
 
   if (deliverables.length === 0 && !isGenerating) {
@@ -105,8 +127,9 @@ const DeliverablesTab = () => {
         AI-generated documents ready to review, approve, or send to your client.
       </p>
       {deliverables.map((del) => {
-        const st = (deliverableStatusLabel as Record<string, { label: string; style: string }>)[del.status]
-          ?? { label: del.status, style: "bg-muted text-muted-foreground" };
+        const st = (
+          deliverableStatusLabel as Record<string, { label: string; style: string }>
+        )[del.status] ?? { label: del.status, style: "bg-muted text-muted-foreground" };
         return (
           <div
             key={del.id}
@@ -117,12 +140,23 @@ const DeliverablesTab = () => {
               <p className="text-[10px] text-muted-foreground">{del.client}</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", st.style)}>
+              <span
+                className={cn(
+                  "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                  st.style
+                )}
+              >
                 {st.label}
               </span>
               {del.status === "ready" && (
-                <Button variant="ghost" size="sm" className="text-xs h-7">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-7 gap-1"
+                  onClick={() => handleSend(del.id)}
+                >
                   <Send className="w-3 h-3" />
+                  Send
                 </Button>
               )}
             </div>

@@ -251,6 +251,9 @@ export async function executeTool(
         board_update: "Board-Style Update",
         assessment_summary: "Assessment Summary",
         quarterly_review: "Quarterly Review",
+        meeting_recap: "Meeting Recap",
+        monthly_status_update: "Monthly Status Update",
+        onboarding_brief: "Onboarding Brief",
       };
       const reportTitle = titleMap[input.reportType as string] ?? String(input.reportType);
 
