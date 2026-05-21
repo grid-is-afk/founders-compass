@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import ClientRow from "@/components/dashboard/ClientRow";
 import AdvisorTasksPanel from "@/components/dashboard/AdvisorTasksPanel";
+import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
 import { TrendingUp, Activity, UserPlus, Zap } from "lucide-react";
 import { useClients } from "@/hooks/useClients";
 import { useActivity } from "@/hooks/useActivity";
@@ -213,6 +214,12 @@ const AdvisorDashboard = () => {
             View all {(prospects as any[]).length} prospects →
           </button>
         )}
+      </div>
+
+      {/* Intelligence Panel — Priority Actions, Risk Alerts, Data Gaps, Deliverables, Insurance */}
+      <div>
+        <h2 className="text-lg font-display font-semibold text-foreground mb-4">Portfolio Intelligence</h2>
+        <IntelligencePanel />
       </div>
 
       {/* All Tasks — cross-client */}

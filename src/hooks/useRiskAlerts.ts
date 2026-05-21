@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+export function useRunRiskScan(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post(`/risk-scan/${clientId}`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["risk-alerts", clientId] });
+      qc.invalidateQueries({ queryKey: ["dashboard-priority-actions"] });
+    },
+  });
+}
+
 export function useClientRiskAlerts(clientId: string) {
   return useQuery({
     queryKey: ["risk-alerts", clientId],
