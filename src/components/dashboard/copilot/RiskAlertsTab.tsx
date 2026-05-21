@@ -1,21 +1,30 @@
-import { ScanSearch } from "lucide-react";
+import { ExternalLink, ScanSearch } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts, useRunRiskScan } from "@/hooks/useRiskAlerts";
 import { severityIcon, severityStyle } from "@/lib/copilotStyles";
 
+interface DbRiskAlert {
+  id: string;
+  severity: string;
+  title: string;
+  detail: string | null;
+  client?: string | null;
+  source_id?: string | null;
+  source_type?: string | null;
+}
+
+function resolveAlertUrl(sourceType: string | null, clientId: string): string | null {
+  if (sourceType === "task") return `/advisor/clients/${clientId}/discover`;
+  return null;
+}
+
 const RiskAlertsTab = () => {
   const { selectedClientId } = useClientContext();
   const { data: rawAlerts = [] } = useClientRiskAlerts(selectedClientId);
   const { mutate: runScan, isPending: scanning } = useRunRiskScan(selectedClientId);
-
-  interface DbRiskAlert {
-    id: string;
-    severity: string;
-    title: string;
-    detail: string | null;
-    client?: string | null;
-  }
+  const navigate = useNavigate();
 
   const alerts = (rawAlerts as DbRiskAlert[]).map((a) => ({
     id: a.id,
@@ -23,6 +32,8 @@ const RiskAlertsTab = () => {
     title: a.title,
     detail: (a.detail ?? "").replace(/^\[auto\]\s*/, ""),
     client: a.client ?? "",
+    source_id: a.source_id ?? null,
+    source_type: a.source_type ?? null,
   }));
 
   if (alerts.length === 0) {
@@ -61,23 +72,36 @@ const RiskAlertsTab = () => {
           </button>
         </div>
       )}
-      {alerts.map((alert) => (
-        <div
-          key={alert.id}
-          className={cn("p-3 rounded-md border", severityStyle[alert.severity])}
-        >
-          <div className="flex items-start gap-2.5">
-            {severityIcon[alert.severity]}
-            <div>
-              <p className="text-sm font-medium text-foreground">{alert.title}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{alert.detail}</p>
-              {alert.client && (
-                <p className="text-[10px] text-muted-foreground/70 mt-1">{alert.client}</p>
+      {alerts.map((alert) => {
+        const href = resolveAlertUrl(alert.source_type, selectedClientId);
+        const isClickable = !!href;
+
+        return (
+          <div
+            key={alert.id}
+            onClick={isClickable ? () => navigate(href!) : undefined}
+            className={cn(
+              "p-3 rounded-md border",
+              severityStyle[alert.severity],
+              isClickable && "cursor-pointer hover:brightness-95 transition-[filter]"
+            )}
+          >
+            <div className="flex items-start gap-2.5">
+              {severityIcon[alert.severity]}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">{alert.title}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{alert.detail}</p>
+                {alert.client && (
+                  <p className="text-[10px] text-muted-foreground/70 mt-1">{alert.client}</p>
+                )}
+              </div>
+              {isClickable && (
+                <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground/50 mt-0.5" />
               )}
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };

@@ -17,6 +17,8 @@ router.post("/:clientId", async (req, res) => {
       title: string;
       detail: string;
       severity: "critical" | "warning" | "info";
+      source_id?: string;
+      source_type?: string;
     }
 
     const detections: Detection[] = [];
@@ -41,6 +43,8 @@ router.post("/:clientId", async (req, res) => {
         title: t.title,
         detail: `[auto] ${days} day${days !== 1 ? "s" : ""} overdue — Due ${dueDate}`,
         severity: days >= 21 ? "critical" : "warning",
+        source_id: t.id,
+        source_type: "task",
       });
     }
 
@@ -80,6 +84,8 @@ router.post("/:clientId", async (req, res) => {
         title: t.title,
         detail: "[auto] Marked blocked — no resolution note or next step recorded.",
         severity: "warning",
+        source_id: t.id,
+        source_type: "task",
       });
     }
 
@@ -124,9 +130,9 @@ router.post("/:clientId", async (req, res) => {
     // Insert new detections
     for (const d of detections) {
       await query(
-        `INSERT INTO risk_alerts (client_id, title, detail, severity)
-         VALUES ($1, $2, $3, $4)`,
-        [clientId, d.title, d.detail, d.severity]
+        `INSERT INTO risk_alerts (client_id, title, detail, severity, source_id, source_type)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [clientId, d.title, d.detail, d.severity, d.source_id ?? null, d.source_type ?? null]
       );
     }
 
