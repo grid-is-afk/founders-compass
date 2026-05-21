@@ -157,6 +157,106 @@ router.post("/generate-quarterly-review", async (req, res) => {
   }
 });
 
+// POST /api/deliverables/generate-engagement-briefing
+router.post("/generate-engagement-briefing", async (req, res) => {
+  const { clientId } = req.body;
+  if (!clientId) {
+    return res.status(400).json({ error: "clientId required" });
+  }
+
+  const advisorId = req.user!.id;
+
+  try {
+    if (!(await verifyClient(clientId, advisorId, req.user!.role))) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    const clientResult = await query(
+      "SELECT name FROM clients WHERE id = $1",
+      [clientId]
+    );
+    if (clientResult.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+    const clientName: string = clientResult.rows[0].name;
+
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const briefingTool = tools.find((t) => t.name === "generate_engagement_briefing")!;
+
+    const userMessage = `Generate an engagement briefing for ${clientName}. Use all available client context to produce a thorough structured briefing.`;
+
+    // First turn — let Claude call generate_engagement_briefing tool
+    let response = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 4096,
+      system:
+        "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown. Include all sections: client overview, Six Keys snapshot, current quarter, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Do not ask clarifying questions.",
+      messages: [{ role: "user", content: userMessage }],
+      tools: [briefingTool as Anthropic.Tool],
+    });
+
+    let textContent = "";
+
+    // Tool-use loop — same pattern as generate-quarterly-review
+    while (response.stop_reason === "tool_use") {
+      const toolUseBlocks = response.content.filter(
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+      );
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = [];
+      for (const block of toolUseBlocks) {
+        const result = await executeTool(
+          block.name,
+          block.input as Record<string, unknown>,
+          advisorId,
+          clientId
+        );
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: result.result,
+        });
+      }
+
+      response = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system:
+          "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown. Include all sections: client overview, Six Keys snapshot, current quarter, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Do not ask clarifying questions.",
+        messages: [
+          { role: "user", content: userMessage },
+          { role: "assistant", content: response.content },
+          { role: "user", content: toolResults },
+        ],
+        tools: [briefingTool as Anthropic.Tool],
+      });
+    }
+
+    // Capture Claude's final text as the briefing body
+    for (const block of response.content) {
+      if (block.type === "text") textContent += block.text;
+    }
+
+    const briefingTitle = `Engagement Briefing — ${clientName}`;
+
+    // Save briefing markdown to Data Room under Reports
+    await saveReportToDataRoom(clientId, briefingTitle, textContent, "Reports");
+
+    // Return the deliverable row created by the tool handler
+    const delResult = await query(
+      `SELECT id, title FROM deliverables
+       WHERE client_id = $1 AND title = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [clientId, briefingTitle]
+    );
+
+    return res.json(delResult.rows[0] ?? { id: null, title: briefingTitle });
+  } catch (err) {
+    console.error("POST /deliverables/generate-engagement-briefing error:", err);
+    return res.status(500).json({ error: "Briefing generation failed" });
+  }
+});
+
 // PATCH /api/deliverables/:id
 router.patch("/:id", async (req, res) => {
   const raw = req.body;

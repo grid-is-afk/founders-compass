@@ -151,6 +151,21 @@ export const tools = [
       required: ["clientName", "meetingType", "date"],
     },
   },
+  {
+    name: "generate_engagement_briefing",
+    description:
+      "Generate a structured onboarding briefing for a client engagement. Covers client history, current quarter state, open tasks, risk alerts, stakeholders, and upcoming priorities. Use this when an advisor asks to be briefed on a client, or says 'brief me', 'onboard me', 'catch me up', or similar.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: {
+          type: "string",
+          description: "The name of the client to generate the briefing for",
+        },
+      },
+      required: ["clientName"],
+    },
+  },
 ];
 
 // Helper: look up a client by name for this advisor, returns null if not found
@@ -381,6 +396,47 @@ export async function executeTool(
       } catch (err) {
         console.error("schedule_meeting DB error:", err);
         return { success: false, result: "Failed to save meeting to database." };
+      }
+    }
+
+    case "generate_engagement_briefing": {
+      let clientId = activeClientId ?? null;
+      if (input.clientName) {
+        const found = await findClientByName(input.clientName as string, advisorId);
+        if (found) clientId = found;
+      }
+
+      if (!clientId) {
+        return {
+          success: false,
+          result: `Briefing not generated: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
+          action: { type: "briefing_failed", reason: "client_not_found" },
+        };
+      }
+
+      try {
+        await query(
+          `INSERT INTO deliverables (client_id, title, status, engine)
+           VALUES ($1, $2, 'ready', 'Copilot')
+           ON CONFLICT DO NOTHING`,
+          [clientId, `Engagement Briefing — ${input.clientName as string}`]
+        );
+        return {
+          success: true,
+          result: `Engagement briefing created for ${input.clientName as string}. Now write the full structured briefing in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Use all context available.`,
+          action: {
+            type: "briefing_generated",
+            clientId,
+            clientName: input.clientName,
+          },
+        };
+      } catch (err) {
+        console.error("generate_engagement_briefing DB error:", err);
+        return {
+          success: true,
+          result: `Now write the full engagement briefing for ${input.clientName as string} in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch.`,
+          action: { type: "briefing_generated", clientName: input.clientName },
+        };
       }
     }
 
