@@ -3,21 +3,21 @@ import { Badge } from "@/components/ui/badge";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
+import { usePriorityActions, useDataGaps, useDashboardInsurance } from "@/hooks/useDashboardIntelligence";
 import PriorityActionsTab from "./copilot/PriorityActionsTab";
 import RiskAlertsTab from "./copilot/RiskAlertsTab";
 import DataGapsTab from "./copilot/DataGapsTab";
 import DeliverablesTab from "./copilot/DeliverablesTab";
 import InsuranceTab from "./copilot/InsuranceTab";
 
-// Static advisor-wide counts — no DB tables yet for these
-const PRIORITY_ACTIONS_COUNT = 5;
-const DATA_GAPS_COUNT = 4;
-const INSURANCE_COUNT = 5;
-
-const IntelligencePanel = () => {
+const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
   const { selectedClientId } = useClientContext();
-  const { data: rawAlerts = [] } = useClientRiskAlerts(selectedClientId);
-  const { data: rawDeliverables = [] } = useClientDeliverables(selectedClientId);
+  const effectiveClientId = clientId ?? selectedClientId;
+  const { data: rawAlerts = [] } = useClientRiskAlerts(effectiveClientId);
+  const { data: rawDeliverables = [] } = useClientDeliverables(effectiveClientId);
+  const { data: priorityActions = [] } = usePriorityActions(clientId);
+  const { data: dataGaps = [] } = useDataGaps(clientId);
+  const { data: insuranceItems = [] } = useDashboardInsurance(clientId);
 
   const criticalCount = (rawAlerts as Array<{ severity: string }>).filter((r) => r.severity === "critical").length;
   const deliverablesCount = (rawDeliverables as unknown[]).length;
@@ -28,9 +28,11 @@ const IntelligencePanel = () => {
         <TabsList className="mb-4">
           <TabsTrigger value="actions" className="flex items-center gap-1.5">
             Priority Actions
-            <Badge variant="secondary" className="text-[10px] ml-1">
-              {PRIORITY_ACTIONS_COUNT}
-            </Badge>
+            {priorityActions.length > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {priorityActions.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="risks" className="flex items-center gap-1.5">
             Risk Alerts
@@ -42,9 +44,11 @@ const IntelligencePanel = () => {
           </TabsTrigger>
           <TabsTrigger value="gaps" className="flex items-center gap-1.5">
             Data Gaps
-            <Badge variant="secondary" className="text-[10px] ml-1">
-              {DATA_GAPS_COUNT}
-            </Badge>
+            {dataGaps.length > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {dataGaps.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="deliverables" className="flex items-center gap-1.5">
             Deliverables
@@ -56,15 +60,17 @@ const IntelligencePanel = () => {
           </TabsTrigger>
           <TabsTrigger value="insurance" className="flex items-center gap-1.5">
             Insurance
-            <Badge variant="secondary" className="text-[10px] ml-1">
-              {INSURANCE_COUNT}
-            </Badge>
+            {insuranceItems.length > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {insuranceItems.length}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="actions">
           <div className="max-h-[400px] overflow-y-auto">
-            <PriorityActionsTab />
+            <PriorityActionsTab clientId={clientId} />
           </div>
         </TabsContent>
 
@@ -76,7 +82,7 @@ const IntelligencePanel = () => {
 
         <TabsContent value="gaps">
           <div className="max-h-[400px] overflow-y-auto">
-            <DataGapsTab />
+            <DataGapsTab clientId={clientId} />
           </div>
         </TabsContent>
 
@@ -88,7 +94,7 @@ const IntelligencePanel = () => {
 
         <TabsContent value="insurance">
           <div className="max-h-[400px] overflow-y-auto">
-            <InsuranceTab />
+            <InsuranceTab clientId={clientId} />
           </div>
         </TabsContent>
       </Tabs>

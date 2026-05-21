@@ -13,6 +13,8 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronUp,
+  ExternalLink,
+  Clock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCopilotContext } from "./CopilotProvider";
@@ -97,6 +99,80 @@ function downloadReport(
   URL.revokeObjectURL(url);
 }
 
+function openReportInNewTab(content: string, reportTitle: string) {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>${reportTitle}</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 820px; margin: 48px auto; padding: 0 24px; color: #1a1a1a; line-height: 1.7; }
+    h1 { font-size: 1.75rem; border-bottom: 2px solid #e5e5e5; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.25rem; margin-top: 2rem; }
+    h3 { font-size: 1.05rem; margin-top: 1.5rem; color: #444; }
+    ul, ol { padding-left: 1.5rem; }
+    li { margin-bottom: 0.3rem; }
+    strong { color: #111; }
+    code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-size: 0.88em; }
+    pre { background: #f4f4f4; padding: 1rem; border-radius: 6px; overflow-x: auto; }
+    blockquote { border-left: 3px solid #ccc; margin: 0; padding: 0 1rem; color: #666; }
+    hr { border: none; border-top: 1px solid #e5e5e5; margin: 2rem 0; }
+  </style>
+</head>
+<body>
+  <div id="content"></div>
+  <script>
+    var md = ${JSON.stringify(content)};
+    document.getElementById('content').innerHTML = marked.parse(md);
+  </script>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+
+async function downloadDocx(content: string, reportTitle: string, clientName: string) {
+  try {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
+
+    const lines = content.split("\n");
+    const children: InstanceType<typeof Paragraph>[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith("# ")) {
+        children.push(new Paragraph({ text: line.slice(2).trim(), heading: HeadingLevel.HEADING_1 }));
+      } else if (line.startsWith("## ")) {
+        children.push(new Paragraph({ text: line.slice(3).trim(), heading: HeadingLevel.HEADING_2 }));
+      } else if (line.startsWith("### ")) {
+        children.push(new Paragraph({ text: line.slice(4).trim(), heading: HeadingLevel.HEADING_3 }));
+      } else if (/^[-*] /.test(line)) {
+        const text = line.replace(/^[-*] /, "").replace(/\*\*(.*?)\*\*/g, "$1");
+        children.push(new Paragraph({ text, bullet: { level: 0 } }));
+      } else if (line.trim() === "") {
+        children.push(new Paragraph({}));
+      } else {
+        const text = line.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1");
+        children.push(new Paragraph({ children: [new TextRun(text)] }));
+      }
+    }
+
+    const doc = new Document({ sections: [{ children }] });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${reportTitle.replace(/\s+/g, "_")}_${clientName.replace(/\s+/g, "_")}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("DOCX generation failed:", err);
+    toast.error("Failed to generate .docx file");
+  }
+}
+
 // ── Report card ──────────────────────────────────────────────────────────────
 
 interface ReportCardProps {
@@ -137,7 +213,7 @@ function ReportCard({ content, reportTitle, clientName, reportType, clientId }: 
 
       {/* Body */}
       {expanded && (
-        <div className="max-h-96 overflow-y-auto px-4 py-3">
+        <div className="max-h-[600px] overflow-y-auto px-4 py-3">
           <div className="prose prose-sm prose-olive max-w-none prose-headings:text-foreground prose-p:text-foreground prose-strong:text-foreground prose-li:text-foreground prose-a:text-primary prose-code:text-foreground prose-code:bg-muted prose-code:px-1 prose-code:rounded prose-pre:bg-muted prose-pre:border prose-pre:border-border">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
@@ -145,23 +221,43 @@ function ReportCard({ content, reportTitle, clientName, reportType, clientId }: 
       )}
 
       {/* Footer CTAs */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-muted/30 border-t border-border">
-        {clientId && (
-          <a
-            href={`/advisor/clients/${clientId}/data-room`}
+      <div className="px-4 py-2.5 bg-muted/30 border-t border-border space-y-2">
+        <div className="flex items-center flex-wrap gap-2">
+          <button
+            onClick={() => openReportInNewTab(content, reportTitle)}
             className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-primary/30 bg-primary/8 hover:bg-primary/15 text-primary transition-colors"
           >
-            <FolderOpen className="w-3 h-3" />
-            View in Data Room → Reports
-          </a>
-        )}
-        <button
-          onClick={() => downloadReport(content, clientName, reportType)}
-          className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
-        >
-          <Download className="w-3 h-3" />
-          Download (.md)
-        </button>
+            <ExternalLink className="w-3 h-3" />
+            Open in new tab
+          </button>
+          <button
+            onClick={() => downloadDocx(content, reportTitle, clientName)}
+            className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Download (.docx)
+          </button>
+          {clientId && (
+            <a
+              href={`/advisor/clients/${clientId}/data-room`}
+              className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
+            >
+              <FolderOpen className="w-3 h-3" />
+              Data Room
+            </a>
+          )}
+          <button
+            onClick={() => downloadReport(content, clientName, reportType)}
+            className="flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-muted/60 text-muted-foreground transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Download (.md)
+          </button>
+        </div>
+        <p className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Clock className="w-3 h-3 flex-shrink-0" />
+          This document will appear in your Data Room within a few seconds.
+        </p>
       </div>
     </div>
   );

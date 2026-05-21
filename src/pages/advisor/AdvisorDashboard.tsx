@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import ClientRow from "@/components/dashboard/ClientRow";
 import AdvisorTasksPanel from "@/components/dashboard/AdvisorTasksPanel";
+import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
 import { TrendingUp, Activity, UserPlus, Zap } from "lucide-react";
 import { useClients } from "@/hooks/useClients";
 import { useActivity } from "@/hooks/useActivity";
@@ -62,6 +63,12 @@ const AdvisorDashboard = () => {
           <Zap className="w-4 h-4" />
           Quarterback AI
         </button>
+      </div>
+
+      {/* Portfolio Intelligence — top of dashboard */}
+      <div>
+        <h2 className="text-lg font-display font-semibold text-foreground mb-4">Portfolio Intelligence</h2>
+        <IntelligencePanel />
       </div>
 
       {/* Client Journey + Recent Activity */}

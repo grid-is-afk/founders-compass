@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Navigate, NavLink, Outlet, useParams } from "react-router-dom";
-import { Clock, Building2, AlertCircle, Plus } from "lucide-react";
+import { Clock, Building2, AlertCircle, Plus, BookOpen, FileBarChart2 } from "lucide-react";
 import { useClient } from "@/hooks/useClients";
 import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 import { cn } from "@/lib/utils";
 import { daysRemaining, countdownChipClass } from "@/lib/q1Utils";
 import ChapterCreateDialog from "@/components/chapters/ChapterCreateDialog";
+import { useCopilotContext } from "@/components/copilot/CopilotProvider";
+import { FolderPickerPopover } from "@/components/copilot/FolderPickerPopover";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,6 +50,7 @@ interface DbPlan {
 export default function ClientWorkspace() {
   const { id } = useParams<{ id: string }>();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { sendMessage, setIsOpen } = useCopilotContext();
 
   if (!id) return <Navigate to="/advisor/clients" replace />;
 
@@ -106,19 +109,47 @@ export default function ClientWorkspace() {
             </div>
           </div>
 
-          {/* Q1 countdown chip */}
-          <div
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold flex-shrink-0",
-              countdownChipClass(days)
-            )}
-          >
-            <Clock className="w-3.5 h-3.5" />
-            {days === null
-              ? "No Chapter 1 start date"
-              : days <= 0
-              ? "Chapter 1 Complete"
-              : `${days} days remaining in Ch. 1`}
+          {/* QB AI action buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <FolderPickerPopover
+              defaultFolder="Reports"
+              onConfirm={(folder) => {
+                setIsOpen(true);
+                sendMessage(`Generate an onboarding brief for ${c.name} and save it to the "${folder}" folder. I need to get up to speed quickly. Include: client overview, long-term objective, current TFO phase, key stakeholders, recent meeting themes, top open tasks, any open commitments, and what's likely coming up next.`);
+              }}
+            >
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors">
+                <BookOpen className="w-3.5 h-3.5" />
+                Get Up to Speed
+              </button>
+            </FolderPickerPopover>
+            <FolderPickerPopover
+              defaultFolder="Reports"
+              onConfirm={(folder) => {
+                setIsOpen(true);
+                sendMessage(`Draft a monthly status update for ${c.name} and save it to the "${folder}" folder. Include a summary of progress this month, what's currently in progress, next steps, and any blockers. Write it in a professional, client-facing tone.`);
+              }}
+            >
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors">
+                <FileBarChart2 className="w-3.5 h-3.5" />
+                Draft Status Update
+              </button>
+            </FolderPickerPopover>
+
+            {/* Q1 countdown chip */}
+            <div
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold",
+                countdownChipClass(days)
+              )}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              {days === null
+                ? "No Chapter 1 start date"
+                : days <= 0
+                ? "Chapter 1 Complete"
+                : `${days} days remaining in Ch. 1`}
+            </div>
           </div>
         </div>
 

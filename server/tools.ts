@@ -54,7 +54,7 @@ export const tools = [
   {
     name: "generate_report",
     description:
-      "Generate a professional advisory report or memo. Use when the advisor asks to draft, create, or generate a document like a Capital Readiness Memo, Client Brief, Risk Summary, Board Update, or Assessment Summary.",
+      "Generate a professional advisory report or memo. Use when the advisor asks to draft, create, or generate a document like a Capital Readiness Memo, Client Brief, Risk Summary, Board Update, Assessment Summary, Meeting Recap, Monthly Status Update, or Onboarding Brief.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -67,6 +67,9 @@ export const tools = [
             "board_update",
             "assessment_summary",
             "quarterly_review",
+            "meeting_recap",
+            "monthly_status_update",
+            "onboarding_brief",
           ],
           description: "Type of report",
         },
@@ -248,6 +251,9 @@ export async function executeTool(
         board_update: "Board-Style Update",
         assessment_summary: "Assessment Summary",
         quarterly_review: "Quarterly Review",
+        meeting_recap: "Meeting Recap",
+        monthly_status_update: "Monthly Status Update",
+        onboarding_brief: "Onboarding Brief",
       };
       const reportTitle = titleMap[input.reportType as string] ?? String(input.reportType);
 

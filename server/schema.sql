@@ -196,14 +196,21 @@ CREATE INDEX IF NOT EXISTS idx_grow_client ON grow_engagements(client_id);
 -- Risk alerts
 -- ============================================================
 CREATE TABLE IF NOT EXISTS risk_alerts (
-  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  client_id  UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-  title      TEXT NOT NULL,
-  detail     TEXT,
-  severity   TEXT NOT NULL DEFAULT 'medium' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-  resolved   BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  title       TEXT NOT NULL,
+  detail      TEXT,
+  severity    TEXT NOT NULL DEFAULT 'medium' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+  resolved    BOOLEAN NOT NULL DEFAULT FALSE,
+  source_id   UUID,
+  source_type TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+DO $$ BEGIN
+  ALTER TABLE risk_alerts ADD COLUMN IF NOT EXISTS source_id   UUID;
+  ALTER TABLE risk_alerts ADD COLUMN IF NOT EXISTS source_type TEXT;
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 CREATE INDEX IF NOT EXISTS idx_risk_alerts_client ON risk_alerts(client_id);
 
