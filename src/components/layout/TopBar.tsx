@@ -25,7 +25,7 @@ import {
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useActivity } from "@/hooks/useActivity";
-import { useNotifications, useMarkAllNotificationsRead } from "@/hooks/useNotifications";
+import { useNotifications, useMarkAllNotificationsRead, useCheckQuarterlyReviewNotifications } from "@/hooks/useNotifications";
 import { Badge } from "@/components/ui/badge";
 import {
   Command,
@@ -72,6 +72,7 @@ const TopBar = () => {
   const { data: activity = [] } = useActivity();
   const { data: clientNotifications = [] } = useNotifications();
   const markAllRead = useMarkAllNotificationsRead();
+  useCheckQuarterlyReviewNotifications();
 
   const riskNotifications = (riskAlerts as any[]).filter(
     (a) => a.severity === "high" || a.severity === "critical" || a.severity === "medium"
@@ -213,9 +214,14 @@ const TopBar = () => {
             <div className="max-h-[340px] overflow-y-auto divide-y divide-border">
               {/* Client-triggered notifications */}
               {clientNotifications.slice(0, 8).map((notif) => {
-                const isFlagNotif = notif.type === "follow_up_flagged";
-                const NotifIcon = isFlagNotif ? Flag : Activity;
-                const iconColor = isFlagNotif ? "text-amber-500" : "text-blue-500";
+                const NotifIcon =
+                  notif.type === "follow_up_flagged" ? Flag :
+                  notif.type === "quarterly_review_reminder" ? CalendarDays :
+                  Activity;
+                const iconColor =
+                  notif.type === "follow_up_flagged" ? "text-amber-500" :
+                  notif.type === "quarterly_review_reminder" ? "text-amber-500" :
+                  "text-blue-500";
                 return (
                   <div
                     key={notif.id}

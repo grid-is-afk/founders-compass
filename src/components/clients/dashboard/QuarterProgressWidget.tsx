@@ -1,5 +1,7 @@
+import { CalendarDays } from "lucide-react";
 import { useClientTasks } from "@/hooks/useTasks";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
+import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +24,14 @@ interface QuarterProgressWidgetProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+function daysUntilReview(reviewDate: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((new Date(reviewDate).getTime() - today.getTime()) / MS_PER_DAY);
+}
+
 function computeDateRange(onboardedAt: string | null): string {
   if (!onboardedAt) return "—";
   const start = new Date(onboardedAt);
@@ -39,9 +49,16 @@ function computeDateRange(onboardedAt: string | null): string {
 export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
   const { data: rawTasks = [] } = useClientTasks(client.id);
   const { data: rawAlerts = [] } = useClientRiskAlerts(client.id);
+  const { data: plans = [] } = useClientQuarterlyPlans(client.id);
 
   const tasks = rawTasks as Array<{ status: string; due_date: string | null }>;
   const alerts = rawAlerts as Array<{ severity: string; resolved: boolean }>;
+  const quarterlyPlans = plans as Array<{
+    quarter: number;
+    year: number;
+    status: string;
+    review_date: string | null;
+  }>;
 
   const totalTasks = tasks.length;
   const completedTasks = tasks.filter((t) => t.status === "done").length;
@@ -54,6 +71,18 @@ export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
   const criticalAlerts = alerts.filter(
     (a) => !a.resolved && a.severity === "critical"
   ).length;
+
+  // Find the earliest non-complete plan with a review_date (prefer active over draft)
+  const reviewPlan = quarterlyPlans
+    .filter((p) => p.review_date && p.status !== "complete")
+    .sort((a, b) => {
+      if (a.status === "active" && b.status !== "active") return -1;
+      if (b.status === "active" && a.status !== "active") return 1;
+      return new Date(a.review_date!).getTime() - new Date(b.review_date!).getTime();
+    })
+    .at(0) ?? null;
+
+  const days = reviewPlan?.review_date ? daysUntilReview(reviewPlan.review_date) : null;
 
   const quarter = client.current_quarter ?? 1;
   const year = client.current_year ?? new Date().getFullYear();
@@ -109,6 +138,28 @@ export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
           </p>
         </div>
       </div>
+
+      {days !== null && reviewPlan && (
+        <div className={cn(
+          "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium",
+          days < 0
+            ? "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
+            : days === 0
+            ? "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
+            : days <= 14
+            ? "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400"
+            : "border-border bg-muted/40 text-muted-foreground"
+        )}>
+          <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {days < 0
+              ? `Q${reviewPlan.quarter} review overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`
+              : days === 0
+              ? `Q${reviewPlan.quarter} review is today`
+              : `${days} day${days === 1 ? "" : "s"} until Q${reviewPlan.quarter} review`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

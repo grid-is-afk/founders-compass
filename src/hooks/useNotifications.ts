@@ -1,5 +1,6 @@
+import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, api } from "@/lib/api";
 
 export interface Notification {
   id: string;
@@ -50,4 +51,25 @@ export function useMarkAllNotificationsRead() {
       qc.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
+}
+
+// Fires once per session on mount. Checks if any assigned clients have a
+// quarterly review in exactly 14 days and creates a notification if not already sent.
+export function useCheckQuarterlyReviewNotifications() {
+  const qc = useQueryClient();
+  const hasFired = useRef(false);
+
+  const { mutate } = useMutation({
+    mutationFn: () => api.post("/notifications/quarterly-review-check", {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  useEffect(() => {
+    if (!hasFired.current) {
+      hasFired.current = true;
+      mutate();
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
