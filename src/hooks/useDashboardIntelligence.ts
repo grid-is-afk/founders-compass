@@ -1,6 +1,27 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+// ---------------------------------------------------------------------------
+// Methodology Recommendations
+// ---------------------------------------------------------------------------
+
+export interface MethodologyGap {
+  activityId: string;
+  activityName: string;
+  framework?: string;
+  description: string;
+  reason: string;
+  suggestedTaskTitle: string;
+  suggestedTaskPriority: "high" | "medium" | "low";
+  isRequired: boolean;
+}
+
+export interface MethodologyRecommendationsResponse {
+  gaps: MethodologyGap[];
+  phase: string;
+  quarter: number;
+}
+
 export interface PriorityAction {
   id: string;
   type: string;
@@ -47,5 +68,15 @@ export function useDashboardInsurance(clientId?: string) {
   return useQuery<InsuranceItem[]>({
     queryKey: ["dashboard-insurance", clientId ?? "all"],
     queryFn: () => api.get(clientId ? `/dashboard/insurance?client_id=${clientId}` : "/dashboard/insurance"),
+  });
+}
+
+export function useMethodologyRecommendations(clientId: string) {
+  return useQuery<MethodologyRecommendationsResponse>({
+    queryKey: ["methodology-recommendations", clientId],
+    queryFn: () =>
+      api.get(`/clients/${clientId}/methodology-recommendations`),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!clientId,
   });
 }
