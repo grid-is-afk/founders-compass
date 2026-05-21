@@ -6,6 +6,7 @@ import { QuarterProgressWidget } from "@/components/clients/dashboard/QuarterPro
 import { SixKeysScoreGrid } from "@/components/clients/dashboard/SixKeysScoreGrid";
 import { CapitalOptionalityPanel } from "@/components/clients/dashboard/CapitalOptionalityPanel";
 import { AssessmentHistoryWidget } from "@/components/clients/AssessmentHistoryWidget";
+import { QuarterbackActionsPanel } from "@/components/clients/dashboard/QuarterbackActionsPanel";
 import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
 import { useClientContext } from "@/hooks/useClientContext";
 
@@ -61,13 +62,15 @@ export default function ClientDashboardTab() {
           <QuarterProgressWidget client={client} />
         </div>
 
+        <IntelligencePanel clientId={client.id} />
+
       </div>
 
       {/* ================================================================
           RIGHT SIDEBAR — 1/3 width
       ================================================================ */}
       <div className="space-y-6">
-        <IntelligencePanel clientId={client.id} />
+        <QuarterbackActionsPanel clientId={client.id} clientName={client.name} />
 
         <AssessmentHistoryWidget clientId={client.id} />
 

@@ -1,28 +1,24 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
+import { Sparkles, AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { usePriorityActions } from "@/hooks/useDashboardIntelligence";
 
 interface QuarterbackActionsPanelProps {
   clientId: string;
   clientName: string;
 }
 
-const PLACEHOLDER_ACTIONS = [
-  "Complete Q1 Project Kickoff checklist",
-  "Upload documents to Data Room",
-  "Run Founder Exposure Index assessment",
-] as const;
+const severityDot: Record<string, React.ReactNode> = {
+  critical: <AlertCircle className="w-3 h-3 text-red-400 flex-shrink-0 mt-0.5" />,
+  warning: <AlertTriangle className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />,
+  info: <Info className="w-3 h-3 text-blue-400 flex-shrink-0 mt-0.5" />,
+};
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function QuarterbackActionsPanel({ clientName }: QuarterbackActionsPanelProps) {
+export function QuarterbackActionsPanel({ clientId, clientName }: QuarterbackActionsPanelProps) {
   const { togglePanel } = useCopilotContext();
+  const { data: actions = [], isLoading } = usePriorityActions(clientId);
+
+  const top5 = actions.slice(0, 5);
 
   return (
     <div className="rounded-lg border border-border bg-sidebar p-4 space-y-4">
@@ -34,15 +30,25 @@ export function QuarterbackActionsPanel({ clientName }: QuarterbackActionsPanelP
       </div>
 
       <div className="space-y-2">
-        {PLACEHOLDER_ACTIONS.map((action) => (
-          <div key={action} className="flex items-start gap-2.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 flex-shrink-0" />
-            <div>
-              <p className="text-xs text-sidebar-foreground/90 font-medium">{action}</p>
-              <p className="text-[10px] text-sidebar-foreground/40 mt-0.5">{clientName}</p>
+        {isLoading ? (
+          <p className="text-xs text-sidebar-foreground/40">Loading...</p>
+        ) : top5.length === 0 ? (
+          <p className="text-xs text-sidebar-foreground/40">No priority actions — all on track.</p>
+        ) : (
+          top5.map((action) => (
+            <div key={action.id} className="flex items-start gap-2.5">
+              {severityDot[action.severity] ?? severityDot.info}
+              <div className="min-w-0">
+                <p className="text-xs text-sidebar-foreground/90 font-medium leading-snug line-clamp-2">
+                  {action.label}
+                </p>
+                {action.meta && (
+                  <p className="text-[10px] text-sidebar-foreground/40 mt-0.5">{action.meta}</p>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       <Button
