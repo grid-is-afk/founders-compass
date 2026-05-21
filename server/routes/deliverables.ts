@@ -4,6 +4,7 @@ import { query } from "../db.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { tools, executeTool } from "../tools.js";
 import { saveReportToDataRoom } from "../lib/saveReport.js";
+import { getPhaseForQuarter } from "../methodology/tfo-methodology.js";
 
 const router = Router();
 
@@ -254,6 +255,308 @@ router.post("/generate-engagement-briefing", async (req, res) => {
   } catch (err) {
     console.error("POST /deliverables/generate-engagement-briefing error:", err);
     return res.status(500).json({ error: "Briefing generation failed" });
+  }
+});
+
+// POST /api/deliverables/generate-review-prep
+router.post("/generate-review-prep", async (req, res) => {
+  const { clientId, quarter } = req.body as { clientId?: string; quarter?: number };
+
+  if (!clientId || quarter === undefined || quarter === null) {
+    return res.status(400).json({ error: "clientId and quarter required" });
+  }
+
+  const advisorId = req.user!.id;
+
+  try {
+    if (!(await verifyClientAccess(clientId, advisorId, req.user!.role))) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    // -----------------------------------------------------------------------
+    // 1. Fetch client record
+    // -----------------------------------------------------------------------
+    const clientResult = await query(
+      "SELECT name, onboarded_at, current_quarter, current_year FROM clients WHERE id = $1",
+      [clientId]
+    );
+    if (clientResult.rows.length === 0) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+    const client = clientResult.rows[0] as {
+      name: string;
+      onboarded_at: string | null;
+      current_quarter: number | null;
+      current_year: number | null;
+    };
+    const clientName = client.name;
+    const effectiveQuarter = quarter;
+
+    // -----------------------------------------------------------------------
+    // 2. Compute quarter date range from onboarded_at
+    //    Q1 = onboarded_at + 0–89d, Q2 = +90–179d, etc.
+    // -----------------------------------------------------------------------
+    let quarterStart: Date | null = null;
+    let quarterEnd: Date | null = null;
+    if (client.onboarded_at) {
+      const onboarded = new Date(client.onboarded_at);
+      const offsetDays = (effectiveQuarter - 1) * 90;
+      quarterStart = new Date(onboarded.getTime() + offsetDays * 86400000);
+      quarterEnd = new Date(quarterStart.getTime() + 89 * 86400000);
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Fetch all tasks for the client
+    // -----------------------------------------------------------------------
+    const tasksResult = await query(
+      "SELECT title, status, due_date, created_at FROM tasks WHERE client_id = $1 ORDER BY created_at",
+      [clientId]
+    );
+    interface TaskRow {
+      title: string;
+      status: string;
+      due_date: string | null;
+      created_at: string;
+    }
+    const allTasks = tasksResult.rows as TaskRow[];
+    const now = new Date();
+
+    const completedTasks = allTasks.filter((t) => t.status === "done");
+    const openTasks = allTasks.filter((t) => t.status !== "done");
+    const overdueTasks = openTasks.filter(
+      (t) => t.due_date && new Date(t.due_date) < now
+    );
+    // Tasks added after quarter start (mid-quarter additions)
+    const midQuarterTasks =
+      quarterStart
+        ? allTasks.filter((t) => new Date(t.created_at) > quarterStart!)
+        : [];
+
+    // -----------------------------------------------------------------------
+    // 4. Fetch current quarterly plan (review_date + status)
+    // -----------------------------------------------------------------------
+    const planResult = await query(
+      `SELECT quarter, year, status, review_date, label
+       FROM quarterly_plans
+       WHERE client_id = $1 AND quarter = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [clientId, effectiveQuarter]
+    );
+    interface PlanRow {
+      quarter: number;
+      year: number;
+      status: string;
+      review_date: string | null;
+      label: string | null;
+    }
+    const currentPlan: PlanRow | null = planResult.rows[0] ?? null;
+
+    // -----------------------------------------------------------------------
+    // 5. Fetch active risk alerts (limit 5)
+    // -----------------------------------------------------------------------
+    const alertsResult = await query(
+      `SELECT title, severity
+       FROM risk_alerts
+       WHERE client_id = $1 AND resolved = FALSE
+       ORDER BY
+         CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+         created_at DESC
+       LIMIT 5`,
+      [clientId]
+    );
+    interface AlertRow { title: string; severity: string; }
+    const activeAlerts = alertsResult.rows as AlertRow[];
+
+    // -----------------------------------------------------------------------
+    // 6. Fetch Six Keys scores (latest entry)
+    // -----------------------------------------------------------------------
+    const sixKeysResult = await query(
+      `SELECT clarity, alignment, structure, stewardship, velocity, legacy, completed_at
+       FROM client_six_keys
+       WHERE client_id = $1
+       ORDER BY completed_at DESC NULLS LAST, created_at DESC
+       LIMIT 1`,
+      [clientId]
+    );
+    interface SixKeysRow {
+      clarity: number | null;
+      alignment: number | null;
+      structure: number | null;
+      stewardship: number | null;
+      velocity: number | null;
+      legacy: number | null;
+      completed_at: string | null;
+    }
+    const sixKeys: SixKeysRow | null = sixKeysResult.rows[0] ?? null;
+
+    // -----------------------------------------------------------------------
+    // 7. Fetch last quarter's deliverables (if Q > 1)
+    // -----------------------------------------------------------------------
+    interface DeliverableRow { title: string; status: string; }
+    let priorDeliverables: DeliverableRow[] = [];
+    if (effectiveQuarter > 1) {
+      const priorResult = await query(
+        `SELECT title, status
+         FROM deliverables
+         WHERE client_id = $1
+           AND created_at < $2
+         ORDER BY created_at DESC
+         LIMIT 10`,
+        [clientId, quarterStart ?? now]
+      );
+      priorDeliverables = priorResult.rows as DeliverableRow[];
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. Resolve methodology phase
+    // -----------------------------------------------------------------------
+    const phase = getPhaseForQuarter(effectiveQuarter);
+    const phaseName = phase?.name ?? "Unknown";
+    const phaseObjective = phase?.objective ?? "";
+    const requiredActivities = phase?.activities
+      .filter((a) => a.isRequired)
+      .map((a) => a.name)
+      .join(", ") ?? "";
+
+    // -----------------------------------------------------------------------
+    // 9. Build context string for Claude
+    // -----------------------------------------------------------------------
+    const reviewDateStr = currentPlan?.review_date
+      ? new Date(currentPlan.review_date).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "TBD";
+
+    const todayStr = now.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const sixKeysStr = sixKeys
+      ? `Clarity: ${sixKeys.clarity ?? "—"}/100 | Alignment: ${sixKeys.alignment ?? "—"}/100 | ` +
+        `Structure: ${sixKeys.structure ?? "—"}/100 | Stewardship: ${sixKeys.stewardship ?? "—"}/100 | ` +
+        `Velocity: ${sixKeys.velocity ?? "—"}/100 | Legacy: ${sixKeys.legacy ?? "—"}/100` +
+        (sixKeys.completed_at ? ` (scored ${new Date(sixKeys.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })})` : "")
+      : "No Six Keys scores on file yet.";
+
+    const alertsStr = activeAlerts.length > 0
+      ? activeAlerts.map((a) => `- [${a.severity.toUpperCase()}] ${a.title}`).join("\n")
+      : "No active risk alerts.";
+
+    const completedStr = completedTasks.length > 0
+      ? completedTasks.map((t) => `- ${t.title}`).join("\n")
+      : "No completed tasks this quarter.";
+
+    const overdueStr = overdueTasks.length > 0
+      ? overdueTasks.map((t) => `- ${t.title} (due ${t.due_date})`).join("\n")
+      : "No overdue tasks.";
+
+    const midQuarterStr =
+      midQuarterTasks.length > 0 && quarterStart
+        ? midQuarterTasks.map((t) => `- ${t.title}`).join("\n")
+        : "No tasks added mid-quarter.";
+
+    const priorStr = priorDeliverables.length > 0
+      ? priorDeliverables.map((d) => `- ${d.title} (${d.status})`).join("\n")
+      : "No prior-quarter deliverables on record.";
+
+    const contextBlock = `
+CLIENT: ${clientName}
+QUARTER: Q${effectiveQuarter} | METHODOLOGY PHASE: ${phaseName}
+PHASE OBJECTIVE: ${phaseObjective}
+REQUIRED ACTIVITIES THIS PHASE: ${requiredActivities}
+REVIEW DATE: ${reviewDateStr}
+PREPARED: ${todayStr}
+
+=== TASKS — COMPLETED ===
+${completedStr}
+
+=== TASKS — OVERDUE / INCOMPLETE ===
+${overdueStr}
+
+=== TASKS — ADDED MID-QUARTER ===
+${midQuarterStr}
+
+=== SIX KEYS OF CAPITAL™ SCORES ===
+${sixKeysStr}
+
+=== ACTIVE RISK ALERTS ===
+${alertsStr}
+
+=== PRIOR QUARTER DELIVERABLES (for reference) ===
+${priorStr}
+`.trim();
+
+    // -----------------------------------------------------------------------
+    // 10. Call Claude to generate the review prep document
+    // -----------------------------------------------------------------------
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const systemPrompt = `You are QB AI, a strategic advisor copilot for The Founders Office™ engagement model.
+Your job is to generate a quarterly review prep document for an advisor, using the structured client context provided.
+Write in clear, professional language suited for a high-trust advisor-founder relationship.
+Be specific and data-grounded — reference actual tasks, scores, and alerts from the context.
+Do not invent information not present in the context. If a section has no data, say so briefly.
+Output pure markdown only — no preamble, no explanation outside the document itself.`;
+
+    const userMessage = `Generate the Q${effectiveQuarter} Review Prep document for ${clientName} using the context below.
+
+${contextBlock}
+
+The document MUST follow this exact structure:
+
+# Q${effectiveQuarter} Review Prep — ${clientName}
+*Prepared ${todayStr} | Ready for review on ${reviewDateStr}*
+
+## Quarter in Review
+### What Was Accomplished
+[Summarize completed tasks — group thematically if possible, highlight outcomes]
+
+### What Slipped
+[Summarize overdue and incomplete items — note patterns or root causes if apparent]
+
+### What Was Added Mid-Quarter
+[Note tasks that emerged after the quarter started — reflect on whether they distracted from the original plan]
+
+## Progress Snapshot
+[Summarize Six Keys movement if scores are available. Note active risk alerts and their implications.]
+
+## Recommended Objectives for Q${effectiveQuarter + 1}
+[List 3–5 specific, actionable objectives grounded in the ${phaseName} phase methodology, the client's current trajectory, and what slipped this quarter. Each objective should be one sentence.]
+
+## Suggested Agenda for the Review Meeting
+[List 5–7 agenda items in order, as short bullet points. Should flow logically from review → reflection → planning → commitment.]`;
+
+    const aiResponse = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 2000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    });
+
+    let docContent = "";
+    for (const block of aiResponse.content) {
+      if (block.type === "text") docContent += block.text;
+    }
+
+    // -----------------------------------------------------------------------
+    // 11. Save as a deliverable
+    // -----------------------------------------------------------------------
+    const deliverableTitle = `Q${effectiveQuarter} Review Prep — ${clientName}`;
+
+    const insertResult = await query(
+      `INSERT INTO deliverables (client_id, title, status, engine, content)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [clientId, deliverableTitle, "ready", "claude-sonnet-4-6", docContent]
+    );
+
+    return res.status(201).json(insertResult.rows[0]);
+  } catch (err) {
+    console.error("POST /deliverables/generate-review-prep error:", err);
+    return res.status(500).json({ error: "Review prep generation failed" });
   }
 });
 

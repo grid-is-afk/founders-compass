@@ -57,3 +57,12 @@ export function useGenerateEngagementBriefing() {
       qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] }),
   });
 }
+
+export function useGenerateReviewPrep(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ quarter }: { quarter: number }) =>
+      api.post("/deliverables/generate-review-prep", { clientId, quarter }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["deliverables", clientId] }),
+  });
+}
