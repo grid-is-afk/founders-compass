@@ -28,7 +28,11 @@ const RiskAlertsTab = () => {
   if (alerts.length === 0) {
     return (
       <div className="text-center py-6 space-y-3">
-        <p className="text-sm text-muted-foreground">No risk alerts for this client.</p>
+        <p className="text-sm text-muted-foreground">
+          {selectedClientId
+            ? "No risk alerts for this client."
+            : "Select a client in the list above to view their risk alerts."}
+        </p>
         {selectedClientId && (
           <button
             onClick={() => runScan()}

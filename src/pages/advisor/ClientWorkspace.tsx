@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { daysRemaining, countdownChipClass } from "@/lib/q1Utils";
 import ChapterCreateDialog from "@/components/chapters/ChapterCreateDialog";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
+import { FolderPickerPopover } from "@/components/copilot/FolderPickerPopover";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -110,26 +111,30 @@ export default function ClientWorkspace() {
 
           {/* QB AI action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
-            <button
-              onClick={() => {
+            <FolderPickerPopover
+              defaultFolder="Reports"
+              onConfirm={(folder) => {
                 setIsOpen(true);
-                sendMessage(`Generate an onboarding brief for ${c.name}. I need to get up to speed quickly. Include: client overview, long-term objective, current TFO phase, key stakeholders, recent meeting themes, top open tasks, any open commitments, and what's likely coming up next.`);
+                sendMessage(`Generate an onboarding brief for ${c.name} and save it to the "${folder}" folder. I need to get up to speed quickly. Include: client overview, long-term objective, current TFO phase, key stakeholders, recent meeting themes, top open tasks, any open commitments, and what's likely coming up next.`);
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors"
             >
-              <BookOpen className="w-3.5 h-3.5" />
-              Get Up to Speed
-            </button>
-            <button
-              onClick={() => {
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors">
+                <BookOpen className="w-3.5 h-3.5" />
+                Get Up to Speed
+              </button>
+            </FolderPickerPopover>
+            <FolderPickerPopover
+              defaultFolder="Reports"
+              onConfirm={(folder) => {
                 setIsOpen(true);
-                sendMessage(`Draft a monthly status update for ${c.name}. Include a summary of progress this month, what's currently in progress, next steps, and any blockers. Write it in a professional, client-facing tone.`);
+                sendMessage(`Draft a monthly status update for ${c.name} and save it to the "${folder}" folder. Include a summary of progress this month, what's currently in progress, next steps, and any blockers. Write it in a professional, client-facing tone.`);
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors"
             >
-              <FileBarChart2 className="w-3.5 h-3.5" />
-              Draft Status Update
-            </button>
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors">
+                <FileBarChart2 className="w-3.5 h-3.5" />
+                Draft Status Update
+              </button>
+            </FolderPickerPopover>
 
             {/* Q1 countdown chip */}
             <div

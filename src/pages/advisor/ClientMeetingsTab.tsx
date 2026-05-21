@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { Plus, CalendarDays, Clock, CheckCircle2, FileText } from "lucide-react";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
+import { MeetingRecapDialog } from "@/components/meetings/MeetingRecapDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -93,14 +94,50 @@ export default function ClientMeetingsTab() {
   const { data: meetings = [], isLoading } = useClientMeetings(client.id);
   const createMeeting = useCreateMeeting();
   const deleteMeeting = useDeleteMeeting();
+  const { sendMessage, setIsOpen } = useCopilotContext();
 
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [recapDialogOpen, setRecapDialogOpen] = useState(false);
   const [form, setForm] = useState<NewMeetingForm>({ type: "", date: "", notes: "" });
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<"agenda" | "capture" | null>(null);
 
   const upcoming = (meetings as Meeting[]).filter((m) => isUpcoming(m.date));
   const past = (meetings as Meeting[]).filter((m) => !isUpcoming(m.date));
+
+  function handleGenerateRecap(scope: string, selectedIds: string[]) {
+    const now = Date.now();
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    const oneMonth = 30 * 24 * 60 * 60 * 1000;
+
+    let targetMeetings: Meeting[];
+    if (scope === "selected") {
+      targetMeetings = past.filter((m) => selectedIds.includes(m.id));
+    } else if (scope === "last_week") {
+      targetMeetings = past.filter((m) => now - new Date(m.date ?? 0).getTime() <= oneWeek);
+    } else if (scope === "last_month") {
+      targetMeetings = past.filter((m) => now - new Date(m.date ?? 0).getTime() <= oneMonth);
+    } else {
+      targetMeetings = past;
+    }
+
+    const meetingList = targetMeetings
+      .map((m) => `- ${m.type ?? "Meeting"} on ${m.date ? new Date(m.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "unknown date"}`)
+      .join("\n");
+
+    const scopeLabel = scope === "all"
+      ? "all meetings"
+      : scope === "last_week"
+      ? "meetings from the past week"
+      : scope === "last_month"
+      ? "meetings from the past month"
+      : `the following ${targetMeetings.length} meeting(s)`;
+
+    setIsOpen(true);
+    sendMessage(
+      `Generate a meeting recap for ${client.name} covering ${scopeLabel}. Save it to the "Meeting Recaps" folder.\n\nMeetings to cover:\n${meetingList}\n\nFor each meeting include: key decisions made, action items with owners, open questions, and blockers. End with a forward-looking summary of what's coming next.`
+    );
+  }
 
   function handleExpand(id: string, section: "agenda" | "capture") {
     if (expandedId === id && expandedSection === section) {
@@ -186,10 +223,19 @@ export default function ClientMeetingsTab() {
       {/* Past */}
       {past.length > 0 && (
         <section>
-          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            Past ({past.length})
-          </h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Past ({past.length})
+            </h3>
+            <button
+              onClick={() => setRecapDialogOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Generate Recap
+            </button>
+          </div>
           <div className="space-y-3">
             {past.map((meeting) => (
               <MeetingCard
@@ -212,6 +258,15 @@ export default function ClientMeetingsTab() {
       <section className="border-t border-border pt-6">
         <StakeholdersPanel clientId={client.id} />
       </section>
+
+      {/* Meeting Recap Dialog */}
+      <MeetingRecapDialog
+        open={recapDialogOpen}
+        onOpenChange={setRecapDialogOpen}
+        meetings={past}
+        clientName={client.name}
+        onGenerate={handleGenerateRecap}
+      />
 
       {/* New Meeting Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
@@ -294,15 +349,6 @@ function MeetingCard({
   onDelete,
 }: MeetingCardProps) {
   const upcoming = isUpcoming(meeting.date);
-  const { sendMessage, setIsOpen } = useCopilotContext();
-
-  function handleGenerateRecap() {
-    const dateStr = meeting.date
-      ? new Date(meeting.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-      : "recent";
-    setIsOpen(true);
-    sendMessage(`Generate a meeting recap for the ${meeting.type ?? "meeting"} on ${dateStr}. Include attendees, key decisions made, action items with owners, open questions, and suggested focus for the next meeting.`);
-  }
 
   return (
     <div
@@ -344,28 +390,17 @@ function MeetingCard({
             </Button>
           )}
 
-          {/* Capture + Recap buttons — for past meetings */}
+          {/* Capture button — for past meetings */}
           {!upcoming && (
-            <>
-              <Button
-                variant={expandedSection === "capture" && isExpanded ? "default" : "outline"}
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={() => onToggleSection("capture")}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                {meeting.processed_at ? "View Capture" : "Capture Notes"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 text-xs"
-                onClick={handleGenerateRecap}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                Generate Recap
-              </Button>
-            </>
+            <Button
+              variant={expandedSection === "capture" && isExpanded ? "default" : "outline"}
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => onToggleSection("capture")}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {meeting.processed_at ? "View Capture" : "Capture Notes"}
+            </Button>
           )}
 
           <Button
