@@ -21,7 +21,7 @@ const RiskAlertsTab = () => {
     id: a.id,
     severity: (a.severity ?? "info") as "critical" | "warning" | "info",
     title: a.title,
-    detail: a.detail ?? "",
+    detail: (a.detail ?? "").replace(/^\[auto\]\s*/, ""),
     client: a.client ?? "",
   }));
 

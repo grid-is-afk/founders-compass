@@ -36,9 +36,10 @@ router.post("/:clientId", async (req, res) => {
 
     for (const t of overdueResult.rows) {
       const days = Math.round(Number(t.days_overdue));
+      const dueDate = new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
       detections.push({
-        title: `Task overdue: "${t.title}"`,
-        detail: `[auto] Overdue by ${days} day${days !== 1 ? "s" : ""}. Due ${new Date(t.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.`,
+        title: t.title,
+        detail: `[auto] ${days} day${days !== 1 ? "s" : ""} overdue — Due ${dueDate}`,
         severity: days >= 21 ? "critical" : "warning",
       });
     }
@@ -76,8 +77,8 @@ router.post("/:clientId", async (req, res) => {
     );
     for (const t of blockedResult.rows) {
       detections.push({
-        title: `Blocked task needs attention: "${t.title}"`,
-        detail: "[auto] Task is marked blocked but has no resolution note or next step.",
+        title: t.title,
+        detail: "[auto] Marked blocked — no resolution note or next step recorded.",
         severity: "warning",
       });
     }
