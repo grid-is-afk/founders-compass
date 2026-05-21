@@ -229,6 +229,10 @@ CREATE TABLE IF NOT EXISTS deliverables (
 
 CREATE INDEX IF NOT EXISTS idx_deliverables_client ON deliverables(client_id);
 
+-- Migrations: deliverables additional columns
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS review_status TEXT;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS content TEXT;
+
 -- ============================================================
 -- Meetings
 -- ============================================================

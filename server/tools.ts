@@ -272,6 +272,111 @@ export async function executeTool(
       };
       const reportTitle = titleMap[input.reportType as string] ?? String(input.reportType);
 
+      // Build type-specific context from DB for richer generation
+      let contextBlock = "";
+      if (clientId) {
+        try {
+          const reportType = input.reportType as string;
+
+          if (reportType === "meeting_recap") {
+            const mtgResult = await query(
+              `SELECT type, date, notes, status FROM meetings
+               WHERE client_id = $1
+               ORDER BY date DESC NULLS LAST LIMIT 1`,
+              [clientId]
+            );
+            if (mtgResult.rows.length > 0) {
+              const m = mtgResult.rows[0];
+              const dateStr = m.date ? new Date(m.date as string).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Date unknown";
+              contextBlock = `\n\nMost recent meeting context:\n- Type: ${m.type ?? "General"}\n- Date: ${dateStr}\n- Status: ${m.status}\n- Notes: ${m.notes ?? "(no notes recorded)"}`;
+            } else {
+              contextBlock = "\n\nNo meetings on record yet — draft a general recap template.";
+            }
+          } else if (reportType === "quarterly_review") {
+            const qpResult = await query(
+              `SELECT qp.label, qp.status, qp.quarter, qp.year,
+                      COUNT(t.id) FILTER (WHERE t.status = 'done') AS completed_tasks,
+                      COUNT(t.id) FILTER (WHERE t.status != 'done') AS open_tasks
+               FROM quarterly_plans qp
+               LEFT JOIN tasks t ON t.client_id = qp.client_id
+               WHERE qp.client_id = $1
+               ORDER BY qp.year DESC, qp.quarter DESC LIMIT 1`,
+              [clientId]
+            );
+            const phaseResult = await query(
+              `SELECT phase, label, status FROM quarterly_phases
+               WHERE plan_id IN (
+                 SELECT id FROM quarterly_plans WHERE client_id = $1
+                 ORDER BY year DESC, quarter DESC LIMIT 1
+               ) ORDER BY sort_order`,
+              [clientId]
+            );
+            if (qpResult.rows.length > 0) {
+              const qp = qpResult.rows[0];
+              const phases = phaseResult.rows.map((p: { phase: string; label: string; status: string }) => `  - ${p.label ?? p.phase}: ${p.status}`).join("\n");
+              contextBlock = `\n\nQuarterly plan context (Q${qp.quarter as number} ${qp.year as number}):\n- Plan label: ${qp.label ?? "Unnamed"}\n- Status: ${qp.status}\n- Completed tasks: ${qp.completed_tasks as number}\n- Open tasks: ${qp.open_tasks as number}\nPhases:\n${phases || "  (no phases recorded)"}`;
+            }
+          } else if (reportType === "monthly_status_update") {
+            const taskResult = await query(
+              `SELECT
+                 COUNT(*) FILTER (WHERE status != 'done') AS open_count,
+                 COUNT(*) FILTER (WHERE status = 'done' AND updated_at >= NOW() - INTERVAL '30 days') AS completed_this_month
+               FROM tasks WHERE client_id = $1`,
+              [clientId]
+            );
+            const riskResult = await query(
+              `SELECT COUNT(*) AS active_risks FROM risk_alerts
+               WHERE client_id = $1 AND resolved_at IS NULL`,
+              [clientId]
+            );
+            const t = taskResult.rows[0];
+            const r = riskResult.rows[0];
+            contextBlock = `\n\nMonthly status context:\n- Open tasks: ${t?.open_count ?? 0}\n- Tasks completed in last 30 days: ${t?.completed_this_month ?? 0}\n- Active risk alerts: ${r?.active_risks ?? 0}`;
+          } else if (reportType === "risk_summary") {
+            const risksResult = await query(
+              `SELECT title, severity, detail FROM risk_alerts
+               WHERE client_id = $1 AND resolved_at IS NULL
+               ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`,
+              [clientId]
+            );
+            if (risksResult.rows.length > 0) {
+              const riskLines = risksResult.rows.map(
+                (r: { title: string; severity: string; detail: string | null }) =>
+                  `  - [${(r.severity as string).toUpperCase()}] ${r.title as string}${r.detail ? ": " + (r.detail as string) : ""}`
+              ).join("\n");
+              contextBlock = `\n\nActive risk alerts (${risksResult.rows.length as number} total):\n${riskLines}`;
+            } else {
+              contextBlock = "\n\nNo active risk alerts on record — note this in the summary.";
+            }
+          } else if (
+            reportType === "capital_readiness_memo" ||
+            reportType === "client_brief" ||
+            reportType === "board_update" ||
+            reportType === "assessment_summary"
+          ) {
+            const keysResult = await query(
+              `SELECT clarity, alignment, structure, stewardship, velocity, legacy, notes
+               FROM client_six_keys WHERE client_id = $1
+               ORDER BY created_at DESC LIMIT 1`,
+              [clientId]
+            );
+            if (keysResult.rows.length > 0) {
+              const k = keysResult.rows[0];
+              const scores = ["clarity", "alignment", "structure", "stewardship", "velocity", "legacy"]
+                .map((key) => `  - ${key.charAt(0).toUpperCase() + key.slice(1)}: ${(k[key] as number | null) ?? "N/A"}/100`)
+                .join("\n");
+              contextBlock = `\n\nSix Keys scores:\n${scores}${k.notes ? "\n- Notes: " + (k.notes as string) : ""}`;
+            } else {
+              contextBlock = "\n\nNo Six Keys scores on record — use available client context to draft best-effort report.";
+            }
+          }
+          // onboarding_brief: handled by generate_engagement_briefing — no extra context needed
+        } catch (contextErr) {
+          // Non-fatal — proceed without context if DB query fails
+          console.warn("generate_report: context query failed:", contextErr);
+        }
+      }
+
       try {
         if (clientId) {
           await query(
@@ -283,14 +388,14 @@ export async function executeTool(
         }
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. The report is being saved to the client's Data Room under Reports.`,
+          result: `Report "${reportTitle}" created for ${input.clientName as string}. Now write the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report. Structure it clearly with headers, bullet points where appropriate, and a concise executive summary at the top.`,
           action: { type: "report_generated", ...input, clientId, reportTitle },
         };
       } catch (err) {
         console.error("generate_report DB error:", err);
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. The report content is in this chat response.`,
+          result: `Now write the full "${reportTitle}" report in professional markdown for ${input.clientName as string}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top.`,
           action: { type: "report_generated", ...input, reportTitle },
         };
       }

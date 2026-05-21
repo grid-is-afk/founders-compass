@@ -7,7 +7,7 @@ import { saveReportToDataRoom } from "../lib/saveReport.js";
 
 const router = Router();
 
-const ALLOWED_COLUMNS = new Set(["title", "status", "engine", "review_status"]);
+const ALLOWED_COLUMNS = new Set(["title", "status", "engine", "review_status", "content"]);
 
 const verifyClient = verifyClientAccess;
 
