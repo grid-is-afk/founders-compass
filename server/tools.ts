@@ -54,7 +54,7 @@ export const tools = [
   {
     name: "generate_report",
     description:
-      "Generate a professional advisory report or memo. Use when the advisor asks to draft, create, or generate a document like a Capital Readiness Memo, Client Brief, Risk Summary, Board Update, or Assessment Summary.",
+      "Generate a professional advisory report or memo. Use when the advisor asks to draft, create, or generate a document like a Capital Readiness Memo, Client Brief, Risk Summary, Board Update, Assessment Summary, Meeting Recap, Monthly Status Update, or Onboarding Brief.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -67,6 +67,9 @@ export const tools = [
             "board_update",
             "assessment_summary",
             "quarterly_review",
+            "meeting_recap",
+            "monthly_status_update",
+            "onboarding_brief",
           ],
           description: "Type of report",
         },

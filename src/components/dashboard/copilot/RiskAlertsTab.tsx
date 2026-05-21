@@ -1,11 +1,13 @@
+import { ScanSearch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
-import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
+import { useClientRiskAlerts, useRunRiskScan } from "@/hooks/useRiskAlerts";
 import { severityIcon, severityStyle } from "@/lib/copilotStyles";
 
 const RiskAlertsTab = () => {
   const { selectedClientId } = useClientContext();
   const { data: rawAlerts = [] } = useClientRiskAlerts(selectedClientId);
+  const { mutate: runScan, isPending: scanning } = useRunRiskScan(selectedClientId);
 
   interface DbRiskAlert {
     id: string;
@@ -25,14 +27,36 @@ const RiskAlertsTab = () => {
 
   if (alerts.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground text-center py-6">
-        No risk alerts for this client.
-      </p>
+      <div className="text-center py-6 space-y-3">
+        <p className="text-sm text-muted-foreground">No risk alerts for this client.</p>
+        {selectedClientId && (
+          <button
+            onClick={() => runScan()}
+            disabled={scanning}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors disabled:opacity-50"
+          >
+            <ScanSearch className="w-4 h-4" />
+            {scanning ? "Scanning..." : "Scan Now"}
+          </button>
+        )}
+      </div>
     );
   }
 
   return (
     <div className="space-y-2">
+      {selectedClientId && (
+        <div className="flex justify-end mb-1">
+          <button
+            onClick={() => runScan()}
+            disabled={scanning}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors disabled:opacity-50"
+          >
+            <ScanSearch className="w-3.5 h-3.5" />
+            {scanning ? "Scanning..." : "Re-scan"}
+          </button>
+        </div>
+      )}
       {alerts.map((alert) => (
         <div
           key={alert.id}

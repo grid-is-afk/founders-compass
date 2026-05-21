@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Plus, CalendarDays, Clock, CheckCircle2 } from "lucide-react";
+import { Plus, CalendarDays, Clock, CheckCircle2, FileText } from "lucide-react";
+import { useCopilotContext } from "@/components/copilot/CopilotProvider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -293,6 +294,15 @@ function MeetingCard({
   onDelete,
 }: MeetingCardProps) {
   const upcoming = isUpcoming(meeting.date);
+  const { sendMessage, setIsOpen } = useCopilotContext();
+
+  function handleGenerateRecap() {
+    const dateStr = meeting.date
+      ? new Date(meeting.date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+      : "recent";
+    setIsOpen(true);
+    sendMessage(`Generate a meeting recap for the ${meeting.type ?? "meeting"} on ${dateStr}. Include attendees, key decisions made, action items with owners, open questions, and suggested focus for the next meeting.`);
+  }
 
   return (
     <div
@@ -334,17 +344,28 @@ function MeetingCard({
             </Button>
           )}
 
-          {/* Capture button — for past meetings */}
+          {/* Capture + Recap buttons — for past meetings */}
           {!upcoming && (
-            <Button
-              variant={expandedSection === "capture" && isExpanded ? "default" : "outline"}
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => onToggleSection("capture")}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {meeting.processed_at ? "View Capture" : "Capture Notes"}
-            </Button>
+            <>
+              <Button
+                variant={expandedSection === "capture" && isExpanded ? "default" : "outline"}
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => onToggleSection("capture")}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {meeting.processed_at ? "View Capture" : "Capture Notes"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={handleGenerateRecap}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Generate Recap
+              </Button>
+            </>
           )}
 
           <Button

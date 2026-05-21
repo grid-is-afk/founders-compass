@@ -49,6 +49,7 @@ import notificationRoutes from "./routes/notifications.js";
 import adminRoutes from "./routes/admin.js";
 import clientIpValueFrameworkRoutes from "./routes/clientIpValueFramework.js";
 import stakeholderRoutes from "./routes/stakeholders.js";
+import riskScanRoutes from "./routes/riskScan.js";
 
 dotenv.config();
 
@@ -139,6 +140,7 @@ app.use("/api/instruments", authMiddleware, instrumentRoutes);
 app.use("/api/protection", authMiddleware, protectionRoutes);
 app.use("/api/grow", authMiddleware, growRoutes);
 app.use("/api/risk-alerts", authMiddleware, riskAlertRoutes);
+app.use("/api/risk-scan", authMiddleware, riskScanRoutes);
 app.use("/api/deliverables", authMiddleware, deliverableRoutes);
 app.use("/api/meetings", authMiddleware, meetingRoutes);
 app.use("/api/documents", authMiddleware, documentRoutes);
