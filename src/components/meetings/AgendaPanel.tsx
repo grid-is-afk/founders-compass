@@ -209,8 +209,12 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
                     onClick={() => setRegenerateConfirmOpen(true)}
                     disabled={generateAgenda.isPending}
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    Regenerate
+                    {generateAgenda.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    )}
+                    {generateAgenda.isPending ? "Regenerating…" : "Regenerate"}
                   </Button>
                   <Button
                     variant="outline"
@@ -237,8 +241,12 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
                     onClick={handleGenerate}
                     disabled={generateAgenda.isPending}
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Regenerate
+                    {generateAgenda.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    {generateAgenda.isPending ? "Regenerating…" : "Regenerate"}
                   </Button>
                   <Button
                     size="sm"
