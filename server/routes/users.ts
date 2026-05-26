@@ -54,4 +54,22 @@ router.patch("/me", async (req, res) => {
   }
 });
 
+// GET /api/users/advisors — list of users who can be assigned to tasks
+// Available to any authenticated user (advisor, admin). Used by Capture
+// edit form's assignee dropdown.
+router.get("/advisors", async (req, res) => {
+  try {
+    const result = await query(
+      `SELECT id, name, email
+       FROM users
+       WHERE role IN ('advisor', 'admin')
+       ORDER BY name ASC`
+    );
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /api/users/advisors error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
   useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
+  useAdvisors,
   type Meeting, type ProposedChange, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
@@ -45,6 +46,13 @@ const CONFIDENCE_COLORS: Record<ProposedChange["confidence"], string> = {
   medium: "text-amber-600",
   low: "text-orange-600",
 };
+
+const PHASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "discover", label: "Chapter 1: Discover" },
+  { value: "grow", label: "Chapter 2: Grow" },
+  { value: "strengthen", label: "Chapter 3: Strengthen" },
+  { value: "elevate", label: "Chapter 4: Elevate" },
+];
 
 export default function CapturePanel({ meeting, clientId }: Props) {
   const capture = useCaptureMeeting();
@@ -510,6 +518,7 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
     suggested_due_date: change.suggested_due_date ?? "",
     suggested_phase: change.suggested_phase ?? "",
   });
+  const { data: advisors = [] } = useAdvisors();
 
   function handleSaveEdit() {
     onSaveEdit({
@@ -711,7 +720,20 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
               <Label className="text-[10px]">Assignee</Label>
-              <Input value={editForm.suggested_assignee} onChange={(e) => setEditForm((f) => ({ ...f, suggested_assignee: e.target.value }))} className="h-7 text-xs" placeholder="Name" />
+              <Select
+                value={editForm.suggested_assignee || "__none__"}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_assignee: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
+                  {advisors.map((a) => (
+                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-[10px]">Due Date</Label>
@@ -719,7 +741,20 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
             </div>
             <div className="space-y-1">
               <Label className="text-[10px]">Phase</Label>
-              <Input value={editForm.suggested_phase} onChange={(e) => setEditForm((f) => ({ ...f, suggested_phase: e.target.value }))} className="h-7 text-xs" placeholder="discover" />
+              <Select
+                value={editForm.suggested_phase || "__none__"}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_phase: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select phase" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No phase</SelectItem>
+                  {PHASE_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.suggested_due_date) && (

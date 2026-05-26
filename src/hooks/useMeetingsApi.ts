@@ -191,6 +191,9 @@ export function useResolveDeferred() {
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      toast.success("Item resolved", {
+        description: "Removed from carry-over and won't appear in future meetings.",
+      });
     },
     onError: (err: Error) => {
       toast.error("Failed to resolve item", {
@@ -215,12 +218,29 @@ export function useDiscardDeferred() {
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      toast.success("Item discarded", {
+        description: "Removed from carry-over and won't appear again.",
+      });
     },
     onError: (err: Error) => {
       toast.error("Failed to discard item", {
         description: err.message || "Please try again.",
       });
     },
+  });
+}
+
+export interface Advisor {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export function useAdvisors() {
+  return useQuery<Advisor[]>({
+    queryKey: ["users", "advisors"],
+    queryFn: () => api.get(`/users/advisors`),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

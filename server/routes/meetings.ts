@@ -275,6 +275,53 @@ router.post("/:id/capture", async (req, res) => {
       [captureText.slice(0, 5000), req.params.id]
     );
 
+    // If notes were pasted (not sourced from an existing document), also save
+    // a .txt copy to the Data Room so QB can index it and advisors can find
+    // it later. Idempotent: skip if a note doc already exists for this meeting.
+    if (notes && !document_id) {
+      try {
+        const existingNoteDoc = await query(
+          `SELECT id FROM documents
+           WHERE source_meeting_id = $1 AND subfolder = 'Meeting Transcripts'
+           LIMIT 1`,
+          [req.params.id]
+        );
+
+        if (existingNoteDoc.rows.length === 0) {
+          const clientId = meeting.client_id as string;
+          const meetingType = (meeting.type as string | null) ?? "Meeting";
+          const meetingDate = meeting.date
+            ? new Date(meeting.date as string).toISOString().slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+          const docName = `${meetingType} Notes — ${meetingDate}.txt`;
+          const noteBuffer = Buffer.from(captureText, "utf-8");
+
+          const bucketPath = `clients/${clientId}/${crypto.randomUUID()}.txt`;
+          const { error: uploadError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(bucketPath, noteBuffer, { contentType: "text/plain" });
+          if (!uploadError) {
+            const sizeBytes = noteBuffer.length;
+            const sizeLabel =
+              sizeBytes < 1024 * 1024
+                ? `${(sizeBytes / 1024).toFixed(0)} KB`
+                : `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+
+            const docRes = await query(
+              `INSERT INTO documents (client_id, name, category, subfolder, file_url, size, size_bytes, type, uploaded_by_role, source_meeting_id)
+               VALUES ($1, $2, 'Meeting Notes', 'Meeting Transcripts', $3, $4, $5, 'document', 'advisor', $6)
+               RETURNING id`,
+              [clientId, docName, bucketPath, sizeLabel, sizeBytes, req.params.id]
+            );
+            await ingestDocument(docRes.rows[0].id, clientId, noteBuffer, docName);
+          }
+        }
+      } catch (saveErr) {
+        // Auto-save is best-effort — do not fail the capture if it fails.
+        console.error("Auto-save pasted notes to Data Room failed:", saveErr);
+      }
+    }
+
     return res.json(result);
   } catch (err) {
     console.error("POST /meetings/:id/capture error:", err);
