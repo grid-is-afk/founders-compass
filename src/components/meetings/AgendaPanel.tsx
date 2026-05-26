@@ -1,8 +1,18 @@
 import { useState } from "react";
-import { Sparkles, Edit3, Lock, Download, Info, Loader2, Plus, X, ChevronDown } from "lucide-react";
+import { Sparkles, Edit3, Lock, Download, Info, Loader2, Plus, X, ChevronDown, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   useGenerateAgenda,
   useUpdateMeeting,
@@ -40,6 +50,7 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
   const updateMeeting = useUpdateMeeting();
   const userTimezone = useUserTimezone();
   const [downloading, setDownloading] = useState(false);
+  const [regenerateConfirmOpen, setRegenerateConfirmOpen] = useState(false);
 
   const [sections, setSections] = useState<AgendaSection[]>(() =>
     parseAgenda(meeting.agenda)
@@ -190,20 +201,32 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
             </div>
             <div className="flex items-center gap-2">
               {isFinal && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={handleDownload}
-                  disabled={downloading}
-                >
-                  {downloading ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Download className="w-3.5 h-3.5" />
-                  )}
-                  {downloading ? "Preparing…" : "Download"}
-                </Button>
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={() => setRegenerateConfirmOpen(true)}
+                    disabled={generateAgenda.isPending}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Regenerate
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    onClick={handleDownload}
+                    disabled={downloading}
+                  >
+                    {downloading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                    {downloading ? "Preparing…" : "Download"}
+                  </Button>
+                </>
               )}
               {!isFinal && (
                 <>
@@ -307,6 +330,31 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
           )}
         </>
       )}
+
+      <AlertDialog open={regenerateConfirmOpen} onOpenChange={setRegenerateConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Regenerate this agenda?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces the locked agenda with a new draft built from the
+              latest tasks, risks, and methodology phase. The current locked
+              version will be overwritten and you'll need to Mark Final again
+              to re-lock and snapshot it to the Data Room.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                setRegenerateConfirmOpen(false);
+                await handleGenerate();
+              }}
+            >
+              Regenerate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
