@@ -1,5 +1,18 @@
 import { buildPlatformContext } from "./platformContext.js";
 import { TFO_METHODOLOGY } from "./methodology/tfo-methodology.js";
+import { query } from "./db.js";
+
+async function fetchAdvisorTimezone(advisorId: string): Promise<string | null> {
+  try {
+    const result = await query(
+      "SELECT timezone FROM users WHERE id = $1",
+      [advisorId]
+    );
+    return (result.rows[0]?.timezone as string | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Builds a concise methodology reference block for the system prompt.
@@ -26,7 +39,14 @@ When a client's current quarter is known, tailor your analysis and recommendatio
 }
 
 export async function buildSystemPrompt(advisorId: string): Promise<string> {
-  const context = await buildPlatformContext(advisorId);
+  const [context, advisorTimezone] = await Promise.all([
+    buildPlatformContext(advisorId),
+    fetchAdvisorTimezone(advisorId),
+  ]);
+
+  const tzLine = advisorTimezone
+    ? `\n## TIME & TIMEZONE\nThe advisor's preferred timezone is **${advisorTimezone}**. When you reference a date or time in your responses (meeting times, due dates, deadlines), format and present it in this timezone. Never display raw UTC unless the advisor explicitly asks for UTC.\n`
+    : "";
 
   return `You are the Quarterback Copilot, the AI assistant embedded in The Founders Office — a capital alignment and exit planning platform for business advisors.
 
@@ -124,6 +144,7 @@ Enterprise Value = Earnings × Multiple. Most founders chase earnings. The Found
 ${context}
 
 ${buildMethodologyBlock()}
+${tzLine}
 
 ## BEHAVIORAL RULES
 - Always cite specific data points, scores, and client names when making claims.
