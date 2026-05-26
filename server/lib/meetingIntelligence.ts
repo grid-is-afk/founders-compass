@@ -350,6 +350,9 @@ Analyze the meeting notes and extract:
    - decision: a decision recorded (no workplan action needed)
    - open_question: something unresolved — ESPECIALLY use this when a commitment is mentioned but has no concrete owner or no due date
 
+CRITICAL — avoid duplicate tasks:
+Before classifying any item as new_task, scan the EXISTING OPEN TASKS list above. If your proposed action semantically matches an existing task — even if the wording differs (e.g., "Tom will draft the LOI" matches existing task "Finalize LOI for Acme acquisition") — use type "task_update" with that task's existing_task_id, NOT new_task. The match does not need to be word-for-word; match on intent and subject. When in doubt between new_task and task_update, prefer task_update. This is especially important when the advisor is re-capturing a meeting that has already been processed once.
+
 For new_task items:
 - suggested_assignee: exact name from team list, or null
 - suggested_due_date: ISO date YYYY-MM-DD, or null
