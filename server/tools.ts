@@ -1,4 +1,5 @@
 import { query } from "./db.js";
+import { parseAgendaSections } from "./lib/agendaParser.js";
 
 export const tools = [
   {
@@ -607,10 +608,8 @@ export async function executeTool(
           };
         }
 
-        let sections: Array<{ title: string; items: Array<string | { text: string; source?: string }> }>;
-        try {
-          sections = JSON.parse(meetingRow.agenda);
-        } catch {
+        const sections = parseAgendaSections(meetingRow.agenda);
+        if (sections.length === 0) {
           return {
             success: false,
             result: `Agenda data for meeting ${meetingRow.id} could not be parsed. Treat this as no agenda available.`,
@@ -621,11 +620,7 @@ export async function executeTool(
         const agendaMd = sections
           .map((s, i) => {
             const items = s.items
-              .map((it) => {
-                const text = typeof it === "string" ? it : it.text;
-                const source = typeof it === "string" ? null : it.source;
-                return `  - ${text}${source ? `\n    Context: ${source}` : ""}`;
-              })
+              .map((it) => `  - ${it.text}${it.source ? `\n    Context: ${it.source}` : ""}`)
               .join("\n");
             return `${i + 1}. ${s.title}\n${items}`;
           })

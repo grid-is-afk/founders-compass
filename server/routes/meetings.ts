@@ -7,7 +7,10 @@ import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
 import { generateAgenda, captureMeeting } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
-import { buildAgendaDocx, buildAgendaFilename, type AgendaSectionInput } from "../lib/agendaDocx.js";
+import { buildAgendaDocx, buildAgendaFilename } from "../lib/agendaDocx.js";
+import { parseAgendaSections } from "../lib/agendaParser.js";
+import { snapshotAgendaToDataRoom } from "../lib/agendaSnapshot.js";
+import { safeTimezone } from "../lib/timezone.js";
 
 const router = Router();
 
@@ -37,125 +40,6 @@ async function getMeetingAndVerify(meetingId: string, userId: string, userRole: 
   const ok = await verifyClient(meeting.client_id, userId, userRole);
   if (!ok) return null;
   return meeting;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-interface MeetingRow {
-  id: string;
-  client_id: string;
-  type: string | null;
-  date: string | null;
-  agenda: string | null;
-  agenda_status: string | null;
-}
-
-// Snapshot a locked agenda into the client's Data Room as a .docx file.
-// Idempotent: on re-lock, the existing document is overwritten in-place and
-// its document_chunks are replaced via ingestDocument's internal dedupe.
-async function snapshotAgendaToDataRoom(meeting: MeetingRow, advisorId: string): Promise<void> {
-  if (!meeting.agenda) {
-    console.warn(`Agenda snapshot skipped: meeting ${meeting.id} has no agenda content`);
-    return;
-  }
-
-  let sections: AgendaSectionInput[];
-  try {
-    const parsed = JSON.parse(meeting.agenda) as Array<{
-      title: string;
-      items: Array<string | { text: string; source?: string }>;
-    }>;
-    sections = parsed.map((s) => ({
-      title: s.title,
-      items: s.items.map((item) => (typeof item === "string" ? { text: item } : item)),
-    }));
-  } catch (err) {
-    console.error(`Agenda snapshot: failed to parse agenda for meeting ${meeting.id}:`, err);
-    return;
-  }
-
-  const [clientRes, advisorRes] = await Promise.all([
-    query("SELECT name FROM clients WHERE id = $1", [meeting.client_id]),
-    query("SELECT timezone FROM users WHERE id = $1", [advisorId]),
-  ]);
-  const clientName = (clientRes.rows[0]?.name as string | undefined) ?? "Client";
-  const advisorTimezone = (advisorRes.rows[0]?.timezone as string | undefined) ?? "UTC";
-
-  const meetingDateLabel = meeting.date
-    ? new Intl.DateTimeFormat("en-US", {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: advisorTimezone,
-      }).format(new Date(meeting.date))
-    : "Date TBD";
-
-  const filenameDate = meeting.date
-    ? new Date(meeting.date).toISOString().slice(0, 10)
-    : "undated";
-
-  const buffer = await buildAgendaDocx({
-    clientName,
-    meetingType: meeting.type ?? "Meeting",
-    meetingDate: meetingDateLabel,
-    sections,
-  });
-  const filename = buildAgendaFilename(clientName, filenameDate);
-
-  // Deterministic bucket path keyed by meeting ID so upsert always overwrites
-  // the existing file for that meeting — no orphaned snapshots.
-  const bucketPath = `clients/${meeting.client_id}/agendas/${meeting.id}.docx`;
-  const { error: uploadError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .upload(bucketPath, buffer, {
-      contentType:
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      upsert: true,
-    });
-  if (uploadError) throw uploadError;
-
-  await query(
-    `INSERT INTO data_room_folders (client_id, category, name)
-     VALUES ($1, 'Meeting Agendas', 'Meeting Agendas')
-     ON CONFLICT (client_id, category, name) DO NOTHING`,
-    [meeting.client_id]
-  );
-
-  const sizeBytes = buffer.length;
-  const sizeLabel = formatBytes(sizeBytes);
-
-  const existing = await query(
-    `SELECT id FROM documents
-       WHERE source_meeting_id = $1 AND category = 'Meeting Agendas'
-       LIMIT 1`,
-    [meeting.id]
-  );
-
-  let docId: string;
-  if (existing.rows.length > 0) {
-    docId = existing.rows[0].id as string;
-    await query(
-      `UPDATE documents
-         SET name = $1, file_url = $2, size = $3, size_bytes = $4, uploaded_at = NOW()
-       WHERE id = $5`,
-      [filename, bucketPath, sizeLabel, sizeBytes, docId]
-    );
-  } else {
-    const inserted = await query(
-      `INSERT INTO documents
-         (client_id, name, category, file_url, size, size_bytes, type, uploaded_by_role, source_meeting_id)
-       VALUES ($1, $2, 'Meeting Agendas', $3, $4, $5, 'document', 'advisor', $6)
-       RETURNING id`,
-      [meeting.client_id, filename, bucketPath, sizeLabel, sizeBytes, meeting.id]
-    );
-    docId = inserted.rows[0].id as string;
-  }
-
-  // Re-ingest for RAG. ingestDocument deletes existing chunks for this doc
-  // before inserting new ones, so re-locks replace rather than duplicate.
-  await ingestDocument(docId, meeting.client_id);
 }
 
 // ── GET /api/meetings?client_id=xxx ──────────────────────────────────────────
@@ -288,24 +172,15 @@ router.get("/:id/agenda.docx", async (req, res) => {
       return res.status(404).json({ error: "No agenda has been generated for this meeting" });
     }
 
-    let sections: AgendaSectionInput[];
-    try {
-      const parsed = JSON.parse(meeting.agenda) as Array<{
-        title: string;
-        items: Array<string | { text: string; source?: string }>;
-      }>;
-      sections = parsed.map((s) => ({
-        title: s.title,
-        items: s.items.map((item) => (typeof item === "string" ? { text: item } : item)),
-      }));
-    } catch {
-      return res.status(500).json({ error: "Agenda data is corrupted" });
+    const sections = parseAgendaSections(meeting.agenda);
+    if (sections.length === 0) {
+      return res.status(500).json({ error: "Agenda data is empty or corrupted" });
     }
 
     const clientRes = await query("SELECT name FROM clients WHERE id = $1", [meeting.client_id]);
     const clientName = (clientRes.rows[0]?.name as string | undefined) ?? "Client";
 
-    const tzHeader = (req.headers["x-user-timezone"] as string | undefined) || "UTC";
+    const tzHeader = safeTimezone(req.headers["x-user-timezone"]);
     const meetingDateLabel = meeting.date
       ? new Intl.DateTimeFormat("en-US", {
           dateStyle: "medium",

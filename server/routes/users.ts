@@ -1,23 +1,15 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { isValidIanaTimezone } from "../lib/timezone.js";
 
 const router = Router();
-
-function isValidTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // PATCH /api/users/me — update the authenticated user's profile preferences
 router.patch("/me", async (req, res) => {
   const { timezone, name } = req.body ?? {};
 
   if (timezone !== undefined && timezone !== null) {
-    if (typeof timezone !== "string" || !isValidTimezone(timezone)) {
+    if (!isValidIanaTimezone(timezone)) {
       return res.status(400).json({ error: "Invalid IANA timezone" });
     }
   }
