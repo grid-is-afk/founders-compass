@@ -44,9 +44,14 @@ export async function buildSystemPrompt(advisorId: string): Promise<string> {
     fetchAdvisorTimezone(advisorId),
   ]);
 
-  const tzLine = advisorTimezone
-    ? `\n## TIME & TIMEZONE\nThe advisor's preferred timezone is **${advisorTimezone}**. When you reference a date or time in your responses (meeting times, due dates, deadlines), format and present it in this timezone. Never display raw UTC unless the advisor explicitly asks for UTC.\n`
-    : "";
+  const tz = advisorTimezone ?? "UTC";
+  const nowInTz = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "full",
+    timeStyle: "long",
+    timeZone: tz,
+  }).format(new Date());
+
+  const tzLine = `\n## TIME & TIMEZONE\nThe current time is **${nowInTz}**.\nThe advisor's preferred timezone is **${tz}**.\nWhen the advisor asks "what time is it" or "what's today's date", answer directly using the current time above — do not say you lack a real-time clock. When you reference any other date or time in your responses (meeting times, due dates, deadlines), format and present it in this timezone. Never display raw UTC unless the advisor explicitly asks for UTC.\n`;
 
   return `You are the Quarterback Copilot, the AI assistant embedded in The Founders Office — a capital alignment and exit planning platform for business advisors.
 

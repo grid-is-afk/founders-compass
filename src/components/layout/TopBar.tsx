@@ -21,6 +21,7 @@ import {
   UserPlus,
   Users,
   Clock,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
@@ -326,6 +327,10 @@ const TopBar = () => {
               Assessments
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate("/advisor/settings")} className="cursor-pointer">
+              <SettingsIcon className="w-4 h-4 mr-2" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => { logout(); navigate("/login"); }}
               className="cursor-pointer"
