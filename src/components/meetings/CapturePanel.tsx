@@ -502,10 +502,25 @@ interface ChangeRowProps {
 function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSaveEdit }: ChangeRowProps) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ title: change.title, detail: change.detail, suggested_assignee: change.suggested_assignee ?? "", suggested_due_date: change.suggested_due_date ?? "", suggested_phase: change.suggested_phase ?? "" });
+  const [editForm, setEditForm] = useState({
+    type: change.type,
+    title: change.title,
+    detail: change.detail,
+    suggested_assignee: change.suggested_assignee ?? "",
+    suggested_due_date: change.suggested_due_date ?? "",
+    suggested_phase: change.suggested_phase ?? "",
+  });
 
   function handleSaveEdit() {
-    onSaveEdit({ ...change, ...editForm, suggested_assignee: editForm.suggested_assignee || null, suggested_due_date: editForm.suggested_due_date || null, suggested_phase: editForm.suggested_phase || null });
+    onSaveEdit({
+      ...change,
+      type: editForm.type,
+      title: editForm.title,
+      detail: editForm.detail,
+      suggested_assignee: editForm.suggested_assignee || null,
+      suggested_due_date: editForm.suggested_due_date || null,
+      suggested_phase: editForm.suggested_phase || null,
+    });
     setEditing(false);
   }
 
@@ -664,6 +679,28 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       {editing && (
         <div className="space-y-2 border-t border-border pt-2 mt-1">
           <div className="space-y-1">
+            <Label className="text-[10px]">Type</Label>
+            <Select
+              value={editForm.type}
+              onValueChange={(v) => setEditForm((f) => ({ ...f, type: v as ProposedChange["type"] }))}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="new_task">New Task</SelectItem>
+                <SelectItem value="task_update">Task Update</SelectItem>
+                <SelectItem value="decision">Decision</SelectItem>
+                <SelectItem value="open_question">Open Question</SelectItem>
+              </SelectContent>
+            </Select>
+            {editForm.type !== change.type && (
+              <p className="text-[10px] text-amber-600">
+                Type changed — fields below will be applied per the new type.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
             <Label className="text-[10px]">Title</Label>
             <Input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} className="h-7 text-xs" />
           </div>
@@ -671,21 +708,24 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
             <Label className="text-[10px]">Detail</Label>
             <Textarea value={editForm.detail} onChange={(e) => setEditForm((f) => ({ ...f, detail: e.target.value }))} className="text-xs min-h-[60px]" />
           </div>
-          {change.type === "new_task" && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label className="text-[10px]">Assignee</Label>
-                <Input value={editForm.suggested_assignee} onChange={(e) => setEditForm((f) => ({ ...f, suggested_assignee: e.target.value }))} className="h-7 text-xs" placeholder="Name" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px]">Due Date</Label>
-                <Input type="date" value={editForm.suggested_due_date} onChange={(e) => setEditForm((f) => ({ ...f, suggested_due_date: e.target.value }))} className="h-7 text-xs" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px]">Phase</Label>
-                <Input value={editForm.suggested_phase} onChange={(e) => setEditForm((f) => ({ ...f, suggested_phase: e.target.value }))} className="h-7 text-xs" placeholder="discover" />
-              </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px]">Assignee</Label>
+              <Input value={editForm.suggested_assignee} onChange={(e) => setEditForm((f) => ({ ...f, suggested_assignee: e.target.value }))} className="h-7 text-xs" placeholder="Name" />
             </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Due Date</Label>
+              <Input type="date" value={editForm.suggested_due_date} onChange={(e) => setEditForm((f) => ({ ...f, suggested_due_date: e.target.value }))} className="h-7 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Phase</Label>
+              <Input value={editForm.suggested_phase} onChange={(e) => setEditForm((f) => ({ ...f, suggested_phase: e.target.value }))} className="h-7 text-xs" placeholder="discover" />
+            </div>
+          </div>
+          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.suggested_due_date) && (
+            <p className="text-[10px] text-muted-foreground">
+              Tip: Assignee and Due Date are only applied when Type is "New Task".
+            </p>
           )}
           <div className="flex gap-2">
             <Button size="sm" className="text-xs h-7 gap-1" onClick={handleSaveEdit}>

@@ -41,7 +41,7 @@ export async function getMethodologyGaps(
 
   // Deliverables that are done / ready / sent
   const deliverablesResult = await query(
-    `SELECT type, status FROM deliverables WHERE client_id = $1`,
+    `SELECT engine, status FROM deliverables WHERE client_id = $1`,
     [clientId]
   );
   const completedDeliverables = new Set(
@@ -49,7 +49,7 @@ export async function getMethodologyGaps(
       .filter((r: { status: string }) =>
         ["complete", "ready", "sent"].includes(r.status)
       )
-      .map((r: { type: string }) => r.type)
+      .map((r: { engine: string }) => r.engine)
   );
 
   const gaps: MethodologyGap[] = [];
