@@ -283,12 +283,17 @@ router.post("/:id/capture", async (req, res) => {
 });
 
 // ── POST /api/meetings/:id/capture/apply (UC-03) ──────────────────────────────
-// Body: { approved_changes: ProposedChange[] }
+// Body: { approved_changes: ProposedChange[], deferred_changes?: ProposedChange[] }
 router.post("/:id/capture/apply", async (req, res) => {
-  const { approved_changes } = req.body;
+  const { approved_changes, deferred_changes } = req.body;
 
   if (!Array.isArray(approved_changes)) {
     return res.status(400).json({ error: "approved_changes array required" });
+  }
+
+  const deferredArr = Array.isArray(deferred_changes) ? deferred_changes : [];
+  if (approved_changes.length === 0 && deferredArr.length === 0) {
+    return res.status(400).json({ error: "No changes to apply or defer" });
   }
 
   try {
@@ -370,10 +375,22 @@ router.post("/:id/capture/apply", async (req, res) => {
       );
     }
 
+    // Persist deferred changes to meeting_deferred_changes table
+    // Note: deferredArr is derived from deferred_changes before the try block (see early validation guard above)
+    for (const change of deferredArr) {
+      await query(
+        `INSERT INTO meeting_deferred_changes
+           (client_id, source_meeting_id, change_payload)
+         VALUES ($1, $2, $3)`,
+        [clientId, req.params.id, JSON.stringify(change)]
+      );
+    }
+
     return res.json({
       created_tasks: createdTasks,
       decisions_recorded: decisionsAndQuestions.filter((d) => d.type === "decision").length,
       open_questions_recorded: decisionsAndQuestions.filter((d) => d.type === "open_question").length,
+      deferred_count: deferredArr.length,
     });
   } catch (err) {
     console.error("POST /meetings/:id/capture/apply error:", err);
@@ -463,5 +480,37 @@ router.post(
     }
   }
 );
+
+// ── GET /api/meetings/:id/deferred-carryforward (UC-03) ──────────────────────
+// Returns pending deferred items for this meeting's client, excluding items
+// that were themselves deferred from THIS meeting (no circular carry-forward).
+router.get("/:id/deferred-carryforward", async (req, res) => {
+  try {
+    const meeting = await getMeetingAndVerify(req.params.id, req.user!.id, req.user!.role);
+    if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+
+    const result = await query(
+      `SELECT
+         mdc.id,
+         mdc.source_meeting_id,
+         mdc.change_payload,
+         mdc.created_at,
+         m.date AS source_meeting_date,
+         m.type AS source_meeting_type
+       FROM meeting_deferred_changes mdc
+       JOIN meetings m ON m.id = mdc.source_meeting_id
+       WHERE mdc.client_id = $1
+         AND mdc.status = 'pending'
+         AND mdc.source_meeting_id != $2
+       ORDER BY mdc.created_at DESC`,
+      [meeting.client_id, req.params.id]
+    );
+
+    return res.json(result.rows);
+  } catch (err) {
+    console.error("GET /meetings/:id/deferred-carryforward error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export default router;

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 export interface Meeting {
@@ -57,6 +58,15 @@ export interface ProposedChange {
 export interface CaptureResult {
   summary: string;
   proposed_changes: ProposedChange[];
+}
+
+export interface DeferredCarryforwardItem {
+  id: string;
+  source_meeting_id: string;
+  source_meeting_date: string | null;
+  source_meeting_type: string | null;
+  change_payload: ProposedChange;
+  created_at: string;
 }
 
 export function useClientMeetings(clientId: string) {
@@ -131,17 +141,85 @@ export function useApplyCapture() {
       meetingId,
       clientId: _clientId,
       approvedChanges,
+      deferredChanges,
     }: {
       meetingId: string;
       clientId: string;
       approvedChanges: ProposedChange[];
+      deferredChanges?: ProposedChange[];
     }) =>
       api.post(`/meetings/${meetingId}/capture/apply`, {
         approved_changes: approvedChanges,
+        deferred_changes: deferredChanges ?? [],
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["meetings", vars.clientId] });
       qc.invalidateQueries({ queryKey: ["tasks", vars.clientId] });
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+    },
+    onError: (err: Error) => {
+      toast.error("Failed to apply capture", {
+        description: err.message || "Please try again.",
+      });
+    },
+  });
+}
+
+export function useDeferredCarryforward(meetingId: string) {
+  return useQuery<DeferredCarryforwardItem[]>({
+    queryKey: ["deferred-carryforward", meetingId],
+    queryFn: () => api.get(`/meetings/${meetingId}/deferred-carryforward`),
+    enabled: !!meetingId,
+  });
+}
+
+export function useResolveDeferred() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      deferredId,
+      resolvedInMeetingId,
+    }: {
+      deferredId: string;
+      meetingId: string;
+      clientId: string;
+      resolvedInMeetingId?: string;
+    }) =>
+      api.patch(`/deferred-changes/${deferredId}`, {
+        status: "resolved",
+        resolved_in_meeting_id: resolvedInMeetingId,
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+    },
+    onError: (err: Error) => {
+      toast.error("Failed to resolve item", {
+        description: err.message || "Please try again.",
+      });
+    },
+  });
+}
+
+export function useDiscardDeferred() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      deferredId,
+    }: {
+      deferredId: string;
+      meetingId: string;
+      clientId: string;
+    }) =>
+      api.patch(`/deferred-changes/${deferredId}`, {
+        status: "discarded",
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+    },
+    onError: (err: Error) => {
+      toast.error("Failed to discard item", {
+        description: err.message || "Please try again.",
+      });
     },
   });
 }

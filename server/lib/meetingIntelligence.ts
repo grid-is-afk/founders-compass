@@ -51,7 +51,7 @@ export async function generateAgenda(
   clientId: string,
   advisorId: string
 ): Promise<AgendaSection[]> {
-  const [meetingRes, tasksRes, plansRes, recentMeetingsRes, riskRes, activityRes] =
+  const [meetingRes, tasksRes, plansRes, recentMeetingsRes, riskRes, activityRes, deferredRes] =
     await Promise.all([
       query(`SELECT * FROM meetings WHERE id = $1`, [meetingId]),
       query(
@@ -99,6 +99,16 @@ export async function generateAgenda(
          ORDER BY created_at DESC LIMIT 10`,
         [clientId]
       ),
+      query(
+        `SELECT mdc.id, mdc.change_payload, mdc.created_at,
+                m.date AS source_meeting_date, m.type AS source_meeting_type
+         FROM meeting_deferred_changes mdc
+         JOIN meetings m ON m.id = mdc.source_meeting_id
+         WHERE mdc.client_id = $1 AND mdc.status = 'pending'
+           AND mdc.source_meeting_id != $2
+         ORDER BY mdc.created_at DESC LIMIT 10`,
+        [clientId, meetingId]
+      ),
     ]);
 
   const meeting = meetingRes.rows[0];
@@ -107,6 +117,13 @@ export async function generateAgenda(
   const recentMeetings = recentMeetingsRes.rows;
   const risks = riskRes.rows;
   const activity = activityRes.rows;
+  const deferredItems = deferredRes.rows as Array<{
+    id: string;
+    change_payload: ProposedChange;
+    created_at: string;
+    source_meeting_date: string | null;
+    source_meeting_type: string | null;
+  }>;
 
   const overdueTasks = tasks.filter(
     (t) => t.due_date && new Date(t.due_date) < new Date()
@@ -157,10 +174,26 @@ ${
 RECENT ACTIVITY:
 ${activity.map((a) => `  • ${a.text}`).join("\n") || "  No recent activity."}
 
+DEFERRED ITEMS FROM PRIOR MEETINGS (${deferredItems.length}):
+${
+  deferredItems.length > 0
+    ? deferredItems
+        .map((d) => {
+          const payload = d.change_payload;
+          const meetingDate = d.source_meeting_date
+            ? new Date(d.source_meeting_date).toLocaleDateString()
+            : "Unknown date";
+          const meetingType = d.source_meeting_type ?? "Meeting";
+          return `  • [DEFERRED from ${meetingType} ${meetingDate}] ${payload.title}: ${payload.detail ?? ""}`;
+        })
+        .join("\n")
+    : "  None"
+}
+
 INSTRUCTIONS:
 Generate a structured meeting agenda with exactly these 5 sections (in this order):
 1. Client Updates & Requests — items the client likely wants to raise; infer from recent activity, notes, and communications.
-2. Outstanding Commitments Review — overdue tasks, blocked tasks, and open items from prior meeting notes that haven't been resolved.
+2. Outstanding Commitments Review — overdue tasks, blocked tasks, open items from prior meeting notes that haven't been resolved, and any deferred items from prior meetings (listed above under DEFERRED ITEMS FROM PRIOR MEETINGS).
 3. Workplan Status — progress summary by phase: what's on track, what's slipping, what just completed.
 4. Methodology-Aligned Topics — based on the current quarterly phase, identify TFO methodology activities that are due, missing, or should be advanced this meeting. Reference the Capital Alignment Method phases (Prove, Diagnose, Design TFO, Protect, Grow, Align) and flag what should be happening now.
 5. Forward-Looking Decisions — risk alerts, items where the advisor or client needs to make a decision or take a position before the next meeting.

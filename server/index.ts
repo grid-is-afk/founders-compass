@@ -53,6 +53,7 @@ import riskScanRoutes from "./routes/riskScan.js";
 import kickoffPlanRoutes from "./routes/kickoffPlan.js";
 import methodologyRecommendationsRoutes from "./routes/methodologyRecommendations.js";
 import userRoutes from "./routes/users.js";
+import deferredChangesRoutes from "./routes/deferredChanges.js";
 
 dotenv.config();
 
@@ -122,6 +123,7 @@ app.use("/api/stakeholders", authMiddleware, stakeholderRoutes);
 app.use("/api/clients", authMiddleware, kickoffPlanRoutes);
 app.use("/api/clients", authMiddleware, methodologyRecommendationsRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
+app.use("/api/deferred-changes", authMiddleware, deferredChangesRoutes);
 
 // ---------------------------------------------------------------------------
 // GET /api/q1-phase-config — public config for the Gantt chart

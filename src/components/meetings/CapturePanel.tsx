@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import {
   Sparkles, Upload, FileText, ChevronDown, CheckCircle2, XCircle,
   AlertCircle, Loader2, CheckCheck, Clock, Pencil, MinusCircle,
+  RotateCcw, CheckSquare, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,8 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
-  useUploadTranscript,
-  type Meeting, type ProposedChange, type CaptureResult,
+  useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
+  type Meeting, type ProposedChange, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,9 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   const checkDuplicate = useCheckTranscriptDuplicate();
   const uploadTranscript = useUploadTranscript();
   const { data: documents = [] } = useClientDocuments(clientId);
+  const { data: deferredCarryforward = [] } = useDeferredCarryforward(meeting.id);
+  const resolveDeferred = useResolveDeferred();
+  const discardDeferred = useDiscardDeferred();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notes, setNotes] = useState("");
@@ -60,6 +64,9 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   // Per-item state: state + edited version of the change
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
   const [editedChanges, setEditedChanges] = useState<Record<number, ProposedChange>>({});
+
+  // Carried-over items the advisor clicked "Re-process" on — surfaced as proposals
+  const [reprocessedFromDeferred, setReprocessedFromDeferred] = useState<DeferredCarryforwardItem[]>([]);
 
   const [dupDialog, setDupDialog] = useState<{
     open: boolean; filename: string; file: File | null; existingDocId: string | null;
@@ -110,26 +117,51 @@ export default function CapturePanel({ meeting, clientId }: Props) {
       notes: notes.trim() || undefined,
       documentId: selectedDocId || undefined,
     });
-    setCaptureResult(result);
+
+    // Merge any re-processed deferred items as pending proposals at the top
+    const reprocessedChanges: ProposedChange[] = reprocessedFromDeferred.map((item) => ({
+      ...item.change_payload,
+      detail: item.change_payload.detail
+        ? `[Carried over from prior meeting] ${item.change_payload.detail}`
+        : "[Carried over from prior meeting]",
+    }));
+    const merged: CaptureResult = {
+      ...result,
+      proposed_changes: [...reprocessedChanges, ...result.proposed_changes],
+    };
+
+    setCaptureResult(merged);
     const initial: Record<number, ItemState> = {};
-    result.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
+    merged.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
     setItemStates(initial);
     setEditedChanges({});
   }
 
   async function handleApplyAll() {
     if (!captureResult) return;
-    const approved = captureResult.proposed_changes
-      .map((c, i) => ({ change: getEffectiveChange(i), state: itemStates[i] }))
+    const allChanges = captureResult.proposed_changes.map((c, i) => ({
+      change: getEffectiveChange(i),
+      state: itemStates[i] ?? "pending",
+    }));
+    const approved = allChanges
       .filter(({ state }) => state === "approved" || state === "edited")
       .map(({ change }) => change);
+    const deferred = allChanges
+      .filter(({ state }) => state === "deferred")
+      .map(({ change }) => change);
 
-    await applyCapture.mutateAsync({ meetingId: meeting.id, clientId, approvedChanges: approved });
+    await applyCapture.mutateAsync({
+      meetingId: meeting.id,
+      clientId,
+      approvedChanges: approved,
+      deferredChanges: deferred,
+    });
     setCaptureResult(null);
     setItemStates({});
     setEditedChanges({});
     setNotes("");
     setSelectedDocId("");
+    setReprocessedFromDeferred([]);
   }
 
   function approveAllHighConfidence() {
@@ -221,11 +253,27 @@ export default function CapturePanel({ meeting, clientId }: Props) {
                 </span>
               )}
             </p>
-            <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={approveAllHighConfidence}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5"
+              onClick={approveAllHighConfidence}
+              title="Bulk-approve every change rated HIGH or MEDIUM confidence. LOW items stay pending — they always need your judgment."
+            >
               <CheckCheck className="w-3.5 h-3.5" />
-              Approve All High-Confidence
+              Approve High &amp; Medium
             </Button>
           </div>
+
+          {/* Confidence legend */}
+          <p className="text-xs text-muted-foreground">
+            <span className={CONFIDENCE_COLORS.high + " font-semibold"}>HIGH</span>
+            {" owner + date confirmed · "}
+            <span className={CONFIDENCE_COLORS.medium + " font-semibold"}>MEDIUM</span>
+            {" partial info · "}
+            <span className={CONFIDENCE_COLORS.low + " font-semibold"}>LOW</span>
+            {" needs your input"}
+          </p>
 
           {captureResult.proposed_changes.length === 0 && (
             <p className="text-sm text-muted-foreground italic py-4 text-center">
@@ -248,22 +296,25 @@ export default function CapturePanel({ meeting, clientId }: Props) {
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); }}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setReprocessedFromDeferred([]); }}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {approvedCount} approved
+              {deferredCount > 0 && ` · ${deferredCount} deferred`}
             </span>
             <Button
               size="sm"
               className="gap-1.5 text-xs"
               onClick={handleApplyAll}
-              disabled={approvedCount === 0 || applyCapture.isPending}
+              disabled={(approvedCount === 0 && deferredCount === 0) || applyCapture.isPending}
             >
               {applyCapture.isPending
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Applying...</>
-                : <><CheckCircle2 className="w-3.5 h-3.5" />Apply Approved</>
+                : approvedCount === 0 && deferredCount > 0
+                  ? <><Clock className="w-3.5 h-3.5" />Save Deferred</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" />Apply Approved</>
               }
             </Button>
           </div>
@@ -275,6 +326,56 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   // ── Input form ────────────────────────────────────────────────────────────
   return (
     <div className="p-4 space-y-4">
+      {/* Carried-over deferred items from prior meetings */}
+      {deferredCarryforward.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-foreground">
+            Carried Over from Prior Meetings ({deferredCarryforward.length})
+          </p>
+          {deferredCarryforward.map((item) => (
+            <DeferredCarryforwardCard
+              key={item.id}
+              item={item}
+              meetingId={meeting.id}
+              onResolve={() =>
+                resolveDeferred.mutate({
+                  deferredId: item.id,
+                  meetingId: meeting.id,
+                  clientId,
+                  resolvedInMeetingId: meeting.id,
+                })
+              }
+              onReprocess={() => {
+                // The row stays 'pending' in the DB until the advisor resolves or
+                // discards it — intentionally. The queue here is purely UI state.
+                // Resolve/Discard are disabled while queued to prevent a race where
+                // the same item is both discarded and re-processed (Fix #6/#7).
+                setReprocessedFromDeferred((prev) =>
+                  prev.some((p) => p.id === item.id) ? prev : [...prev, item]
+                );
+              }}
+              onUndoReprocess={() => {
+                setReprocessedFromDeferred((prev) => prev.filter((p) => p.id !== item.id));
+              }}
+              isReprocessQueued={reprocessedFromDeferred.some((p) => p.id === item.id)}
+              onDiscard={() =>
+                discardDeferred.mutate({
+                  deferredId: item.id,
+                  meetingId: meeting.id,
+                  clientId,
+                })
+              }
+            />
+          ))}
+          {reprocessedFromDeferred.length > 0 && (
+            <p className="text-xs text-primary font-medium">
+              {reprocessedFromDeferred.length} item{reprocessedFromDeferred.length > 1 ? "s" : ""} will be included as proposals on next capture.
+            </p>
+          )}
+          <div className="border-t border-border" />
+        </div>
+      )}
+
       <div>
         <p className="text-sm font-medium text-foreground mb-1">Post-Meeting Capture</p>
         <p className="text-xs text-muted-foreground">
@@ -420,37 +521,73 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       isDeferred && "border-border bg-muted/20 opacity-60",
       !isApproved && !isRejected && !isDeferred && "border-border bg-card"
     )}>
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-2 min-w-0 flex-1">
-          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", CHANGE_TYPE_COLORS[change.type])}>
-            {CHANGE_TYPE_LABELS[change.type]}
-          </Badge>
-          <span className="text-sm font-medium text-foreground leading-snug">{change.title}</span>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className={cn("text-[10px] font-semibold uppercase mr-1", CONFIDENCE_COLORS[change.confidence])}>
-            {change.confidence}
-          </span>
-          {/* Approve */}
-          <button onClick={onApprove} className={cn("p-1 rounded transition-colors", isApproved ? "text-green-600" : "text-muted-foreground hover:text-green-600")} title="Approve">
-            <CheckCircle2 className="w-4 h-4" />
-          </button>
-          {/* Edit */}
-          {!isRejected && !isDeferred && (
-            <button onClick={() => setEditing((p) => !p)} className={cn("p-1 rounded transition-colors", editing ? "text-primary" : "text-muted-foreground hover:text-foreground")} title="Edit">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
+      {/* Header row: type badge + title + confidence badge */}
+      <div className="flex items-start gap-2 min-w-0">
+        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", CHANGE_TYPE_COLORS[change.type])}>
+          {CHANGE_TYPE_LABELS[change.type]}
+        </Badge>
+        <span className="text-sm font-medium text-foreground leading-snug flex-1">{change.title}</span>
+        <span className={cn("text-[10px] font-semibold uppercase flex-shrink-0 mt-0.5", CONFIDENCE_COLORS[change.confidence])}>
+          {change.confidence}
+        </span>
+      </div>
+
+      {/* Action row: labeled buttons */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Approve */}
+        <button
+          onClick={onApprove}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isApproved
+              ? "border-green-500/40 bg-green-50 text-green-700"
+              : "border-border text-muted-foreground hover:border-green-500/40 hover:bg-green-50 hover:text-green-700"
           )}
-          {/* Defer */}
-          <button onClick={onDefer} className={cn("p-1 rounded transition-colors", isDeferred ? "text-amber-600" : "text-muted-foreground hover:text-amber-600")} title="Defer">
-            <Clock className="w-3.5 h-3.5" />
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Approve
+        </button>
+        {/* Edit — hidden when rejected or deferred */}
+        {!isRejected && !isDeferred && (
+          <button
+            onClick={() => setEditing((p) => !p)}
+            className={cn(
+              "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+              editing
+                ? "border-primary/40 bg-primary/5 text-primary"
+                : "border-border text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+            )}
+          >
+            <Pencil className="w-3 h-3" />
+            Edit
           </button>
-          {/* Reject */}
-          <button onClick={onReject} className={cn("p-1 rounded transition-colors", isRejected ? "text-destructive" : "text-muted-foreground hover:text-destructive")} title="Reject">
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
+        )}
+        {/* Defer */}
+        <button
+          onClick={onDefer}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isDeferred
+              ? "border-amber-500/40 bg-amber-50 text-amber-700"
+              : "border-border text-muted-foreground hover:border-amber-500/40 hover:bg-amber-50 hover:text-amber-700"
+          )}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          Defer
+        </button>
+        {/* Reject */}
+        <button
+          onClick={onReject}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isRejected
+              ? "border-destructive/40 bg-destructive/5 text-destructive"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Reject
+        </button>
       </div>
 
       {/* State badges */}
@@ -559,6 +696,109 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DeferredCarryforwardCard — compact card for a carried-over deferred item
+// ---------------------------------------------------------------------------
+
+interface DeferredCarryforwardCardProps {
+  item: DeferredCarryforwardItem;
+  meetingId: string;
+  onResolve: () => void;
+  onReprocess: () => void;
+  onUndoReprocess: () => void;
+  isReprocessQueued: boolean;
+  onDiscard: () => void;
+}
+
+function DeferredCarryforwardCard({
+  item,
+  onResolve,
+  onReprocess,
+  onUndoReprocess,
+  isReprocessQueued,
+  onDiscard,
+}: DeferredCarryforwardCardProps) {
+  const payload = item.change_payload;
+  const sourceDateLabel = item.source_meeting_date
+    ? new Date(item.source_meeting_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "Prior meeting";
+  const sourceMeetingType = item.source_meeting_type ?? "Meeting";
+
+  return (
+    <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 space-y-2">
+      {/* Title + source date */}
+      <div className="flex items-start gap-2">
+        <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-foreground leading-snug">{payload.title}</span>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {sourceMeetingType} · {sourceDateLabel}
+          </p>
+        </div>
+        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0", CHANGE_TYPE_COLORS[payload.type])}>
+          {CHANGE_TYPE_LABELS[payload.type]}
+        </Badge>
+      </div>
+
+      {/* Detail preview */}
+      {payload.detail && (
+        <p className="text-xs text-muted-foreground pl-5 line-clamp-2">{payload.detail}</p>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-1.5 flex-wrap pl-5">
+        {/* Resolve and Discard are disabled while the item is queued for re-process
+            to prevent a race where both a discard and a re-process apply to the same row. */}
+        <button
+          onClick={onResolve}
+          disabled={isReprocessQueued}
+          title={isReprocessQueued ? "Will be re-processed on next capture — undo first if you want to resolve/discard" : undefined}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isReprocessQueued
+              ? "border-green-500/20 bg-green-50/50 text-green-700/40 cursor-not-allowed"
+              : "border-green-500/40 bg-green-50 text-green-700 hover:bg-green-100"
+          )}
+        >
+          <CheckSquare className="w-3.5 h-3.5" />
+          Resolve
+        </button>
+        {isReprocessQueued ? (
+          <button
+            onClick={onUndoReprocess}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Undo
+          </button>
+        ) : (
+          <button
+            onClick={onReprocess}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border border-border text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Re-process
+          </button>
+        )}
+        <button
+          onClick={onDiscard}
+          disabled={isReprocessQueued}
+          title={isReprocessQueued ? "Will be re-processed on next capture — undo first if you want to resolve/discard" : undefined}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isReprocessQueued
+              ? "border-border/40 text-muted-foreground/40 cursor-not-allowed"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Discard
+        </button>
+      </div>
     </div>
   );
 }
