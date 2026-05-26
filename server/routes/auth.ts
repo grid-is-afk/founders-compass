@@ -45,6 +45,7 @@ router.post("/login", async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        timezone: user.timezone ?? null,
       },
     });
   } catch (err) {
@@ -90,7 +91,7 @@ router.post("/refresh", async (req, res) => {
 router.get("/me", authMiddleware, async (req, res) => {
   try {
     const result = await query(
-      "SELECT id, name, email, role FROM users WHERE id = $1",
+      "SELECT id, name, email, role, timezone FROM users WHERE id = $1",
       [req.user!.id]
     );
     if (result.rows.length === 0) {

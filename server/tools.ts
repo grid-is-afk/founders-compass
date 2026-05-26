@@ -1,4 +1,5 @@
 import { query } from "./db.js";
+import { parseAgendaSections } from "./lib/agendaParser.js";
 
 export const tools = [
   {
@@ -149,6 +150,31 @@ export const tools = [
         notes: { type: "string", description: "Agenda or notes" },
       },
       required: ["clientName", "meetingType", "date"],
+    },
+  },
+  {
+    name: "get_meeting_agenda",
+    description:
+      "Look up the agenda for a specific meeting. ALWAYS call this first when the advisor asks about an agenda for an upcoming, recent, or specific meeting — never invent or guess agenda items from open tasks before calling this tool. Returns the locked or draft agenda if one exists, or a clear 'no agenda' signal if not.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: {
+          type: "string",
+          description: "Name of the client whose meeting agenda to look up",
+        },
+        meetingId: {
+          type: "string",
+          description: "Exact meeting UUID if known. Optional.",
+        },
+        when: {
+          type: "string",
+          enum: ["upcoming", "last"],
+          description:
+            "If meetingId is unknown: 'upcoming' returns the next future meeting (default), 'last' returns the most recent past meeting.",
+        },
+      },
+      required: ["clientName"],
     },
   },
   {
@@ -501,6 +527,120 @@ export async function executeTool(
       } catch (err) {
         console.error("schedule_meeting DB error:", err);
         return { success: false, result: "Failed to save meeting to database." };
+      }
+    }
+
+    case "get_meeting_agenda": {
+      let clientId = activeClientId ?? null;
+      if (input.clientName) {
+        const found = await findClientByName(input.clientName as string, advisorId);
+        if (found) clientId = found;
+      }
+      if (!clientId) {
+        return {
+          success: false,
+          result: `Could not resolve client "${input.clientName ?? "(none)"}". No agenda lookup possible.`,
+          action: { type: "agenda_lookup_failed", reason: "client_not_found" },
+        };
+      }
+
+      try {
+        let meetingRow:
+          | {
+              id: string;
+              type: string | null;
+              date: string | null;
+              agenda: string | null;
+              agenda_status: string | null;
+            }
+          | undefined;
+
+        if (input.meetingId) {
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE id = $1 AND client_id = $2`,
+            [input.meetingId, clientId]
+          );
+          meetingRow = r.rows[0];
+        } else if (input.when === "last") {
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE client_id = $1 AND date IS NOT NULL AND date < NOW()
+              ORDER BY date DESC
+              LIMIT 1`,
+            [clientId]
+          );
+          meetingRow = r.rows[0];
+        } else {
+          // Default: nearest upcoming meeting
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE client_id = $1 AND date IS NOT NULL AND date >= NOW()
+              ORDER BY date ASC
+              LIMIT 1`,
+            [clientId]
+          );
+          meetingRow = r.rows[0];
+        }
+
+        if (!meetingRow) {
+          return {
+            success: true,
+            result: `No matching meeting found for ${input.clientName as string}.`,
+            action: { type: "agenda_not_found", reason: "meeting_not_found" },
+          };
+        }
+
+        const dateIso = meetingRow.date ?? "no date";
+
+        if (!meetingRow.agenda || meetingRow.agenda_status === "none" || !meetingRow.agenda_status) {
+          return {
+            success: true,
+            result: `Meeting found: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}. STATUS: NO AGENDA HAS BEEN LOGGED for this meeting. You may suggest topics for the advisor to consider — but you MUST explicitly label them as "suggested" or "proposed", and never present them as if they were the actual agenda.`,
+            action: {
+              type: "agenda_retrieved",
+              meetingId: meetingRow.id,
+              status: "none",
+            },
+          };
+        }
+
+        const sections = parseAgendaSections(meetingRow.agenda);
+        if (sections.length === 0) {
+          return {
+            success: false,
+            result: `Agenda data for meeting ${meetingRow.id} could not be parsed. Treat this as no agenda available.`,
+            action: { type: "agenda_parse_error", meetingId: meetingRow.id },
+          };
+        }
+
+        const agendaMd = sections
+          .map((s, i) => {
+            const items = s.items
+              .map((it) => `  - ${it.text}${it.source ? `\n    Context: ${it.source}` : ""}`)
+              .join("\n");
+            return `${i + 1}. ${s.title}\n${items}`;
+          })
+          .join("\n\n");
+
+        const statusLabel =
+          meetingRow.agenda_status === "final" ? "FINAL (locked)" : "DRAFT";
+
+        return {
+          success: true,
+          result: `Meeting: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}.\nAgenda status: ${statusLabel}\n\nAgenda items:\n${agendaMd}\n\nPresent this agenda to the advisor as-is. Do not invent additional items or replace it with task-derived suggestions.`,
+          action: {
+            type: "agenda_retrieved",
+            meetingId: meetingRow.id,
+            status: meetingRow.agenda_status,
+          },
+        };
+      } catch (err) {
+        console.error("get_meeting_agenda DB error:", err);
+        return { success: false, result: "Failed to look up meeting agenda." };
       }
     }
 

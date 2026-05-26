@@ -67,6 +67,9 @@ const ClientLayout = () => {
                 <FileText className="w-4 h-4 mr-2" /> Reports
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/client/settings")}>
+                <Settings className="w-4 h-4 mr-2" /> Settings
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => {
                   logout();

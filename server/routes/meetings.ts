@@ -7,6 +7,10 @@ import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
 import { generateAgenda, captureMeeting } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
+import { buildAgendaDocx, buildAgendaFilename } from "../lib/agendaDocx.js";
+import { parseAgendaSections } from "../lib/agendaParser.js";
+import { snapshotAgendaToDataRoom } from "../lib/agendaSnapshot.js";
+import { safeTimezone } from "../lib/timezone.js";
 
 const router = Router();
 
@@ -105,6 +109,8 @@ router.patch("/:id", async (req, res) => {
     const meeting = await getMeetingAndVerify(req.params.id, req.user!.id, req.user!.role);
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
+    const oldAgendaStatus = meeting.agenda_status as string | null;
+
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
 
@@ -113,7 +119,28 @@ router.patch("/:id", async (req, res) => {
        WHERE id = $${keys.length + 1} RETURNING *`,
       [...values, req.params.id]
     );
-    return res.json(result.rows[0]);
+
+    const updated = result.rows[0];
+
+    // Auto-snapshot the locked agenda into the Data Room on draft→final transition.
+    // Best-effort: errors are logged but never block the PATCH response, because
+    // the lock itself has already been persisted to the meetings row.
+    if (
+      oldAgendaStatus !== "final" &&
+      updated.agenda_status === "final" &&
+      updated.agenda
+    ) {
+      try {
+        await snapshotAgendaToDataRoom(updated, req.user!.id);
+      } catch (snapErr) {
+        console.error(
+          `Agenda snapshot failed for meeting ${updated.id}:`,
+          snapErr
+        );
+      }
+    }
+
+    return res.json(updated);
   } catch (err) {
     console.error("PATCH /meetings/:id error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -130,6 +157,60 @@ router.delete("/:id", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("DELETE /meetings/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/meetings/:id/agenda.docx (UC-01) ────────────────────────────────
+// Download the meeting's agenda as a Word/Google-Docs-compatible .docx.
+router.get("/:id/agenda.docx", async (req, res) => {
+  try {
+    const meeting = await getMeetingAndVerify(req.params.id, req.user!.id, req.user!.role);
+    if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+
+    if (!meeting.agenda) {
+      return res.status(404).json({ error: "No agenda has been generated for this meeting" });
+    }
+
+    const sections = parseAgendaSections(meeting.agenda);
+    if (sections.length === 0) {
+      return res.status(500).json({ error: "Agenda data is empty or corrupted" });
+    }
+
+    const clientRes = await query("SELECT name FROM clients WHERE id = $1", [meeting.client_id]);
+    const clientName = (clientRes.rows[0]?.name as string | undefined) ?? "Client";
+
+    const tzHeader = safeTimezone(req.headers["x-user-timezone"]);
+    const meetingDateLabel = meeting.date
+      ? new Intl.DateTimeFormat("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: tzHeader,
+        }).format(new Date(meeting.date))
+      : "Date TBD";
+
+    const filenameDate = meeting.date
+      ? new Date(meeting.date).toISOString().slice(0, 10)
+      : "undated";
+
+    const buffer = await buildAgendaDocx({
+      clientName,
+      meetingType: meeting.type ?? "Meeting",
+      meetingDate: meetingDateLabel,
+      sections,
+    });
+
+    const filename = buildAgendaFilename(clientName, filenameDate);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", buffer.length.toString());
+    return res.end(buffer);
+  } catch (err) {
+    console.error("GET /meetings/:id/agenda.docx error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
