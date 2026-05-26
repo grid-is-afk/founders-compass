@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Edit3, Lock, Download, Info, Loader2, Plus, X, ChevronDown } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -10,6 +11,8 @@ import {
   type AgendaItem,
 } from "@/hooks/useMeetingsApi";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
+import { useUserTimezone } from "@/lib/datetime";
 
 interface Props {
   meeting: Meeting;
@@ -35,6 +38,8 @@ function parseAgenda(raw: string | null): AgendaSection[] {
 export default function AgendaPanel({ meeting, clientId }: Props) {
   const generateAgenda = useGenerateAgenda();
   const updateMeeting = useUpdateMeeting();
+  const userTimezone = useUserTimezone();
+  const [downloading, setDownloading] = useState(false);
 
   const [sections, setSections] = useState<AgendaSection[]>(() =>
     parseAgenda(meeting.agenda)
@@ -108,23 +113,36 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
     await persistAgenda(sections, "final");
   }
 
-  function handleDownload() {
-    const lines: string[] = [`Meeting Agenda — ${meeting.type ?? "Meeting"}`, ""];
-    for (const section of sections) {
-      lines.push(`## ${section.title}`);
-      for (const item of section.items) {
-        lines.push(`• ${item.text}`);
-        if (item.source) lines.push(`  Source: ${item.source}`);
+  async function handleDownload() {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const res = await apiFetch(`/meetings/${meeting.id}/agenda.docx`, {
+        headers: { "X-User-Timezone": userTimezone },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Download failed" }));
+        throw new Error(body.error || `Server returned ${res.status}`);
       }
-      lines.push("");
+
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match?.[1] ?? `agenda-${meeting.id}.docx`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Could not download agenda", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setDownloading(false);
     }
-    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `agenda-${meeting.type?.replace(/\s+/g, "-").toLowerCase() ?? "meeting"}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   return (
@@ -172,9 +190,19 @@ export default function AgendaPanel({ meeting, clientId }: Props) {
             </div>
             <div className="flex items-center gap-2">
               {isFinal && (
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={handleDownload}>
-                  <Download className="w-3.5 h-3.5" />
-                  Download
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                >
+                  {downloading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  {downloading ? "Preparing…" : "Download"}
                 </Button>
               )}
               {!isFinal && (

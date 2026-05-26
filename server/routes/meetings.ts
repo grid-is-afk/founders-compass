@@ -7,6 +7,7 @@ import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
 import { generateAgenda, captureMeeting } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
+import { buildAgendaDocx, buildAgendaFilename, type AgendaSectionInput } from "../lib/agendaDocx.js";
 
 const router = Router();
 
@@ -130,6 +131,69 @@ router.delete("/:id", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("DELETE /meetings/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /api/meetings/:id/agenda.docx (UC-01) ────────────────────────────────
+// Download the meeting's agenda as a Word/Google-Docs-compatible .docx.
+router.get("/:id/agenda.docx", async (req, res) => {
+  try {
+    const meeting = await getMeetingAndVerify(req.params.id, req.user!.id, req.user!.role);
+    if (!meeting) return res.status(404).json({ error: "Meeting not found" });
+
+    if (!meeting.agenda) {
+      return res.status(404).json({ error: "No agenda has been generated for this meeting" });
+    }
+
+    let sections: AgendaSectionInput[];
+    try {
+      const parsed = JSON.parse(meeting.agenda) as Array<{
+        title: string;
+        items: Array<string | { text: string; source?: string }>;
+      }>;
+      sections = parsed.map((s) => ({
+        title: s.title,
+        items: s.items.map((item) => (typeof item === "string" ? { text: item } : item)),
+      }));
+    } catch {
+      return res.status(500).json({ error: "Agenda data is corrupted" });
+    }
+
+    const clientRes = await query("SELECT name FROM clients WHERE id = $1", [meeting.client_id]);
+    const clientName = (clientRes.rows[0]?.name as string | undefined) ?? "Client";
+
+    const tzHeader = (req.headers["x-user-timezone"] as string | undefined) || "UTC";
+    const meetingDateLabel = meeting.date
+      ? new Intl.DateTimeFormat("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: tzHeader,
+        }).format(new Date(meeting.date))
+      : "Date TBD";
+
+    const filenameDate = meeting.date
+      ? new Date(meeting.date).toISOString().slice(0, 10)
+      : "undated";
+
+    const buffer = await buildAgendaDocx({
+      clientName,
+      meetingType: meeting.type ?? "Meeting",
+      meetingDate: meetingDateLabel,
+      sections,
+    });
+
+    const filename = buildAgendaFilename(clientName, filenameDate);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", buffer.length.toString());
+    return res.end(buffer);
+  } catch (err) {
+    console.error("GET /meetings/:id/agenda.docx error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
