@@ -341,7 +341,7 @@ router.post("/:id/capture/apply", async (req, res) => {
         );
       } else if (change.type === "task_update" && change.existing_task_id) {
         await query(
-          `UPDATE tasks SET notes = CONCAT(COALESCE(notes, ''), $1), updated_at = NOW()
+          `UPDATE tasks SET notes = COALESCE(notes, '') || $1::text, updated_at = NOW()
            WHERE id = $2 AND client_id = $3`,
           [`\n[From meeting — ${change.detail}]${attribution}`, change.existing_task_id, clientId]
         );
