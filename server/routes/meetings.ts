@@ -2,10 +2,10 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import crypto from "crypto";
-import { query } from "../db.js";
+import pool, { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
-import { generateAgenda, captureMeeting } from "../lib/meetingIntelligence.js";
+import { generateAgenda, captureMeeting, ProposedSignal } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { buildAgendaDocx, buildAgendaFilename } from "../lib/agendaDocx.js";
 import { parseAgendaSections } from "../lib/agendaParser.js";
@@ -330,19 +330,31 @@ router.post("/:id/capture", async (req, res) => {
 });
 
 // ── POST /api/meetings/:id/capture/apply (UC-03) ──────────────────────────────
-// Body: { approved_changes: ProposedChange[], deferred_changes?: ProposedChange[] }
+// Body: {
+//   approved_changes: ProposedChange[],
+//   deferred_changes?: ProposedChange[],
+//   approved_signals?: ProposedSignal[],
+//   deferred_signals?: ProposedSignal[]   (reserved — not yet persisted; see TODO below)
+// }
 router.post("/:id/capture/apply", async (req, res) => {
-  const { approved_changes, deferred_changes } = req.body;
+  const { approved_changes, deferred_changes, approved_signals, deferred_signals } = req.body;
 
   if (!Array.isArray(approved_changes)) {
     return res.status(400).json({ error: "approved_changes array required" });
   }
 
   const deferredArr = Array.isArray(deferred_changes) ? deferred_changes : [];
-  if (approved_changes.length === 0 && deferredArr.length === 0) {
-    return res.status(400).json({ error: "No changes to apply or defer" });
+  const approvedSignalsArr: ProposedSignal[] = Array.isArray(approved_signals) ? approved_signals : [];
+  // TODO (integration phase): persist deferred_signals into meeting_deferred_changes
+  // so they can be carried forward to the next meeting the same way changes are.
+  // For now we accept and acknowledge the count but do not store them.
+  const deferredSignalsCount = Array.isArray(deferred_signals) ? (deferred_signals as unknown[]).length : 0;
+
+  if (approved_changes.length === 0 && deferredArr.length === 0 && approvedSignalsArr.length === 0) {
+    return res.status(400).json({ error: "No changes or signals to apply or defer" });
   }
 
+  const dbClient = await pool.connect();
   try {
     const meeting = await getMeetingAndVerify(req.params.id, req.user!.id, req.user!.role);
     if (!meeting) return res.status(404).json({ error: "Meeting not found" });
@@ -351,17 +363,27 @@ router.post("/:id/capture/apply", async (req, res) => {
     const createdTasks: unknown[] = [];
     const decisionsAndQuestions: Array<{ text: string; type: string; recorded_at: string }> = [];
 
+    // SEC-01: Build a set of valid stakeholder IDs for this client to prevent
+    // cross-client injection — signals referencing foreign stakeholders are skipped.
+    const validStakeholderRes = await dbClient.query(
+      `SELECT id FROM stakeholders WHERE client_id = $1`,
+      [clientId]
+    );
+    const validStakeholderIds = new Set<string>(validStakeholderRes.rows.map((r: { id: string }) => r.id));
+
     // Fetch approving advisor's name for attribution
-    const advisorRes = await query(`SELECT name FROM users WHERE id = $1`, [req.user!.id]);
+    const advisorRes = await dbClient.query(`SELECT name FROM users WHERE id = $1`, [req.user!.id]);
     const advisorName: string = advisorRes.rows[0]?.name ?? "Advisor";
     const captureDate = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     const attribution = `\n[QB capture — ${captureDate}. Approved by ${advisorName}.]`;
+
+    await dbClient.query("BEGIN");
 
     for (const change of approved_changes) {
       if (change.type === "new_task") {
         let assigneeId: string | null = null;
         if (change.suggested_assignee) {
-          const userRes = await query(
+          const userRes = await dbClient.query(
             `SELECT id FROM users WHERE name = $1 LIMIT 1`,
             [change.suggested_assignee]
           );
@@ -374,7 +396,7 @@ router.post("/:id/capture/apply", async (req, res) => {
         noteParts.push(attribution);
         const taskNotes = noteParts.filter(Boolean).join("\n");
 
-        const taskRes = await query(
+        const taskRes = await dbClient.query(
           `INSERT INTO tasks (client_id, title, status, priority, due_date, phase, notes, assignee_id)
            VALUES ($1, $2, 'todo', 'medium', $3, $4, $5, $6)
            RETURNING *`,
@@ -382,12 +404,12 @@ router.post("/:id/capture/apply", async (req, res) => {
         );
         createdTasks.push(taskRes.rows[0]);
 
-        await query(
+        await dbClient.query(
           `INSERT INTO activity_log (client_id, advisor_id, text) VALUES ($1, $2, $3)`,
           [clientId, req.user!.id, `QB capture: created task "${change.title}" from meeting notes`]
         );
       } else if (change.type === "task_update" && change.existing_task_id) {
-        await query(
+        await dbClient.query(
           `UPDATE tasks SET notes = COALESCE(notes, '') || $1::text, updated_at = NOW()
            WHERE id = $2 AND client_id = $3`,
           [`\n[From meeting — ${change.detail}]${attribution}`, change.existing_task_id, clientId]
@@ -409,14 +431,14 @@ router.post("/:id/capture/apply", async (req, res) => {
     }
 
     if (decisionsAndQuestions.length > 0) {
-      await query(
+      await dbClient.query(
         `UPDATE meetings
          SET decisions = decisions || $1::jsonb, processed_at = NOW(), updated_at = NOW()
          WHERE id = $2`,
         [JSON.stringify(decisionsAndQuestions), req.params.id]
       );
     } else {
-      await query(
+      await dbClient.query(
         `UPDATE meetings SET processed_at = NOW(), updated_at = NOW() WHERE id = $1`,
         [req.params.id]
       );
@@ -425,7 +447,7 @@ router.post("/:id/capture/apply", async (req, res) => {
     // Persist deferred changes to meeting_deferred_changes table
     // Note: deferredArr is derived from deferred_changes before the try block (see early validation guard above)
     for (const change of deferredArr) {
-      await query(
+      await dbClient.query(
         `INSERT INTO meeting_deferred_changes
            (client_id, source_meeting_id, change_payload)
          VALUES ($1, $2, $3)`,
@@ -433,15 +455,59 @@ router.post("/:id/capture/apply", async (req, res) => {
       );
     }
 
+    // Apply approved stakeholder signals
+    let signalsApplied = 0;
+    for (const signal of approvedSignalsArr) {
+      // SEC-01: skip signals with missing or foreign stakeholder_id
+      if (!signal.stakeholder_id || !validStakeholderIds.has(signal.stakeholder_id)) continue;
+
+      // SEC-02: whitelist signal_type to prevent arbitrary type injection
+      if (!["meeting_mention", "sentiment"].includes(signal.signal_type)) continue;
+
+      await dbClient.query(
+        `INSERT INTO stakeholder_signals
+           (stakeholder_id, client_id, signal_type, sentiment, value, source_table, source_id, created_by)
+         VALUES ($1, $2, $3, $4, $5, 'meetings', $6, $7)`,
+        [
+          signal.stakeholder_id,
+          clientId,
+          signal.signal_type,
+          signal.sentiment ?? null,
+          signal.value ?? null,
+          req.params.id,
+          req.user!.id,
+        ]
+      );
+
+      // When the approved signal carries a sentiment, update the stakeholder snapshot column
+      if (signal.signal_type === "sentiment" && signal.sentiment) {
+        await dbClient.query(
+          `UPDATE stakeholders
+           SET current_sentiment = $1, sentiment_updated_at = NOW(), updated_at = NOW()
+           WHERE id = $2`,
+          [signal.sentiment, signal.stakeholder_id]
+        );
+      }
+
+      signalsApplied++;
+    }
+
+    await dbClient.query("COMMIT");
+
     return res.json({
       created_tasks: createdTasks,
       decisions_recorded: decisionsAndQuestions.filter((d) => d.type === "decision").length,
       open_questions_recorded: decisionsAndQuestions.filter((d) => d.type === "open_question").length,
       deferred_count: deferredArr.length,
+      signals_applied: signalsApplied,
+      signals_deferred: deferredSignalsCount,
     });
   } catch (err) {
+    await dbClient.query("ROLLBACK");
     console.error("POST /meetings/:id/capture/apply error:", err);
     return res.status(500).json({ error: "Internal server error" });
+  } finally {
+    dbClient.release();
   }
 });
 

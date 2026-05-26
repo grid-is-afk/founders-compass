@@ -23,6 +23,8 @@ export interface Meeting {
 export interface AgendaItem {
   text: string;
   source?: string;
+  /** Stakeholder names (not IDs) referenced in this item — populated by QB agenda generation */
+  stakeholders?: string[];
 }
 
 export interface AgendaSection {
@@ -55,9 +57,21 @@ export interface ProposedChange {
   confidence: "high" | "medium" | "low";
 }
 
+export interface ProposedSignal {
+  stakeholder_id: string;
+  stakeholder_name: string;
+  signal_type: "meeting_mention" | "sentiment";
+  sentiment?: "positive" | "neutral" | "negative" | "at_risk";
+  value: string;
+  source_excerpt: string;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface CaptureResult {
   summary: string;
   proposed_changes: ProposedChange[];
+  /** AI-proposed stakeholder signals — always an array (never undefined) */
+  proposed_signals: ProposedSignal[];
 }
 
 export interface DeferredCarryforwardItem {
@@ -142,20 +156,36 @@ export function useApplyCapture() {
       clientId: _clientId,
       approvedChanges,
       deferredChanges,
+      approvedSignals,
+      deferredSignals,
     }: {
       meetingId: string;
       clientId: string;
       approvedChanges: ProposedChange[];
       deferredChanges?: ProposedChange[];
-    }) =>
+      approvedSignals?: ProposedSignal[];
+      deferredSignals?: ProposedSignal[];
+    }): Promise<{ signals_applied?: number; signals_deferred?: number }> =>
       api.post(`/meetings/${meetingId}/capture/apply`, {
         approved_changes: approvedChanges,
         deferred_changes: deferredChanges ?? [],
+        approved_signals: approvedSignals ?? [],
+        deferred_signals: deferredSignals ?? [],
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["meetings", vars.clientId] });
       qc.invalidateQueries({ queryKey: ["tasks", vars.clientId] });
       qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      // Approved signals may update stakeholder sentiment snapshots
+      qc.invalidateQueries({ queryKey: ["stakeholders", vars.clientId] });
+      // Invalidate signal timelines for each affected stakeholder so the
+      // timeline refreshes immediately after apply without a manual reload.
+      const uniqueStakeholderIds = new Set<string>(
+        (vars.approvedSignals ?? []).map((s) => s.stakeholder_id)
+      );
+      uniqueStakeholderIds.forEach((id) => {
+        qc.invalidateQueries({ queryKey: ["stakeholder-signals", id] });
+      });
     },
     onError: (err: Error) => {
       toast.error("Failed to apply capture", {

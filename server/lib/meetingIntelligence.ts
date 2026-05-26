@@ -6,6 +6,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 export interface AgendaItem {
   text: string;
   source?: string;
+  stakeholders?: string[];
 }
 
 export interface AgendaSection {
@@ -38,9 +39,20 @@ export interface ProposedChange {
   confidence: "high" | "medium" | "low";
 }
 
+export interface ProposedSignal {
+  stakeholder_id: string;
+  stakeholder_name: string;
+  signal_type: "meeting_mention" | "sentiment";
+  sentiment?: "positive" | "neutral" | "negative" | "at_risk";
+  value: string;
+  source_excerpt: string;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface CaptureResult {
   summary: string;
   proposed_changes: ProposedChange[];
+  proposed_signals: ProposedSignal[];
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +63,7 @@ export async function generateAgenda(
   clientId: string,
   advisorId: string
 ): Promise<AgendaSection[]> {
-  const [meetingRes, tasksRes, plansRes, recentMeetingsRes, riskRes, activityRes, deferredRes] =
+  const [meetingRes, tasksRes, plansRes, recentMeetingsRes, riskRes, activityRes, deferredRes, stakeholdersRes] =
     await Promise.all([
       query(`SELECT * FROM meetings WHERE id = $1`, [meetingId]),
       query(
@@ -109,6 +121,28 @@ export async function generateAgenda(
          ORDER BY mdc.created_at DESC LIMIT 10`,
         [clientId, meetingId]
       ),
+      query(
+        `SELECT s.id, s.name, s.role, s.tier, s.current_sentiment,
+                (SELECT json_agg(sig_row ORDER BY sig_row_ts DESC)
+                 FROM (
+                   SELECT json_build_object(
+                     'type', sig.signal_type, 'value', sig.value,
+                     'sentiment', sig.sentiment, 'ts', sig.ts
+                   ) AS sig_row,
+                   sig.ts AS sig_row_ts
+                   FROM stakeholder_signals sig
+                   WHERE sig.stakeholder_id = s.id
+                   ORDER BY sig.ts DESC
+                   LIMIT 5
+                 ) sub
+                ) AS recent_signals
+         FROM stakeholders s
+         WHERE s.client_id = $1
+         ORDER BY
+           CASE s.tier WHEN 'primary' THEN 0 WHEN 'secondary' THEN 1 ELSE 2 END,
+           s.name`,
+        [clientId]
+      ),
     ]);
 
   const meeting = meetingRes.rows[0];
@@ -123,6 +157,19 @@ export async function generateAgenda(
     created_at: string;
     source_meeting_date: string | null;
     source_meeting_type: string | null;
+  }>;
+  const stakeholders = stakeholdersRes.rows as Array<{
+    id: string;
+    name: string;
+    role: string | null;
+    tier: string;
+    current_sentiment: string | null;
+    recent_signals: Array<{
+      type: string;
+      value: string | null;
+      sentiment: string | null;
+      ts: string;
+    }> | null;
   }>;
 
   const overdueTasks = tasks.filter(
@@ -190,6 +237,28 @@ ${
     : "  None"
 }
 
+STAKEHOLDERS (${stakeholders.length}):
+${
+  stakeholders.length > 0
+    ? stakeholders
+        .map((s) => {
+          const sentimentLabel = s.current_sentiment ? ` | sentiment: ${s.current_sentiment}` : "";
+          const signalLines =
+            s.recent_signals && s.recent_signals.length > 0
+              ? s.recent_signals
+                  .map((sig) => {
+                    const date = new Date(sig.ts).toLocaleDateString();
+                    const detail = sig.sentiment ? `${sig.type} (${sig.sentiment}): ${sig.value ?? ""}` : `${sig.type}: ${sig.value ?? ""}`;
+                    return `    - [${date}] ${detail}`;
+                  })
+                  .join("\n")
+              : "    - No recent signals";
+          return `  • ${s.name} (${s.role ?? "unknown role"}, ${s.tier})${sentimentLabel}\n${signalLines}`;
+        })
+        .join("\n")
+    : "  No stakeholders recorded."
+}
+
 INSTRUCTIONS:
 Generate a structured meeting agenda with exactly these 5 sections (in this order):
 1. Client Updates & Requests — items the client likely wants to raise; infer from recent activity, notes, and communications.
@@ -202,13 +271,14 @@ Rules:
 - 2–5 items per section. Be specific and actionable — reference real task names, real dates, real risk titles from the context above.
 - For EVERY item, include a brief "source" note (one sentence max) that explains why this item is on the agenda — e.g. "From overdue task: Finalize LOI", "From risk alert: Cash runway < 90 days", "From prior meeting note (May 9): client mentioned X", "Methodology: Diagnose phase requires completion of FBI instrument".
 - Never generate generic filler like "Review progress" without a specific reference.
+- When a stakeholder appears in recent meeting notes or activity, OR has a "negative" or "at_risk" sentiment, surface them by name in the relevant agenda item's source (e.g. "From recent signal: Priya flagged concerns about runway"). For each item, populate "stakeholders" with an array of the stakeholder names referenced. If no stakeholders are relevant to an item, omit the field or use an empty array.
 
 Return ONLY valid JSON in this exact format (no markdown, no explanation):
 [
   {
     "title": "Client Updates & Requests",
     "items": [
-      { "text": "...", "source": "From activity: ..." }
+      { "text": "...", "source": "From activity: ...", "stakeholders": ["Name"] }
     ]
   },
   {
@@ -232,7 +302,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
   {
     "title": "Forward-Looking Decisions",
     "items": [
-      { "text": "...", "source": "From risk alert: ..." }
+      { "text": "...", "source": "From risk alert: ...", "stakeholders": ["Name 1", "Name 2"] }
     ]
   }
 ]
@@ -290,7 +360,7 @@ export async function captureMeeting(
   notes: string,
   advisorId: string
 ): Promise<CaptureResult> {
-  const [tasksRes, teamRes, planRes] = await Promise.all([
+  const [tasksRes, teamRes, planRes, captureStakeholdersRes] = await Promise.all([
     query(
       `SELECT t.id, t.title, t.status, t.phase, t.notes, t.due_date, u.name AS assignee_name
        FROM tasks t
@@ -314,6 +384,10 @@ export async function captureMeeting(
        LIMIT 1`,
       [clientId]
     ),
+    query(
+      `SELECT id, name, role, tier FROM stakeholders WHERE client_id = $1 ORDER BY name`,
+      [clientId]
+    ),
   ]);
 
   const existingTasks = tasksRes.rows as Array<{
@@ -324,6 +398,14 @@ export async function captureMeeting(
   const plan = planRes.rows[0];
   const phases = (plan?.phases as Array<{ phase: string; label: string; status: string }> | null)?.filter((p) => p.phase) ?? [];
   const phaseLabels = phases.map((p) => `${p.phase} (${p.label ?? p.phase}, ${p.status})`).join(", ");
+  const captureStakeholders = captureStakeholdersRes.rows as Array<{
+    id: string;
+    name: string;
+    role: string | null;
+    tier: string;
+  }>;
+  // Build a lookup set for fast ID validation when filtering Claude's output
+  const stakeholderIdSet = new Set(captureStakeholders.map((s) => s.id));
 
   const context = `
 You are a TFO (The Founders Office) advisory assistant processing notes from a client meeting.
@@ -337,6 +419,13 @@ ${existingTasks.map((t) => `  [ID: ${t.id}] "${t.title}" — status: ${t.status}
 
 TEAM MEMBERS (use exact names for assignee suggestions):
 ${teamMembers.map((m) => m.name).join(", ")}
+
+KNOWN STAKEHOLDERS (use exact IDs and names for proposed_signals — do NOT invent stakeholders not in this list):
+${
+  captureStakeholders.length > 0
+    ? captureStakeholders.map((s) => `  [ID: ${s.id}] ${s.name} — ${s.role ?? "unknown role"} (${s.tier})`).join("\n")
+    : "  No stakeholders recorded for this client."
+}
 
 MEETING NOTES / TRANSCRIPT:
 ${notes}
@@ -374,6 +463,11 @@ Rate confidence:
 - high: explicitly stated, clear owner AND date
 - medium: implied or partially specified
 - low: ambiguous, vague, or missing owner/date
+
+For proposed_signals, extract two types:
+- meeting_mention: emit for every stakeholder named in the notes (even briefly). value = brief description of the mention context.
+- sentiment: emit ONLY when explicit emotional tone is detectable for that person (e.g. "frustrated", "excited", "concerned"). sentiment field must be one of: positive, neutral, negative, at_risk. Prefer negative for frustration/concern and at_risk for serious red flags.
+- CRITICAL: only reference stakeholders from the KNOWN STAKEHOLDERS list above. Use the exact stakeholder_id UUID. Never invent a stakeholder not in the list.
 
 Return ONLY valid JSON (no markdown):
 {
@@ -416,6 +510,25 @@ Return ONLY valid JSON (no markdown):
       "source_timestamp": null,
       "confidence": "low"
     }
+  ],
+  "proposed_signals": [
+    {
+      "stakeholder_id": "uuid-from-known-stakeholders-list",
+      "stakeholder_name": "Name",
+      "signal_type": "meeting_mention",
+      "value": "Brief description of mention context",
+      "source_excerpt": "Exact quote from notes",
+      "confidence": "high"
+    },
+    {
+      "stakeholder_id": "uuid-from-known-stakeholders-list",
+      "stakeholder_name": "Name",
+      "signal_type": "sentiment",
+      "sentiment": "negative",
+      "value": "Seemed frustrated about the Q3 delay",
+      "source_excerpt": "Exact quote showing emotional cue",
+      "confidence": "medium"
+    }
   ]
 }
 `.trim();
@@ -437,6 +550,17 @@ Return ONLY valid JSON (no markdown):
       .trim();
 
     const result = JSON.parse(cleanText) as CaptureResult;
+
+    // Ensure proposed_signals always exists as an array (Claude may omit it)
+    if (!Array.isArray(result.proposed_signals)) {
+      result.proposed_signals = [];
+    }
+
+    // Defensive guard: filter out any signals whose stakeholder_id is not in
+    // the queried stakeholders list (Claude sometimes invents IDs)
+    result.proposed_signals = result.proposed_signals.filter(
+      (sig) => typeof sig.stakeholder_id === "string" && stakeholderIdSet.has(sig.stakeholder_id)
+    );
 
     // Gap 3: Enrich task_update changes with a snapshot of the existing task
     for (const change of result.proposed_changes) {
@@ -461,6 +585,7 @@ Return ONLY valid JSON (no markdown):
     return {
       summary: "Unable to parse meeting notes. Please review manually.",
       proposed_changes: [],
+      proposed_signals: [],
     };
   }
 }

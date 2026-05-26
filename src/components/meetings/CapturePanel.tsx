@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
+import { toast } from "sonner";
 import {
   Sparkles, Upload, FileText, ChevronDown, CheckCircle2, XCircle,
   AlertCircle, Loader2, CheckCheck, Clock, Pencil, MinusCircle,
-  RotateCcw, CheckSquare, Trash2,
+  RotateCcw, CheckSquare, Trash2, Mic, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,9 +16,10 @@ import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
   useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
   useAdvisors,
-  type Meeting, type ProposedChange, type CaptureResult, type DeferredCarryforwardItem,
+  type Meeting, type ProposedChange, type ProposedSignal, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
+import { SENTIMENT_CONFIG } from "@/hooks/useStakeholders";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -73,6 +75,9 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   // Per-item state: state + edited version of the change
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
   const [editedChanges, setEditedChanges] = useState<Record<number, ProposedChange>>({});
+
+  // Parallel state map for proposed signals
+  const [signalStates, setSignalStates] = useState<Record<number, ItemState>>({});;
 
   // Carried-over items the advisor clicked "Re-process" on — surfaced as proposals
   const [reprocessedFromDeferred, setReprocessedFromDeferred] = useState<DeferredCarryforwardItem[]>([]);
@@ -144,6 +149,13 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     merged.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
     setItemStates(initial);
     setEditedChanges({});
+
+    // Initialize signal states — normalize proposed_signals to always be an array
+    const initialSignalStates: Record<number, ItemState> = {};
+    const signals = (result.proposed_signals ?? []);
+    signals.forEach((_, i) => (initialSignalStates[i] = "pending"));
+    setSignalStates(initialSignalStates);
+
     setRecaptureMode(false);
   }
 
@@ -160,15 +172,41 @@ export default function CapturePanel({ meeting, clientId }: Props) {
       .filter(({ state }) => state === "deferred")
       .map(({ change }) => change);
 
-    await applyCapture.mutateAsync({
+    // Collect signal outcomes
+    const proposedSignals = captureResult.proposed_signals ?? [];
+    const approvedSignals = proposedSignals.filter((_, i) => {
+      const s = signalStates[i] ?? "pending";
+      return s === "approved" || s === "edited";
+    });
+    const deferredSignals = proposedSignals.filter((_, i) => {
+      const s = signalStates[i] ?? "pending";
+      return s === "deferred";
+    });
+
+    const result = await applyCapture.mutateAsync({
       meetingId: meeting.id,
       clientId,
       approvedChanges: approved,
       deferredChanges: deferred,
+      approvedSignals,
+      deferredSignals,
     });
+
+    // Success toast always fires on a successful apply.
+    // Signal count line is included only when signals were applied.
+    const signalsApplied = result?.signals_applied ?? approvedSignals.length;
+    const changeCount = approved.length;
+    const changeLabel = `${changeCount} change${changeCount !== 1 ? "s" : ""}`;
+    const toastMessage =
+      signalsApplied > 0
+        ? `Applied ${changeLabel} and ${signalsApplied} signal${signalsApplied !== 1 ? "s" : ""}`
+        : `Applied ${changeLabel}`;
+    toast.success(toastMessage);
+
     setCaptureResult(null);
     setItemStates({});
     setEditedChanges({});
+    setSignalStates({});
     setNotes("");
     setSelectedDocId("");
     setReprocessedFromDeferred([]);
@@ -183,8 +221,23 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     setItemStates(next);
   }
 
+  function approveAllMentions() {
+    if (!captureResult) return;
+    const next: Record<number, ItemState> = { ...signalStates };
+    (captureResult.proposed_signals ?? []).forEach((sig, i) => {
+      if (sig.signal_type === "meeting_mention") next[i] = "approved";
+    });
+    setSignalStates(next);
+  }
+
+  function setSignalState(idx: number, state: ItemState) {
+    setSignalStates((prev) => ({ ...prev, [idx]: prev[idx] === state ? "pending" : state }));
+  }
+
   const approvedCount = Object.values(itemStates).filter((s) => s === "approved" || s === "edited").length;
   const deferredCount = Object.values(itemStates).filter((s) => s === "deferred").length;
+  const approvedSignalCount = Object.values(signalStates).filter((s) => s === "approved").length;
+  const deferredSignalCount = Object.values(signalStates).filter((s) => s === "deferred").length;
 
   // ── Already processed view ────────────────────────────────────────────────
   if (alreadyProcessed && !captureResult && !recaptureMode) {
@@ -314,21 +367,58 @@ export default function CapturePanel({ meeting, clientId }: Props) {
           ))}
         </div>
 
+        {/* Stakeholder Signals section — only shown when signals were extracted */}
+        {(captureResult.proposed_signals ?? []).length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">
+                Stakeholder Signals ({captureResult.proposed_signals.length})
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs gap-1.5"
+                onClick={approveAllMentions}
+                title="Bulk-approve all meeting mentions. Sentiment changes always need individual review."
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                Approve all mentions
+              </Button>
+            </div>
+
+            {captureResult.proposed_signals.map((sig, idx) => (
+              <ProposedSignalRow
+                key={idx}
+                signal={sig}
+                state={signalStates[idx] ?? "pending"}
+                onApprove={() => setSignalState(idx, "approved")}
+                onReject={() => setSignalState(idx, "rejected")}
+                onDefer={() => setSignalState(idx, "deferred")}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setReprocessedFromDeferred([]); }}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setSignalStates({}); setReprocessedFromDeferred([]); }}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {approvedCount} approved
               {deferredCount > 0 && ` · ${deferredCount} deferred`}
+              {approvedSignalCount > 0 && ` · ${approvedSignalCount} signal${approvedSignalCount !== 1 ? "s" : ""}`}
+              {deferredSignalCount > 0 && ` · ${deferredSignalCount} sig. deferred`}
             </span>
             <Button
               size="sm"
               className="gap-1.5 text-xs"
               onClick={handleApplyAll}
-              disabled={(approvedCount === 0 && deferredCount === 0) || applyCapture.isPending}
+              disabled={
+                (approvedCount === 0 && deferredCount === 0 && approvedSignalCount === 0 && deferredSignalCount === 0) ||
+                applyCapture.isPending
+              }
             >
               {applyCapture.isPending
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Applying...</>
@@ -906,6 +996,164 @@ function DeferredCarryforwardCard({
           Discard
         </button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ProposedSignalRow — mirrors ProposedChangeRow style, no Edit button
+// ---------------------------------------------------------------------------
+
+interface SignalRowProps {
+  signal: ProposedSignal;
+  state: ItemState;
+  onApprove: () => void;
+  onReject: () => void;
+  onDefer: () => void;
+}
+
+const SIGNAL_TYPE_LABELS: Record<ProposedSignal["signal_type"], string> = {
+  meeting_mention: "Mention",
+  sentiment: "Sentiment",
+};
+
+const SIGNAL_TYPE_COLORS: Record<ProposedSignal["signal_type"], string> = {
+  meeting_mention: "border-blue-500/30 bg-blue-50 text-blue-700",
+  sentiment: "border-primary/30 bg-primary/5 text-primary",
+};
+
+function SignalTypeIcon({
+  signal_type,
+  sentiment,
+}: {
+  signal_type: ProposedSignal["signal_type"];
+  sentiment?: ProposedSignal["sentiment"];
+}) {
+  const base = "w-3.5 h-3.5 mt-0.5 flex-shrink-0";
+  if (signal_type === "meeting_mention") {
+    return <Mic className={cn(base, "text-muted-foreground")} />;
+  }
+  // sentiment type
+  const isNegative = sentiment === "negative" || sentiment === "at_risk";
+  const colorClass =
+    sentiment === "at_risk"
+      ? "text-destructive"
+      : sentiment === "negative"
+      ? "text-accent"
+      : "text-primary";
+  return isNegative ? (
+    <TrendingDown className={cn(base, colorClass)} />
+  ) : (
+    <TrendingUp className={cn(base, colorClass)} />
+  );
+}
+
+function ProposedSignalRow({ signal, state, onApprove, onReject, onDefer }: SignalRowProps) {
+  const isApproved = state === "approved";
+  const isRejected = state === "rejected";
+  const isDeferred = state === "deferred";
+
+  // For sentiment-type signals, use the sentiment's pill color for the type badge
+  const typeBadgeColor =
+    signal.signal_type === "sentiment" && signal.sentiment
+      ? SENTIMENT_CONFIG[signal.sentiment].container
+      : SIGNAL_TYPE_COLORS[signal.signal_type];
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-3 space-y-2 transition-colors",
+        isApproved && "border-green-500/40 bg-green-50/50",
+        isRejected && "border-border opacity-40",
+        isDeferred && "border-border bg-muted/20 opacity-60",
+        !isApproved && !isRejected && !isDeferred && "border-border bg-card"
+      )}
+    >
+      {/* Header: type icon + stakeholder name + sentiment pill + confidence */}
+      <div className="flex items-start gap-2 min-w-0">
+        <SignalTypeIcon signal_type={signal.signal_type} sentiment={signal.sentiment} />
+        <span className="text-sm font-medium text-foreground leading-snug flex-1">
+          {signal.stakeholder_name}
+        </span>
+        <Badge
+          variant="outline"
+          className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", typeBadgeColor)}
+        >
+          {SIGNAL_TYPE_LABELS[signal.signal_type]}
+        </Badge>
+        {signal.sentiment && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full text-[10px] px-1.5 py-0 border font-medium flex-shrink-0 mt-0.5",
+              SENTIMENT_CONFIG[signal.sentiment].container
+            )}
+          >
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full inline-block mr-1 flex-shrink-0",
+                SENTIMENT_CONFIG[signal.sentiment].dot
+              )}
+            />
+            {SENTIMENT_CONFIG[signal.sentiment].label}
+          </span>
+        )}
+        <span className={cn("text-[10px] font-semibold uppercase flex-shrink-0 mt-0.5", CONFIDENCE_COLORS[signal.confidence])}>
+          {signal.confidence}
+        </span>
+      </div>
+
+      {/* Source excerpt — always visible for signals (primary evidence) */}
+      {signal.source_excerpt && (
+        <blockquote className="mt-1 pl-2 border-l-2 border-muted text-xs text-muted-foreground italic">
+          "{signal.source_excerpt}"
+        </blockquote>
+      )}
+
+      {/* Action cluster — Approve, Defer, Reject (no Edit — signals are extracted facts) */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          onClick={onApprove}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isApproved
+              ? "border-green-500/40 bg-green-50 text-green-700"
+              : "border-border text-muted-foreground hover:border-green-500/40 hover:bg-green-50 hover:text-green-700"
+          )}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Approve
+        </button>
+        <button
+          onClick={onDefer}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isDeferred
+              ? "border-amber-500/40 bg-amber-50 text-amber-700"
+              : "border-border text-muted-foreground hover:border-amber-500/40 hover:bg-amber-50 hover:text-amber-700"
+          )}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          Defer
+        </button>
+        <button
+          onClick={onReject}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isRejected
+              ? "border-destructive/40 bg-destructive/5 text-destructive"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Reject
+        </button>
+      </div>
+
+      {isDeferred && (
+        <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-600">
+          Deferred — excluded from apply
+        </Badge>
+      )}
     </div>
   );
 }
