@@ -68,6 +68,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   const [notes, setNotes] = useState("");
   const [selectedDocId, setSelectedDocId] = useState<string>("");
   const [captureResult, setCaptureResult] = useState<CaptureResult | null>(null);
+  const [recaptureMode, setRecaptureMode] = useState(false);
 
   // Per-item state: state + edited version of the change
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
@@ -143,6 +144,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     merged.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
     setItemStates(initial);
     setEditedChanges({});
+    setRecaptureMode(false);
   }
 
   async function handleApplyAll() {
@@ -185,7 +187,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   const deferredCount = Object.values(itemStates).filter((s) => s === "deferred").length;
 
   // ── Already processed view ────────────────────────────────────────────────
-  if (alreadyProcessed && !captureResult) {
+  if (alreadyProcessed && !captureResult && !recaptureMode) {
     const decisions = Array.isArray(meeting.decisions) ? meeting.decisions as Array<{ text?: string; title?: string; type?: string }> : [];
     const hasDecisions = decisions.length > 0;
     const hasCaptureNotes = !!(meeting as unknown as { capture_notes?: string }).capture_notes?.trim();
@@ -232,7 +234,17 @@ export default function CapturePanel({ meeting, clientId }: Props) {
           </p>
         )}
 
-        <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => setCaptureResult(null)}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs gap-1.5"
+          onClick={() => {
+            // Pre-fill the textarea with the existing notes so the advisor can edit and re-process
+            setNotes(captureNotes ?? "");
+            setSelectedDocId("");
+            setRecaptureMode(true);
+          }}
+        >
           <Sparkles className="w-3.5 h-3.5" />
           Re-capture
         </Button>
@@ -384,11 +396,31 @@ export default function CapturePanel({ meeting, clientId }: Props) {
         </div>
       )}
 
-      <div>
-        <p className="text-sm font-medium text-foreground mb-1">Post-Meeting Capture</p>
-        <p className="text-xs text-muted-foreground">
-          Paste your notes or upload a transcript. QB will extract action items and propose workplan changes.
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium text-foreground mb-1">
+            {recaptureMode ? "Re-capture Meeting" : "Post-Meeting Capture"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {recaptureMode
+              ? "Edit the notes below and re-run QB. Existing tasks and decisions from the prior capture are NOT removed — QB will see them as context and propose updates instead of duplicates."
+              : "Paste your notes or upload a transcript. QB will extract action items and propose workplan changes."}
+          </p>
+        </div>
+        {recaptureMode && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs flex-shrink-0"
+            onClick={() => {
+              setRecaptureMode(false);
+              setNotes("");
+              setSelectedDocId("");
+            }}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
 
       <div className="space-y-1.5">
