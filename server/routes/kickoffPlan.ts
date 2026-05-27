@@ -25,10 +25,16 @@ interface KickoffPlanResponse {
   tasks: ProposedTask[];
   clientName: string;
   phase: "Discover";
+  personalizationLevel: "full" | "methodology-only";
 }
 
 interface AlreadyHasTasksResponse {
   alreadyHasTasks: true;
+  message: string;
+}
+
+interface NoScopeMaterialsResponse {
+  noScopeMaterials: true;
   message: string;
 }
 
@@ -54,7 +60,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
 
     // 3. Check whether the client already has tasks
     const taskCountResult = await query(
-      `SELECT COUNT(*) AS count FROM tasks WHERE client_id = $1`,
+      `SELECT COUNT(*)::int AS count FROM tasks WHERE client_id = $1`,
       [clientId]
     );
     const taskCount = Number(taskCountResult.rows[0]?.count ?? 0);
@@ -66,7 +72,29 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       return res.json(response);
     }
 
-    // 4. Pull the Discover phase activities from the TFO methodology
+    // 4. Gate on scope materials — at least one uploaded document is required.
+    //    Also fetch indexed chunk count in the same query for personalization level.
+    //    Gate uses document_count (matching what the frontend shows) so an uploaded-but-not-yet-indexed
+    //    doc doesn't produce a confusing "no materials" rejection; personalization uses chunk_count
+    //    (accurate signal of RAG-able content).
+    const docGateResult = await query(
+      `SELECT
+         (SELECT COUNT(*)::int FROM documents      WHERE client_id = $1) AS document_count,
+         (SELECT COUNT(*)::int FROM document_chunks WHERE client_id = $1) AS chunk_count`,
+      [clientId]
+    );
+    const documentCount = Number(docGateResult.rows[0]?.document_count ?? 0);
+    const chunkCount    = Number(docGateResult.rows[0]?.chunk_count    ?? 0);
+
+    if (documentCount === 0) {
+      const response: NoScopeMaterialsResponse = {
+        noScopeMaterials: true,
+        message: `${clientName} has no documents in their Data Room. Upload at least one contract, scope document, or intake form before generating the kickoff plan.`,
+      };
+      return res.json(response);
+    }
+
+    // 5. Pull the Discover phase activities from the TFO methodology
     const discoverPhase = getPhaseForQuarter(1);
     if (!discoverPhase) {
       return res.status(500).json({ error: "Could not load TFO Discover phase methodology" });
@@ -80,7 +108,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       )
       .join("\n");
 
-    // 5. Retrieve relevant document chunks from the client's data room via RAG
+    // 6. Retrieve relevant document chunks from the client's data room via RAG
     let docContext = "";
     try {
       const chunks = await retrieveChunks(
@@ -103,7 +131,12 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       console.warn("kickoff-plan RAG retrieval failed:", ragErr);
     }
 
-    // 6. Call Claude to generate the kickoff task list
+    // chunkCount from the gate query is the accurate signal: the client has indexed content if > 0.
+    // retrieveChunks() always merges global methodology chunks so its length is not a reliable indicator.
+    const personalizationLevel: "full" | "methodology-only" =
+      chunkCount > 0 ? "full" : "methodology-only";
+
+    // 7. Call Claude to generate the kickoff task list
     const systemPrompt =
       "You are a TFO engagement planner. Based on the TFO Discover phase methodology and any " +
       "uploaded client documents, generate an initial Q1 kickoff task list for an advisor to review. " +
@@ -139,7 +172,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       messages: [{ role: "user", content: userMessage }],
     });
 
-    // 7. Parse Claude's JSON response — strip any accidental markdown code fences
+    // 8. Parse Claude's JSON response — strip any accidental markdown code fences
     const rawText =
       aiResponse.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "[]";
 
@@ -161,7 +194,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
             item !== null && typeof item === "object"
         )
         .map((item) => ({
-          title: String(item.title ?? "Untitled Task").slice(0, 80),
+          title: (String(item.title ?? "").trim() || "Untitled Task").slice(0, 80),
           description: String(item.description ?? ""),
           assignee:
             item.assignee === "client" ? ("client" as const) : ("advisor" as const),
@@ -180,10 +213,18 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       return res.status(500).json({ error: "Failed to parse AI-generated task list. Please try again." });
     }
 
+    if (tasks.length === 0) {
+      console.error("kickoff-plan: Claude returned zero valid tasks. Raw text:", rawText);
+      return res.status(500).json({
+        error: "The AI did not return any valid tasks. Please try again — if the problem persists, contact support.",
+      });
+    }
+
     const responsePayload: KickoffPlanResponse = {
       tasks,
       clientName,
       phase: "Discover",
+      personalizationLevel,
     };
 
     return res.json(responsePayload);

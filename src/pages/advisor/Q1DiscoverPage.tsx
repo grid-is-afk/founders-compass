@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, Link } from "react-router-dom";
 import { Pencil, ChevronDown, ChevronRight as ChevronRightIcon, Wand2, Loader2 } from "lucide-react";
 import { PhaseTracker, type Q1PhaseId } from "@/components/clients/PhaseTracker";
 import { Q1TimelineChart } from "@/components/clients/Q1TimelineChart";
@@ -20,6 +20,7 @@ import {
   useGenerateKickoffPlan,
   type ProposedTask,
 } from "@/hooks/useTasks";
+import { useClientDocuments } from "@/hooks/useDocuments";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 
@@ -57,9 +58,14 @@ export default function Q1DiscoverPage() {
   const [kickoffTasks, setKickoffTasks] = useState<ProposedTask[] | null>(null);
   const [showKickoffModal, setShowKickoffModal] = useState(false);
   const [isCreatingTasks, setIsCreatingTasks] = useState(false);
+  const [kickoffPersonalizationLevel, setKickoffPersonalizationLevel] = useState<
+    "full" | "methodology-only" | undefined
+  >(undefined);
 
   // Hooks for the kickoff plan feature
   const { data: tasksRaw = [] } = useClientTasks(client.id);
+  const { data: documents } = useClientDocuments(client.id);
+  const docCount = documents?.length ?? 0;
   const generateKickoffPlan = useGenerateKickoffPlan(client.id);
   const createTask = useCreateTask();
 
@@ -102,8 +108,13 @@ export default function Q1DiscoverPage() {
         toast.info(result.message);
         return;
       }
+      if ("noScopeMaterials" in result && result.noScopeMaterials) {
+        toast.info(result.message);
+        return;
+      }
       if ("tasks" in result) {
         setKickoffTasks(result.tasks);
+        setKickoffPersonalizationLevel(result.personalizationLevel);
         setShowKickoffModal(true);
       }
     } catch (err) {
@@ -141,6 +152,7 @@ export default function Q1DiscoverPage() {
     setIsCreatingTasks(false);
     setShowKickoffModal(false);
     setKickoffTasks(null);
+    setKickoffPersonalizationLevel(undefined);
 
     if (failCount === 0) {
       toast.success(`Kickoff plan created — ${successCount} task${successCount !== 1 ? "s" : ""} added`);
@@ -302,30 +314,62 @@ export default function Q1DiscoverPage() {
       {/* Kickoff plan generator — shown only when no tasks exist yet */}
       {!hasTasks && (
         <div className="flex items-center justify-between rounded-lg border border-dashed border-violet-300/60 bg-violet-50/30 px-4 py-3">
-          <div className="space-y-0.5">
-            <p className="text-sm font-medium text-foreground">No tasks yet</p>
-            <p className="text-xs text-muted-foreground">
-              Generate an AI-powered Q1 kickoff plan based on the TFO Discover methodology and this client's uploaded documents.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleGenerateKickoffPlan}
-            disabled={generateKickoffPlan.isPending}
-            className="ml-4 shrink-0 gap-1.5"
-          >
-            {generateKickoffPlan.isPending ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Wand2 className="w-3.5 h-3.5" />
-                Generate Kickoff Plan
-              </>
-            )}
-          </Button>
+          {docCount === 0 ? (
+            <>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">No tasks yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Upload your contract or scope document to the Data Room first — the kickoff plan generator needs them to personalize your Q1 plan.
+                </p>
+              </div>
+              <div className="ml-4 shrink-0 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled
+                  className="gap-1.5"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  Generate Kickoff Plan
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  asChild
+                >
+                  <Link to={`/advisor/clients/${client.id}/data-room`}>
+                    Go to Data Room →
+                  </Link>
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">No tasks yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Generate an AI-powered Q1 kickoff plan based on the TFO Discover methodology and this client's uploaded documents.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleGenerateKickoffPlan}
+                disabled={generateKickoffPlan.isPending}
+                className="ml-4 shrink-0 gap-1.5"
+              >
+                {generateKickoffPlan.isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Generate Kickoff Plan
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </div>
       )}
 
@@ -338,9 +382,11 @@ export default function Q1DiscoverPage() {
           open={showKickoffModal}
           tasks={kickoffTasks}
           clientName={client.name}
+          personalizationLevel={kickoffPersonalizationLevel}
           onClose={() => {
             setShowKickoffModal(false);
             setKickoffTasks(null);
+            setKickoffPersonalizationLevel(undefined);
           }}
           onApprove={handleApproveKickoffPlan}
           isApproving={isCreatingTasks}
