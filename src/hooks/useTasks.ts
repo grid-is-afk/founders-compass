@@ -19,10 +19,16 @@ export interface KickoffPlanResult {
   tasks: ProposedTask[];
   clientName: string;
   phase: "Discover";
+  personalizationLevel: "full" | "methodology-only";
 }
 
 export interface KickoffPlanAlreadyExists {
   alreadyHasTasks: true;
+  message: string;
+}
+
+export interface KickoffPlanNoScopeMaterials {
+  noScopeMaterials: true;
   message: string;
 }
 
@@ -101,7 +107,7 @@ export function useDeleteTask() {
 
 export function useGenerateKickoffPlan(clientId: string) {
   return useMutation({
-    mutationFn: async (): Promise<KickoffPlanResult | KickoffPlanAlreadyExists> => {
+    mutationFn: async (): Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials> => {
       const res = await apiFetch(`/clients/${clientId}/kickoff-plan`, {
         method: "POST",
       });
@@ -109,7 +115,7 @@ export function useGenerateKickoffPlan(clientId: string) {
         const body = await res.json().catch(() => ({ error: "Request failed" }));
         throw new Error((body as { error?: string }).error ?? `API error ${res.status}`);
       }
-      return res.json() as Promise<KickoffPlanResult | KickoffPlanAlreadyExists>;
+      return res.json() as Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials>;
     },
   });
 }
