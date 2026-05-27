@@ -27,10 +27,17 @@ export function QuarterbackActionsPanel({ clientId, clientName }: QuarterbackAct
     generateBriefing(
       { clientId },
       {
-        onSuccess: () =>
-          toast("Briefing generated — check Deliverables", { duration: 4000 }),
+        onSuccess: (data) => {
+          if (data.dataRoom.saved && data.dataRoom.wasUpdate) {
+            toast.success("Briefing updated — Data Room file replaced");
+          } else if (data.dataRoom.saved) {
+            toast.success("Briefing saved to Data Room as Pending Review");
+          } else {
+            toast.warning("Generated, but Data Room save failed — file is in Deliverables only");
+          }
+        },
         onError: () =>
-          toast("Failed to generate briefing. Please try again."),
+          toast.error("Failed to generate briefing. Please try again."),
       }
     );
   };
