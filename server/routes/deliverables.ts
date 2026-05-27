@@ -703,7 +703,7 @@ The document MUST follow this exact structure:
         extension: "docx",
         deliverableId: savedRow.id,
         reviewStatus: savedRow.review_status as "pending_review" | "approved",
-        category: "Reports",
+        category: "Quarterly Review",
       });
     } catch (drErr) {
       console.error("Data Room save failed for generate-review-prep:", drErr);
