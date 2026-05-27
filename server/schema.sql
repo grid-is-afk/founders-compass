@@ -666,3 +666,14 @@ CREATE TABLE IF NOT EXISTS data_room_folders (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (client_id, category, name)
 );
+
+-- ============================================================
+-- UC-07: Quarterly plan start date — canonical chapter start
+-- ============================================================
+
+ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS start_date DATE;
+
+-- One quarterly plan per (client, quarter, year). Makes upserts deterministic
+-- and protects against race conditions in syncQ1PlanStartDate.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_quarterly_plans_client_quarter_year
+  ON quarterly_plans(client_id, quarter, year);

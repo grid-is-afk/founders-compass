@@ -25,6 +25,46 @@ const ALLOWED_COLUMNS = new Set([
   "onboarded_at",
 ]);
 
+/**
+ * Keep the Q1 quarterly_plan in sync with clients.onboarded_at.
+ * Direction is one-way: clients.onboarded_at is the canonical source of truth.
+ *
+ *   onboardedAt = ISO string → UPSERT (client_id, quarter=1, year=YYYY):
+ *     start_date  := onboardedAt
+ *     review_date := onboardedAt + 90 days (only if currently NULL — never overwrite)
+ *
+ *   onboardedAt = null → null out start_date on any Q1 plan (preserve review_date).
+ *
+ * Relies on the UNIQUE(client_id, quarter, year) index for ON CONFLICT.
+ */
+async function syncQ1PlanStartDate(clientId: string, onboardedAt: string | null): Promise<void> {
+  if (onboardedAt === null) {
+    await query(
+      `UPDATE quarterly_plans
+       SET start_date = NULL, updated_at = NOW()
+       WHERE client_id = $1 AND quarter = 1 AND start_date IS NOT NULL`,
+      [clientId]
+    );
+    return;
+  }
+
+  const onboardedDate = new Date(onboardedAt);
+  const startDateStr = onboardedDate.toISOString().slice(0, 10);
+  const reviewDate = new Date(onboardedDate.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const reviewDateStr = reviewDate.toISOString().slice(0, 10);
+  const currentYear = onboardedDate.getFullYear();
+
+  await query(
+    `INSERT INTO quarterly_plans (client_id, quarter, year, label, status, start_date, review_date)
+     VALUES ($1, 1, $2, $3, 'active', $4, $5)
+     ON CONFLICT (client_id, quarter, year) DO UPDATE
+       SET start_date  = EXCLUDED.start_date,
+           review_date = COALESCE(quarterly_plans.review_date, EXCLUDED.review_date),
+           updated_at  = NOW()`,
+    [clientId, currentYear, `Q1 ${currentYear} Review`, startDateStr, reviewDateStr]
+  );
+}
+
 /** Returns true if this user can access all clients (admin always can; advisors check DB flag). */
 async function canSeeAll(userId: string, role: string): Promise<boolean> {
   if (role === "admin") return true;
@@ -164,6 +204,16 @@ router.post("/", async (req, res) => {
     );
 
     const newClientId = clientResult.rows[0].id;
+
+    // Sync Q1 plan start_date whenever onboarded_at is set at creation
+    if (onboarded_at) {
+      try {
+        await syncQ1PlanStartDate(newClientId, onboarded_at);
+      } catch (syncErr) {
+        // Non-fatal — client creation still succeeds if plan sync fails
+        console.warn("Q1 plan start_date sync failed during client creation:", syncErr);
+      }
+    }
 
     // Promote prospect documents to the new client's data room
     if (source_prospect_id) {
@@ -326,6 +376,20 @@ router.patch("/:id", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
+
+    // Sync Q1 plan start_date whenever onboarded_at is being written (set or cleared)
+    if ("onboarded_at" in fields) {
+      try {
+        await syncQ1PlanStartDate(
+          req.params.id,
+          (fields.onboarded_at as string | null) ?? null
+        );
+      } catch (syncErr) {
+        // Non-fatal — PATCH still returns the updated client even if plan sync fails
+        console.warn("Q1 plan start_date sync failed during client PATCH:", syncErr);
+      }
+    }
+
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("PATCH /clients/:id error:", err);
