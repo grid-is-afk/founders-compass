@@ -530,7 +530,7 @@ function SentimentPill({ value, config, isLoading, onCycle, stakeholderName }: S
                   {config.label}
                 </>
               ) : (
-                <span>—</span>
+                <span>Set sentiment</span>
               )}
             </motion.button>
           </span>

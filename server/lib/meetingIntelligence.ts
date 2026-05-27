@@ -562,6 +562,19 @@ Return ONLY valid JSON (no markdown):
       (sig) => typeof sig.stakeholder_id === "string" && stakeholderIdSet.has(sig.stakeholder_id)
     );
 
+    // De-dupe: when a sentiment signal exists for the same stakeholder + source_excerpt,
+    // drop the redundant meeting_mention. Sentiment implies mention, so reviewing both
+    // forces the advisor to approve the same evidence twice.
+    const sentimentExcerpts = new Set(
+      result.proposed_signals
+        .filter((s) => s.signal_type === "sentiment")
+        .map((s) => `${s.stakeholder_id}::${s.source_excerpt}`)
+    );
+    result.proposed_signals = result.proposed_signals.filter((s) => {
+      if (s.signal_type !== "meeting_mention") return true;
+      return !sentimentExcerpts.has(`${s.stakeholder_id}::${s.source_excerpt}`);
+    });
+
     // Gap 3: Enrich task_update changes with a snapshot of the existing task
     for (const change of result.proposed_changes) {
       if (change.type === "task_update" && change.existing_task_id) {
