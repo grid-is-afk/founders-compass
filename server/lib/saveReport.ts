@@ -130,7 +130,6 @@ export async function saveReportToDataRoom(
   // ------------------------------------------------------------------
   // Legacy path — no deliverableId, always insert (backwards compat)
   // ------------------------------------------------------------------
-  const { randomUUID } = await import("crypto");
   const storagePath = `clients/${clientId}/reports/${randomUUID()}.${extension}`;
 
   const { error: uploadError } = await supabase.storage
