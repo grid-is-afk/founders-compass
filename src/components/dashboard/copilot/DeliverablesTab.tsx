@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FileText, Loader2, Pencil, Eye, X, Save, Download } from "lucide-react";
+import { FileText, Loader2, Pencil, Eye, X, Save, Download, Archive } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -25,6 +25,8 @@ import { useClientContext } from "@/hooks/useClientContext";
 import {
   useClientDeliverables,
   useUpdateDeliverable,
+  useArchiveDeliverable,
+  useUnarchiveDeliverable,
 } from "@/hooks/useDeliverables";
 import type { UpdateDeliverableResult } from "@/hooks/useDeliverables";
 import { deliverableStatusLabel } from "@/lib/copilotStyles";
@@ -97,6 +99,8 @@ const DeliverablesTab = () => {
   const { data: rawDeliverables = [] } = useClientDeliverables(selectedClientId);
   const { togglePanel } = useCopilotContext();
   const updateDeliverable = useUpdateDeliverable();
+  const archiveDeliverable = useArchiveDeliverable();
+  const unarchiveDeliverable = useUnarchiveDeliverable();
 
   // Inline editor state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -106,6 +110,45 @@ const DeliverablesTab = () => {
   const [previewingDeliverable, setPreviewingDeliverable] = useState<
     MappedDeliverable | null
   >(null);
+
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(new Set());
+
+  const handleArchive = (del: MappedDeliverable) => {
+    if (archivingIds.has(del.id)) return;
+    setArchivingIds((prev) => new Set(prev).add(del.id));
+    archiveDeliverable.mutate(
+      { id: del.id, clientId: selectedClientId },
+      {
+        onSuccess: (data) => {
+          toast.success(`${del.title} archived`, {
+            description: data.dataRoomArchived
+              ? "Hidden from Deliverables and Data Room."
+              : "Hidden from Deliverables.",
+            action: {
+              label: "Undo",
+              onClick: () =>
+                unarchiveDeliverable.mutate(
+                  { id: del.id, clientId: selectedClientId },
+                  {
+                    onSuccess: () =>
+                      toast.success(`${del.title} restored`),
+                    onError: () =>
+                      toast.error("Could not undo archive — please refresh."),
+                  }
+                ),
+            },
+          });
+        },
+        onError: () => toast.error("Could not archive — please try again."),
+        onSettled: () =>
+          setArchivingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(del.id);
+            return next;
+          }),
+      }
+    );
+  };
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -361,6 +404,25 @@ const DeliverablesTab = () => {
                         <Download className="w-3 h-3" />
                       )}
                       Download
+                    </Button>
+                  )}
+
+                  {/* Archive — soft delete with undo */}
+                  {!isEditing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 gap-1 text-muted-foreground hover:text-foreground"
+                      onClick={() => handleArchive(del)}
+                      title="Archive (hide from this list and Data Room)"
+                      disabled={archivingIds.has(del.id)}
+                    >
+                      {archivingIds.has(del.id) ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Archive className="w-3 h-3" />
+                      )}
+                      Archive
                     </Button>
                   )}
                 </div>

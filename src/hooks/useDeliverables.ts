@@ -46,6 +46,34 @@ export function useDeleteDeliverable() {
   });
 }
 
+export interface ArchiveDeliverableResult {
+  ok: boolean;
+  dataRoomArchived?: boolean;
+  dataRoomRestored?: boolean;
+}
+
+export function useArchiveDeliverable() {
+  const qc = useQueryClient();
+  return useMutation<ArchiveDeliverableResult, Error, { id: string; clientId: string }>({
+    mutationFn: ({ id }) => api.post(`/deliverables/${id}/archive`, {}),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] });
+      qc.invalidateQueries({ queryKey: ["documents", vars.clientId] });
+    },
+  });
+}
+
+export function useUnarchiveDeliverable() {
+  const qc = useQueryClient();
+  return useMutation<ArchiveDeliverableResult, Error, { id: string; clientId: string }>({
+    mutationFn: ({ id }) => api.post(`/deliverables/${id}/unarchive`, {}),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] });
+      qc.invalidateQueries({ queryKey: ["documents", vars.clientId] });
+    },
+  });
+}
+
 export interface GenerateResult {
   deliverable: Record<string, unknown>;
   dataRoom: {

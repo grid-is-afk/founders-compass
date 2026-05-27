@@ -689,3 +689,14 @@ ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS start_date DATE;
 -- and protects against race conditions in syncQ1PlanStartDate.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_quarterly_plans_client_quarter_year
   ON quarterly_plans(client_id, quarter, year);
+
+-- ============================================================
+-- Soft-delete / archive support for deliverables + documents
+-- ============================================================
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_deliverables_archived
+  ON deliverables(client_id, archived_at);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_documents_archived
+  ON documents(client_id, archived_at);

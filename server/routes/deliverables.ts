@@ -27,7 +27,7 @@ router.get("/", async (req, res) => {
     }
 
     const result = await query(
-      "SELECT * FROM deliverables WHERE client_id = $1 ORDER BY created_at",
+      "SELECT * FROM deliverables WHERE client_id = $1 AND archived_at IS NULL ORDER BY created_at",
       [client_id]
     );
     return res.json(result.rows);
@@ -842,6 +842,74 @@ router.patch("/:id", async (req, res) => {
     return res.json({ ...updatedRow, dataRoomRenamed });
   } catch (err) {
     console.error("PATCH /deliverables/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/deliverables/:id/archive ──────────────────────────────────────
+// Soft-delete a deliverable + mirror to the linked Data Room document.
+router.post("/:id/archive", async (req, res) => {
+  try {
+    const dResult = await query(
+      "SELECT id, client_id FROM deliverables WHERE id = $1",
+      [req.params.id]
+    );
+    if (dResult.rows.length === 0) {
+      return res.status(404).json({ error: "Deliverable not found" });
+    }
+    if (!(await verifyClient(dResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await query(
+      `UPDATE deliverables SET archived_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [req.params.id]
+    );
+    // Mirror to the linked Data Room document (if any). ON DELETE CASCADE on
+    // deliverable_id would handle hard delete; for archive we set the same flag.
+    const docResult = await query(
+      `UPDATE documents SET archived_at = NOW(), updated_at = NOW()
+       WHERE deliverable_id = $1
+       RETURNING id`,
+      [req.params.id]
+    );
+
+    return res.json({ ok: true, dataRoomArchived: docResult.rows.length > 0 });
+  } catch (err) {
+    console.error("POST /deliverables/:id/archive error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/deliverables/:id/unarchive ────────────────────────────────────
+// Restore a previously archived deliverable + its Data Room document.
+router.post("/:id/unarchive", async (req, res) => {
+  try {
+    const dResult = await query(
+      "SELECT id, client_id FROM deliverables WHERE id = $1",
+      [req.params.id]
+    );
+    if (dResult.rows.length === 0) {
+      return res.status(404).json({ error: "Deliverable not found" });
+    }
+    if (!(await verifyClient(dResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await query(
+      `UPDATE deliverables SET archived_at = NULL, updated_at = NOW() WHERE id = $1`,
+      [req.params.id]
+    );
+    const docResult = await query(
+      `UPDATE documents SET archived_at = NULL, updated_at = NOW()
+       WHERE deliverable_id = $1
+       RETURNING id`,
+      [req.params.id]
+    );
+
+    return res.json({ ok: true, dataRoomRestored: docResult.rows.length > 0 });
+  } catch (err) {
+    console.error("POST /deliverables/:id/unarchive error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
