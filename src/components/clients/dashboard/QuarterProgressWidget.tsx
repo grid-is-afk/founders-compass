@@ -4,6 +4,7 @@ import { useClientTasks } from "@/hooks/useTasks";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 import { useGenerateReviewPrep } from "@/hooks/useDeliverables";
+import type { GenerateResult } from "@/hooks/useDeliverables";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -178,8 +179,17 @@ export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
                 generateReviewPrep(
                   { quarter: reviewPlan.quarter },
                   {
-                    onSuccess: () =>
-                      toast.success("Review prep ready — check Deliverables"),
+                    onSuccess: (data: GenerateResult) => {
+                      if (data.dataRoom.saved && data.dataRoom.wasUpdate) {
+                        toast.success("Review prep updated — Data Room file replaced");
+                      } else if (data.dataRoom.saved) {
+                        toast.success("Review prep saved to Data Room as Pending Review");
+                      } else {
+                        toast.warning(
+                          "Generated, but Data Room save failed — file is in Deliverables only"
+                        );
+                      }
+                    },
                     onError: () =>
                       toast.error("Failed to generate review prep. Please try again."),
                   }

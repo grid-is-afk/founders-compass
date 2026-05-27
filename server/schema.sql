@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_client ON documents(client_id);
 
+-- Migration: link documents back to the originating deliverable (one row per deliverable)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS deliverable_id UUID
+  REFERENCES deliverables(id) ON DELETE CASCADE;
+-- Migration: track when a document was last modified (separate from uploaded_at)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_deliverable
+  ON documents(deliverable_id) WHERE deliverable_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_documents_deliverable
+  ON documents(deliverable_id);
+
 -- ============================================================
 -- Protection items
 -- ============================================================

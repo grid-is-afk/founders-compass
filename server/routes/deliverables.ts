@@ -4,6 +4,7 @@ import { query } from "../db.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { tools, executeTool } from "../tools.js";
 import { saveReportToDataRoom } from "../lib/saveReport.js";
+import type { SaveReportResult } from "../lib/saveReport.js";
 import { getPhaseForQuarter } from "../methodology/tfo-methodology.js";
 import { buildDeliverableDocx, buildDeliverableFilename } from "../lib/deliverableDocx.js";
 
@@ -141,18 +142,66 @@ router.post("/generate-quarterly-review", async (req, res) => {
       if (block.type === "text") textContent += block.text;
     }
 
-    // Save report markdown to Data Room under Reports > Quarterly Review
-    await saveReportToDataRoom(clientId, "Quarterly Review", textContent, "Quarterly Review");
-
-    // Return the deliverable record that was created by executeTool
+    // Fetch (or confirm) the deliverable row created by executeTool
     const delResult = await query(
-      `SELECT id, title FROM deliverables
+      `SELECT * FROM deliverables
        WHERE client_id = $1 AND title = 'Quarterly Review'
        ORDER BY created_at DESC LIMIT 1`,
       [clientId]
     );
+    const savedRow = delResult.rows[0] ?? null;
 
-    return res.json(delResult.rows[0] ?? { id: null, title: "Quarterly Review" });
+    if (!savedRow) {
+      console.error("generate-quarterly-review: tool returned no matching deliverable row");
+      return res.status(500).json({ error: "Failed to retrieve generated deliverable" });
+    }
+
+    // Preserve review_status if already set (e.g. already 'approved'); default to
+    // 'pending_review' only for first generation. Regeneration of an approved
+    // doc keeps the approval so the Data Room file stays at its clean name.
+    const reviewStatusResult = await query(
+      `UPDATE deliverables
+       SET review_status = COALESCE(review_status, 'pending_review'),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING review_status`,
+      [savedRow.id]
+    );
+    savedRow.review_status = reviewStatusResult.rows[0].review_status;
+
+    // Save .docx to Data Room (UPSERT — one row per deliverable). Filename
+    // suffix mirrors the live review_status so an approved doc keeps its
+    // clean name on regenerate.
+    let dataRoom: SaveReportResult = { saved: false, wasUpdate: false, name: "" };
+    try {
+      const generatedAt = new Date().toISOString().slice(0, 10);
+      const docxBuffer = await buildDeliverableDocx({
+        title: savedRow.title,
+        clientName,
+        generatedAt,
+        markdownContent: textContent,
+      });
+      dataRoom = await saveReportToDataRoom({
+        clientId,
+        baseTitle: `Quarterly Review — ${clientName}`,
+        contentBuffer: docxBuffer,
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extension: "docx",
+        deliverableId: savedRow.id,
+        reviewStatus: savedRow.review_status as "pending_review" | "approved",
+        category: "Quarterly Review",
+      });
+    } catch (drErr) {
+      console.error("Data Room save failed for generate-quarterly-review:", drErr);
+      dataRoom = {
+        saved: false,
+        wasUpdate: false,
+        name: "",
+        error: drErr instanceof Error ? drErr.message : "Unknown error",
+      };
+    }
+
+    return res.status(201).json({ deliverable: savedRow, dataRoom });
   } catch (err) {
     console.error("POST /deliverables/generate-quarterly-review error:", err);
     return res.status(500).json({ error: "Report generation failed" });
@@ -241,18 +290,63 @@ router.post("/generate-engagement-briefing", async (req, res) => {
 
     const briefingTitle = `Engagement Briefing — ${clientName}`;
 
-    // Save briefing markdown to Data Room under Reports
-    await saveReportToDataRoom(clientId, briefingTitle, textContent, "Reports");
-
-    // Return the deliverable row created by the tool handler
+    // Fetch the deliverable row created by the tool handler
     const delResult = await query(
-      `SELECT id, title FROM deliverables
+      `SELECT * FROM deliverables
        WHERE client_id = $1 AND title = $2
        ORDER BY created_at DESC LIMIT 1`,
       [clientId, briefingTitle]
     );
+    const savedRow = delResult.rows[0] ?? null;
 
-    return res.json(delResult.rows[0] ?? { id: null, title: briefingTitle });
+    if (!savedRow) {
+      console.error("generate-engagement-briefing: tool returned no matching deliverable row");
+      return res.status(500).json({ error: "Failed to retrieve generated deliverable" });
+    }
+
+    // Preserve existing review_status (e.g. 'approved'); only default new rows
+    // to 'pending_review'.
+    const reviewStatusResult = await query(
+      `UPDATE deliverables
+       SET review_status = COALESCE(review_status, 'pending_review'),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING review_status`,
+      [savedRow.id]
+    );
+    savedRow.review_status = reviewStatusResult.rows[0].review_status;
+
+    // Save .docx to Data Room (UPSERT keyed on deliverable_id)
+    let dataRoom: SaveReportResult = { saved: false, wasUpdate: false, name: "" };
+    try {
+      const generatedAt = new Date().toISOString().slice(0, 10);
+      const docxBuffer = await buildDeliverableDocx({
+        title: savedRow.title,
+        clientName,
+        generatedAt,
+        markdownContent: textContent,
+      });
+      dataRoom = await saveReportToDataRoom({
+        clientId,
+        baseTitle: briefingTitle,
+        contentBuffer: docxBuffer,
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extension: "docx",
+        deliverableId: savedRow.id,
+        reviewStatus: savedRow.review_status as "pending_review" | "approved",
+        category: "Reports",
+      });
+    } catch (drErr) {
+      console.error("Data Room save failed for generate-engagement-briefing:", drErr);
+      dataRoom = {
+        saved: false,
+        wasUpdate: false,
+        name: "",
+        error: drErr instanceof Error ? drErr.message : "Unknown error",
+      };
+    }
+
+    return res.status(201).json({ deliverable: savedRow, dataRoom });
   } catch (err) {
     console.error("POST /deliverables/generate-engagement-briefing error:", err);
     return res.status(500).json({ error: "Briefing generation failed" });
@@ -560,6 +654,8 @@ The document MUST follow this exact structure:
 
     let savedRow;
     if (existingPrep.rows.length > 0) {
+      // Regeneration — preserve existing review_status (so re-running on an
+      // approved doc doesn't silently revoke approval).
       const updateResult = await query(
         `UPDATE deliverables
          SET title = $1, status = 'ready', engine = 'claude-sonnet-4-6',
@@ -571,14 +667,45 @@ The document MUST follow this exact structure:
       savedRow = updateResult.rows[0];
     } else {
       const insertResult = await query(
-        `INSERT INTO deliverables (client_id, title, status, engine, content)
-         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        `INSERT INTO deliverables (client_id, title, status, engine, content, review_status)
+         VALUES ($1, $2, $3, $4, $5, 'pending_review') RETURNING *`,
         [clientId, deliverableTitle, "ready", "claude-sonnet-4-6", docContent]
       );
       savedRow = insertResult.rows[0];
     }
 
-    return res.status(201).json(savedRow);
+    // Save .docx to Data Room (UPSERT keyed on deliverable_id). Filename suffix
+    // mirrors the live review_status — approved docs stay at their clean name.
+    let dataRoom: SaveReportResult = { saved: false, wasUpdate: false, name: "" };
+    try {
+      const generatedAt = new Date().toISOString().slice(0, 10);
+      const docxBuffer = await buildDeliverableDocx({
+        title: savedRow.title,
+        clientName,
+        generatedAt,
+        markdownContent: docContent,
+      });
+      dataRoom = await saveReportToDataRoom({
+        clientId,
+        baseTitle: deliverableTitle,
+        contentBuffer: docxBuffer,
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        extension: "docx",
+        deliverableId: savedRow.id,
+        reviewStatus: savedRow.review_status as "pending_review" | "approved",
+        category: "Reports",
+      });
+    } catch (drErr) {
+      console.error("Data Room save failed for generate-review-prep:", drErr);
+      dataRoom = {
+        saved: false,
+        wasUpdate: false,
+        name: "",
+        error: drErr instanceof Error ? drErr.message : "Unknown error",
+      };
+    }
+
+    return res.status(201).json({ deliverable: savedRow, dataRoom });
   } catch (err) {
     console.error("POST /deliverables/generate-review-prep error:", err);
     return res.status(500).json({ error: "Review prep generation failed" });
@@ -680,7 +807,39 @@ router.patch("/:id", async (req, res) => {
        WHERE id = $${keys.length + 1} RETURNING *`,
       [...values, req.params.id]
     );
-    return res.json(result.rows[0]);
+    const updatedRow = result.rows[0];
+
+    // If review_status was changed, rename the linked Data Room document
+    let dataRoomRenamed = false;
+    if ("review_status" in fields) {
+      const newStatus = fields.review_status as string;
+      const docResult = await query(
+        "SELECT id, name FROM documents WHERE deliverable_id = $1 LIMIT 1",
+        [req.params.id]
+      );
+      if (docResult.rows.length > 0) {
+        const docRow = docResult.rows[0] as { id: string; name: string };
+        let newName: string;
+        if (newStatus === "approved") {
+          // Strip "(Pending Review)" suffix if present
+          newName = docRow.name.replace(/ \(Pending Review\)(\.[^.]+)$/, "$1");
+        } else {
+          // pending_review — ensure suffix is present (don't double-append)
+          const hasExtMatch = docRow.name.match(/(\.[^.]+)$/);
+          const ext = hasExtMatch ? hasExtMatch[1] : "";
+          const baseName = ext ? docRow.name.slice(0, -ext.length) : docRow.name;
+          const cleanBase = baseName.replace(/ \(Pending Review\)$/, "");
+          newName = `${cleanBase} (Pending Review)${ext}`;
+        }
+        await query(
+          "UPDATE documents SET name = $1, updated_at = NOW() WHERE id = $2",
+          [newName, docRow.id]
+        );
+        dataRoomRenamed = true;
+      }
+    }
+
+    return res.json({ ...updatedRow, dataRoomRenamed });
   } catch (err) {
     console.error("PATCH /deliverables/:id error:", err);
     return res.status(500).json({ error: "Internal server error" });
