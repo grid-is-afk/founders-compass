@@ -27,7 +27,11 @@ router.get("/", async (req, res) => {
     }
 
     const result = await query(
-      "SELECT * FROM deliverables WHERE client_id = $1 AND archived_at IS NULL ORDER BY created_at",
+      `SELECT d.*, u.name AS approved_by_name
+       FROM deliverables d
+       LEFT JOIN users u ON u.id = d.approved_by
+       WHERE d.client_id = $1 AND d.archived_at IS NULL
+       ORDER BY d.created_at`,
       [client_id]
     );
     return res.json(result.rows);
@@ -159,10 +163,13 @@ router.post("/generate-quarterly-review", async (req, res) => {
     // Preserve review_status if already set (e.g. already 'approved'); default to
     // 'pending_review' only for first generation. Regeneration of an approved
     // doc keeps the approval so the Data Room file stays at its clean name.
+    // generated_at is bumped on every content write so the "Generated X ago"
+    // subtitle stays accurate to the actual content date.
     const reviewStatusResult = await query(
       `UPDATE deliverables
        SET review_status = COALESCE(review_status, 'pending_review'),
-           updated_at = NOW()
+           generated_at  = NOW(),
+           updated_at    = NOW()
        WHERE id = $1
        RETURNING review_status`,
       [savedRow.id]
@@ -305,11 +312,13 @@ router.post("/generate-engagement-briefing", async (req, res) => {
     }
 
     // Preserve existing review_status (e.g. 'approved'); only default new rows
-    // to 'pending_review'.
+    // to 'pending_review'. Bump generated_at to keep the "Generated X ago"
+    // subtitle accurate to the actual content write.
     const reviewStatusResult = await query(
       `UPDATE deliverables
        SET review_status = COALESCE(review_status, 'pending_review'),
-           updated_at = NOW()
+           generated_at  = NOW(),
+           updated_at    = NOW()
        WHERE id = $1
        RETURNING review_status`,
       [savedRow.id]
@@ -655,11 +664,12 @@ The document MUST follow this exact structure:
     let savedRow;
     if (existingPrep.rows.length > 0) {
       // Regeneration — preserve existing review_status (so re-running on an
-      // approved doc doesn't silently revoke approval).
+      // approved doc doesn't silently revoke approval). generated_at bumps
+      // so the audit trail reflects the new content date.
       const updateResult = await query(
         `UPDATE deliverables
          SET title = $1, status = 'ready', engine = 'claude-sonnet-4-6',
-             content = $2, updated_at = NOW()
+             content = $2, generated_at = NOW(), updated_at = NOW()
          WHERE id = $3
          RETURNING *`,
         [deliverableTitle, docContent, existingPrep.rows[0].id]
@@ -667,8 +677,8 @@ The document MUST follow this exact structure:
       savedRow = updateResult.rows[0];
     } else {
       const insertResult = await query(
-        `INSERT INTO deliverables (client_id, title, status, engine, content, review_status)
-         VALUES ($1, $2, $3, $4, $5, 'pending_review') RETURNING *`,
+        `INSERT INTO deliverables (client_id, title, status, engine, content, review_status, generated_at)
+         VALUES ($1, $2, $3, $4, $5, 'pending_review', NOW()) RETURNING *`,
         [clientId, deliverableTitle, "ready", "claude-sonnet-4-6", docContent]
       );
       savedRow = insertResult.rows[0];
@@ -802,9 +812,25 @@ router.patch("/:id", async (req, res) => {
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
 
+    // Audit trail: stamp approved_at + approved_by on a transition into
+    // 'approved' (skip if already approved — preserve the original approval
+    // history). Clear them on a transition into 'pending_review'.
+    const currentReviewStatus = dResult.rows[0].review_status as string | null;
+    if ("review_status" in fields) {
+      const newStatus = fields.review_status as string;
+      if (newStatus === "approved" && currentReviewStatus !== "approved") {
+        setClauses.push(`approved_at = NOW()`);
+        setClauses.push(`approved_by = $${values.length + 1}`);
+        values.push(req.user!.id);
+      } else if (newStatus === "pending_review") {
+        setClauses.push(`approved_at = NULL`);
+        setClauses.push(`approved_by = NULL`);
+      }
+    }
+
     const result = await query(
       `UPDATE deliverables SET ${setClauses.join(", ")}, updated_at = NOW()
-       WHERE id = $${keys.length + 1} RETURNING *`,
+       WHERE id = $${values.length + 1} RETURNING *`,
       [...values, req.params.id]
     );
     const updatedRow = result.rows[0];

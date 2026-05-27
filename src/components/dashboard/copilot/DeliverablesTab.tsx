@@ -41,6 +41,9 @@ interface DbDeliverable {
   content?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
+  generated_at?: string | null;
+  approved_at?: string | null;
+  approved_by_name?: string | null;
 }
 
 const TITLE_DISPLAY_MAP: Record<string, string> = {
@@ -82,7 +85,9 @@ interface MappedDeliverable {
   engine: string;
   review_status: ReviewStatusValue | null;
   content: string | null;
-  updated_at: string | null;
+  generated_at: string | null;
+  approved_at: string | null;
+  approved_by_name: string | null;
 }
 
 /** Tailwind classes for the pill-shaped dropdown trigger by review_status. */
@@ -168,7 +173,11 @@ const DeliverablesTab = () => {
       engine: d.engine ?? "",
       review_status: (d.review_status ?? null) as ReviewStatusValue | null,
       content: d.content ?? null,
-      updated_at: d.updated_at ?? d.created_at ?? null,
+      // generated_at is the stable content-write timestamp; falls back to
+      // created_at for any unmigrated row.
+      generated_at: d.generated_at ?? d.created_at ?? null,
+      approved_at: d.approved_at ?? null,
+      approved_by_name: d.approved_by_name ?? null,
     };
   }
 
@@ -310,9 +319,13 @@ const DeliverablesTab = () => {
           const effectiveReviewStatus: ReviewStatusValue =
             del.review_status === "approved" ? "approved" : "pending_review";
 
-          const timestampLabel = del.updated_at
-            ? `Generated ${formatDistanceToNow(new Date(del.updated_at), { addSuffix: true })}`
+          const timestampLabel = del.generated_at
+            ? `Generated ${formatDistanceToNow(new Date(del.generated_at), { addSuffix: true })}`
             : "Not yet generated";
+          const approvalLabel =
+            del.review_status === "approved" && del.approved_at
+              ? `Approved ${formatDistanceToNow(new Date(del.approved_at), { addSuffix: true })} by ${del.approved_by_name ?? "an advisor"}`
+              : null;
 
           return (
             <div
@@ -326,6 +339,11 @@ const DeliverablesTab = () => {
                   <p className="text-[10px] text-muted-foreground">
                     {del.client} · {timestampLabel}
                   </p>
+                  {approvalLabel && (
+                    <p className="text-[10px] text-emerald-700">
+                      {approvalLabel}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   {/* Status area: static badge when not ready, dropdown when ready */}
@@ -488,13 +506,23 @@ const DeliverablesTab = () => {
               {previewingDeliverable?.title ?? ""}
             </DialogTitle>
             <p className="text-[10px] text-muted-foreground">
-              {previewingDeliverable?.updated_at
+              {previewingDeliverable?.generated_at
                 ? `Generated ${formatDistanceToNow(
-                    new Date(previewingDeliverable.updated_at),
+                    new Date(previewingDeliverable.generated_at),
                     { addSuffix: true }
                   )}`
                 : "Not yet generated"}
             </p>
+            {previewingDeliverable?.review_status === "approved" &&
+              previewingDeliverable.approved_at && (
+                <p className="text-[10px] text-emerald-700">
+                  Approved {formatDistanceToNow(
+                    new Date(previewingDeliverable.approved_at),
+                    { addSuffix: true }
+                  )}{" "}
+                  by {previewingDeliverable.approved_by_name ?? "an advisor"}
+                </p>
+              )}
           </DialogHeader>
 
           {/* Scrollable body */}

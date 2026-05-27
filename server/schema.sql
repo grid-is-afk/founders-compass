@@ -700,3 +700,11 @@ CREATE INDEX IF NOT EXISTS idx_deliverables_archived
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_documents_archived
   ON documents(client_id, archived_at);
+
+-- ============================================================
+-- Deliverable audit trail: stable generation timestamp + approver
+-- ============================================================
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_by  UUID
+  REFERENCES users(id) ON DELETE SET NULL;
