@@ -45,6 +45,7 @@ interface DbPlan {
   year: number;
   label: string | null;
   status: string;
+  start_date: string | null;
 }
 
 export default function ClientWorkspace() {
@@ -88,7 +89,11 @@ export default function ClientWorkspace() {
   }
 
   const c = client as ClientRecord;
-  const days = daysRemaining(c.onboarded_at);
+  // Prefer the Q1 plan's start_date (canonical advisor-entered date) over the raw
+  // clients.onboarded_at field. Fall back to onboarded_at if no plan exists yet.
+  const q1Plan = plans.find((p) => p.quarter === 1);
+  const chapterStartDate = q1Plan?.start_date ?? c.onboarded_at;
+  const days = daysRemaining(chapterStartDate);
 
   return (
     <div className="space-y-0">

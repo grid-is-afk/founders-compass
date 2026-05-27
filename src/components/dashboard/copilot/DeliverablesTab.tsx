@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, FileText, Loader2, CheckCircle2, Pencil, Eye, EyeOff, X, Save } from "lucide-react";
+import { Send, FileText, Loader2, CheckCircle2, Pencil, Eye, EyeOff, X, Save, Download } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -12,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 import { useClientContext } from "@/hooks/useClientContext";
 import {
   useClientDeliverables,
@@ -28,6 +30,8 @@ interface DbDeliverable {
   engine?: string | null;
   review_status?: string | null;
   content?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 }
 
 const TITLE_DISPLAY_MAP: Record<string, string> = {
@@ -41,6 +45,16 @@ const TITLE_DISPLAY_MAP: Record<string, string> = {
   monthly_status_update: "Monthly Status Update",
   onboarding_brief: "Onboarding Brief",
 };
+
+/**
+ * Return a human-readable title for a deliverable.
+ * If the raw title is in TITLE_DISPLAY_MAP (a generic slug), use the mapped display name.
+ * Otherwise preserve the raw title as-is — specific titles like "Q1 2026 Review Prep"
+ * are already human-readable and should not be overwritten.
+ */
+function resolveDeliverableTitle(rawTitle: string): string {
+  return TITLE_DISPLAY_MAP[rawTitle] ?? rawTitle;
+}
 
 const REVIEW_STATUS_OPTIONS = [
   { value: "pending_review", label: "Pending Review" },
@@ -72,12 +86,13 @@ const DeliverablesTab = () => {
 
   const deliverables = (rawDeliverables as DbDeliverable[]).map((d) => ({
     id: d.id,
-    title: TITLE_DISPLAY_MAP[d.title] ?? d.title,
+    title: resolveDeliverableTitle(d.title),
     client: selectedClient.name,
     status: d.status ?? "needs_data",
     engine: d.engine ?? "",
     review_status: d.review_status ?? null,
     content: d.content ?? null,
+    updated_at: d.updated_at ?? d.created_at ?? null,
   }));
 
   const quarterlyReview = deliverables.find(
@@ -143,6 +158,47 @@ const DeliverablesTab = () => {
     });
   };
 
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+
+  const handleDownload = async (id: string) => {
+    if (downloadingIds.has(id)) return;
+    setDownloadingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await apiFetch(`/deliverables/${id}/document.docx`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Download failed" }));
+        throw new Error((body as { error?: string }).error || `Server returned ${res.status}`);
+      }
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      // Prefer RFC 5987 filename*=UTF-8'' (preserves em-dashes etc.); fall back to ASCII filename=
+      const utfMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const asciiMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = utfMatch
+        ? decodeURIComponent(utfMatch[1])
+        : asciiMatch?.[1] ?? `deliverable-${id}.docx`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Could not download document", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setDownloadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
   if (deliverables.length === 0 && !isGenerating) {
     return (
       <div className="space-y-4">
@@ -192,6 +248,11 @@ const DeliverablesTab = () => {
         const isEditing = editingId === del.id;
         const isPreviewing = previewIds.has(del.id);
         const hasContent = !!del.content;
+        const isDownloading = downloadingIds.has(del.id);
+
+        const timestampLabel = del.updated_at
+          ? `Generated ${formatDistanceToNow(new Date(del.updated_at), { addSuffix: true })}`
+          : "Not yet generated";
 
         return (
           <div
@@ -202,9 +263,11 @@ const DeliverablesTab = () => {
             <div className="flex items-center justify-between p-3">
               <div>
                 <p className="text-sm font-medium text-foreground">{del.title}</p>
-                <p className="text-[10px] text-muted-foreground">{del.client}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {del.client} · {timestampLabel}
+                </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span
                   className={cn(
                     "text-[10px] font-medium px-2 py-0.5 rounded-full",
@@ -225,8 +288,8 @@ const DeliverablesTab = () => {
                     Edit
                   </Button>
                 )}
-                {/* Preview toggle — only when there is content and not in edit mode */}
-                {hasContent && !isEditing && (
+                {/* Preview toggle — always visible when not in edit mode */}
+                {!isEditing && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -244,6 +307,24 @@ const DeliverablesTab = () => {
                         Preview
                       </>
                     )}
+                  </Button>
+                )}
+                {/* Download button — always visible; disabled when no content */}
+                {!isEditing && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7 gap-1"
+                    onClick={() => handleDownload(del.id)}
+                    title={!hasContent ? "Not yet generated" : "Download as .docx"}
+                    disabled={!hasContent || isDownloading}
+                  >
+                    {isDownloading ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Download className="w-3 h-3" />
+                    )}
+                    Download
                   </Button>
                 )}
                 {del.status === "ready" && !isEditing && (
@@ -303,29 +384,41 @@ const DeliverablesTab = () => {
               </div>
             )}
 
-            {/* Preview panel — rendered markdown */}
-            {isPreviewing && hasContent && !isEditing && (
+            {/* Preview panel — always rendered when toggled open */}
+            {isPreviewing && !isEditing && (
               <div className="px-3 pb-3">
-                <div
-                  className={cn(
-                    "rounded-md border border-border bg-muted/20 p-3",
-                    "prose prose-sm max-w-none text-foreground",
-                    "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mb-2",
-                    "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1.5 [&_h2]:mt-3",
-                    "[&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2",
-                    "[&_p]:text-xs [&_p]:leading-relaxed [&_p]:mb-2",
-                    "[&_ul]:text-xs [&_ul]:space-y-0.5 [&_ul]:pl-4 [&_ul]:list-disc",
-                    "[&_ol]:text-xs [&_ol]:space-y-0.5 [&_ol]:pl-4 [&_ol]:list-decimal",
-                    "[&_li]:leading-relaxed",
-                    "[&_strong]:font-semibold",
-                    "[&_code]:text-xs [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded",
-                    "[&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground"
-                  )}
-                >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {del.content!}
-                  </ReactMarkdown>
-                </div>
+                {hasContent ? (
+                  <div
+                    className={cn(
+                      "rounded-md border border-border bg-muted/20 p-3",
+                      "prose prose-sm max-w-none text-foreground",
+                      "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mb-2",
+                      "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1.5 [&_h2]:mt-3",
+                      "[&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2",
+                      "[&_p]:text-xs [&_p]:leading-relaxed [&_p]:mb-2",
+                      "[&_ul]:text-xs [&_ul]:space-y-0.5 [&_ul]:pl-4 [&_ul]:list-disc",
+                      "[&_ol]:text-xs [&_ol]:space-y-0.5 [&_ol]:pl-4 [&_ol]:list-decimal",
+                      "[&_li]:leading-relaxed",
+                      "[&_strong]:font-semibold",
+                      "[&_code]:text-xs [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded",
+                      "[&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground"
+                    )}
+                  >
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {del.content!}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-border bg-muted/20 p-4 flex flex-col items-center gap-2">
+                    <FileText className="w-8 h-8 text-muted-foreground/40" />
+                    <p className="text-xs font-medium text-muted-foreground text-center">
+                      This document hasn&apos;t been generated yet.
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60 text-center">
+                      Open the client&apos;s dashboard and use Prepare Review (or the matching generator) to create it.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </div>

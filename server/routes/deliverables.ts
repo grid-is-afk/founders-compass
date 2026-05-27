@@ -5,6 +5,7 @@ import { verifyClientAccess } from "../lib/verifyClient.js";
 import { tools, executeTool } from "../tools.js";
 import { saveReportToDataRoom } from "../lib/saveReport.js";
 import { getPhaseForQuarter } from "../methodology/tfo-methodology.js";
+import { buildDeliverableDocx, buildDeliverableFilename } from "../lib/deliverableDocx.js";
 
 const router = Router();
 
@@ -543,20 +544,108 @@ The document MUST follow this exact structure:
     }
 
     // -----------------------------------------------------------------------
-    // 11. Save as a deliverable
+    // 11. Save as a deliverable — UPDATE existing prep doc for this quarter if
+    //     one already exists (regeneration), otherwise INSERT a new row.
     // -----------------------------------------------------------------------
     const deliverableTitle = `Q${effectiveQuarter} Review Prep — ${clientName}`;
+    const titlePattern = `Q${effectiveQuarter} Review Prep%`;
 
-    const insertResult = await query(
-      `INSERT INTO deliverables (client_id, title, status, engine, content)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [clientId, deliverableTitle, "ready", "claude-sonnet-4-6", docContent]
+    const existingPrep = await query(
+      `SELECT id FROM deliverables
+       WHERE client_id = $1 AND title LIKE $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [clientId, titlePattern]
     );
 
-    return res.status(201).json(insertResult.rows[0]);
+    let savedRow;
+    if (existingPrep.rows.length > 0) {
+      const updateResult = await query(
+        `UPDATE deliverables
+         SET title = $1, status = 'ready', engine = 'claude-sonnet-4-6',
+             content = $2, updated_at = NOW()
+         WHERE id = $3
+         RETURNING *`,
+        [deliverableTitle, docContent, existingPrep.rows[0].id]
+      );
+      savedRow = updateResult.rows[0];
+    } else {
+      const insertResult = await query(
+        `INSERT INTO deliverables (client_id, title, status, engine, content)
+         VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+        [clientId, deliverableTitle, "ready", "claude-sonnet-4-6", docContent]
+      );
+      savedRow = insertResult.rows[0];
+    }
+
+    return res.status(201).json(savedRow);
   } catch (err) {
     console.error("POST /deliverables/generate-review-prep error:", err);
     return res.status(500).json({ error: "Review prep generation failed" });
+  }
+});
+
+// ── GET /api/deliverables/:id/document.docx ─────────────────────────────────
+// Download a deliverable as a Word-compatible .docx file.
+router.get("/:id/document.docx", async (req, res) => {
+  try {
+    const dResult = await query(
+      "SELECT * FROM deliverables WHERE id = $1",
+      [req.params.id]
+    );
+    if (dResult.rows.length === 0) {
+      return res.status(404).json({ error: "Deliverable not found" });
+    }
+
+    const deliverable = dResult.rows[0] as {
+      id: string;
+      client_id: string;
+      title: string;
+      content: string | null;
+      created_at: string;
+      updated_at: string;
+    };
+
+    if (!(await verifyClient(deliverable.client_id, req.user!.id, req.user!.role))) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!deliverable.content) {
+      return res.status(404).json({ error: "Deliverable not yet generated" });
+    }
+
+    const clientResult = await query("SELECT name FROM clients WHERE id = $1", [deliverable.client_id]);
+    const clientName = (clientResult.rows[0]?.name as string | undefined) ?? "Client";
+
+    const generatedAt = deliverable.updated_at
+      ? new Date(deliverable.updated_at).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
+    const buffer = await buildDeliverableDocx({
+      title: deliverable.title,
+      clientName,
+      generatedAt,
+      markdownContent: deliverable.content,
+    });
+
+    const filename = buildDeliverableFilename(deliverable.title, clientName, generatedAt);
+    // RFC 6266: ASCII fallback + UTF-8 percent-encoded for non-ASCII characters
+    // (em-dashes etc.) so Safari + strict proxies don't garble the filename.
+    const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_");
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
+    res.setHeader("Content-Length", buffer.length.toString());
+    return res.end(buffer);
+  } catch (err) {
+    console.error("GET /deliverables/:id/document.docx error:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
