@@ -150,10 +150,12 @@ export function useCopilot(clientContext?: string, clientId?: string) {
           }
         }
 
-        // Stream completed cleanly — if a report was generated, refresh the
-        // Deliverables cache so the new card appears without a manual refresh.
+        // Stream completed cleanly — if a report was generated, refresh both
+        // Deliverables and Documents caches so the new artifact appears in the
+        // tab and the Data Room without a manual refresh.
         if (reportGeneratedClientId) {
           qc.invalidateQueries({ queryKey: ["deliverables", reportGeneratedClientId] });
+          qc.invalidateQueries({ queryKey: ["documents", reportGeneratedClientId] });
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") return;

@@ -673,6 +673,19 @@ export const AdvisorDataRoom = ({
   };
 
   const openPreview = (doc: Document) => {
+    // Onboarding briefings are .docx-canonical (UC-15 spec — match the UC-01
+    // agenda pattern). Open the file directly in a new tab so advisors read
+    // it in Word/Word Online. Other deliverable types (quarterly reviews,
+    // status updates, meeting recaps) keep the markdown modal preview for
+    // now — that's a separate UX decision.
+    const isBriefing =
+      doc.deliverable_id != null &&
+      doc.file_url != null &&
+      (doc.name ?? "").toLowerCase().includes("brief");
+    if (isBriefing) {
+      window.open(doc.file_url as string, "_blank", "noopener,noreferrer");
+      return;
+    }
     setPreviewDoc({
       name: doc.name,
       category: doc.category ?? "Other",
