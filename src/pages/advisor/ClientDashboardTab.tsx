@@ -70,7 +70,7 @@ export default function ClientDashboardTab() {
           RIGHT SIDEBAR — 1/3 width
       ================================================================ */}
       <div className="space-y-6">
-        <QuarterbackActionsPanel clientId={client.id} clientName={client.name} />
+        <QuarterbackActionsPanel clientId={client.id} />
 
         <AssessmentHistoryWidget clientId={client.id} />
 

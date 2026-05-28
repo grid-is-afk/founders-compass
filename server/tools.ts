@@ -668,7 +668,7 @@ export async function executeTool(
         );
         return {
           success: true,
-          result: `Engagement briefing created for ${input.clientName as string}. Now write the full structured briefing in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Use all context available.`,
+          result: `Engagement briefing created for ${input.clientName as string}. Now write the full briefing in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer. Use all context available.`,
           action: {
             type: "briefing_generated",
             clientId,
@@ -679,7 +679,7 @@ export async function executeTool(
         console.error("generate_engagement_briefing DB error:", err);
         return {
           success: true,
-          result: `Now write the full engagement briefing for ${input.clientName as string} in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch.`,
+          result: `Now write the full engagement briefing for ${input.clientName as string} in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer.`,
           action: { type: "briefing_generated", clientName: input.clientName },
         };
       }

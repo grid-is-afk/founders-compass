@@ -248,7 +248,7 @@ router.post("/generate-engagement-briefing", async (req, res) => {
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system:
-        "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown. Include all sections: client overview, Six Keys snapshot, current quarter, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Do not ask clarifying questions.",
+        "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown following the onboarding_brief template: a snapshot cue under the title, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, and What's Coming Next, followed by a 'Want to go deeper?' QB AI CTA footer. Tone: institutional, measured, authoritative. Do not ask clarifying questions.",
       messages: [{ role: "user", content: userMessage }],
       tools: [briefingTool as Anthropic.Tool],
     });
@@ -280,7 +280,7 @@ router.post("/generate-engagement-briefing", async (req, res) => {
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system:
-          "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown. Include all sections: client overview, Six Keys snapshot, current quarter, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Do not ask clarifying questions.",
+          "You are QB AI, a financial advisor copilot. When asked to generate an engagement briefing, immediately call the generate_engagement_briefing tool, then write the full briefing in structured markdown following the onboarding_brief template: a snapshot cue under the title, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, and What's Coming Next, followed by a 'Want to go deeper?' QB AI CTA footer. Tone: institutional, measured, authoritative. Do not ask clarifying questions.",
         messages: [
           { role: "user", content: userMessage },
           { role: "assistant", content: response.content },

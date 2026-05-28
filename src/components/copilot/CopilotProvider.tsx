@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useCopilot } from "@/hooks/useCopilot";
 import type { ChatMessage } from "@/lib/copilotApi";
 
@@ -13,6 +13,8 @@ interface CopilotContextType {
   clearConversation: () => void;
   setIsOpen: (open: boolean) => void;
   togglePanel: () => void;
+  isDeepDive: boolean;
+  setDeepDive: (deep: boolean) => void;
 }
 
 const CopilotContext = createContext<CopilotContextType | null>(null);
@@ -28,10 +30,20 @@ export function CopilotProvider({
 }) {
   const copilot = useCopilot(clientContext, clientId);
   const [isOpen, setIsOpen] = useState(false);
+  const [isDeepDive, setDeepDive] = useState(false);
   const togglePanel = () => setIsOpen((prev) => !prev);
 
+  // Reset deep-dive overlay when the advisor navigates between clients.
+  // Without this, an open deep-dive on Client A persists into Client B's
+  // workspace and renders Client A's briefing on the wrong page.
+  useEffect(() => {
+    setDeepDive(false);
+  }, [clientId]);
+
   return (
-    <CopilotContext.Provider value={{ ...copilot, clientId, isOpen, setIsOpen, togglePanel }}>
+    <CopilotContext.Provider
+      value={{ ...copilot, clientId, isOpen, setIsOpen, togglePanel, isDeepDive, setDeepDive }}
+    >
       {children}
     </CopilotContext.Provider>
   );

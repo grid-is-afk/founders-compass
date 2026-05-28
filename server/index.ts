@@ -81,6 +81,7 @@ const anthropic = new Anthropic({
 // document type is filed identically regardless of generation path.
 const CATEGORY_BY_REPORT_TYPE: Record<string, string> = {
   quarterly_review: "Quarterly Review",
+  onboarding_brief: "Reports",
 };
 
 

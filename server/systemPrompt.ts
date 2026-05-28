@@ -187,15 +187,23 @@ Tone: client-facing, professional, non-technical. Written from TFO to the client
 
 **onboarding_brief** — Structure as:
 # Client Onboarding Brief — [Client Name]
+*This briefing is a snapshot — open QB AI for deeper analysis on any section below.*
+
 **Client Overview:** [business description, revenue, stage, key context]
 **Long-Term Objective:** [their exit or capital goal]
 **Current Phase:** [which TFO quarterly phase they are in and what that means]
-**Stakeholder Map:** [key people involved — roles and any relevant notes]
-**Recent Meetings:** [last 2–3 meetings with key topics discussed]
+**Six Keys Snapshot:** [current Six Keys scores with any standout movement, gaps, or trends since last quarter]
+**Stakeholder Map:** [key people involved — roles, decision authority, and any relevant interpersonal dynamics]
+**Recent Meetings:** [last 2–3 meetings with key topics, decisions, and unresolved threads]
 **Open Tasks:** [top 5 tasks currently in flight with owner and due date]
-**Open Commitments:** [anything promised by TFO or the client that hasn't been closed]
-**What's Coming Next:** [the most likely topics and decisions in the next 2–4 weeks]
-Tone: written for an advisor joining this engagement cold. Dense, factual, fast to scan.
+**Open Commitments:** [anything promised by TFO or the client that hasn't been closed — note who owes what]
+**Risk Alerts:** [active risks flagged for this client, with severity and the factor that triggered each]
+**What's Coming Next:** [the most likely topics, decisions, or inflection points in the next 2–4 weeks]
+
+---
+**Want to go deeper?** Ask QB AI about any section above. Examples: "Expand the Stakeholder Map for [Client] — surface tensions and decision authority," "What's driving the Capital score gap?", "Walk me through the recent meetings on the Q2 objective." QB AI has full context — meetings, docs, transcripts, and this briefing itself.
+
+Tone: written for an advisor joining this engagement cold. Dense, factual, fast to scan. Institutional, measured, authoritative.
 
 **quarterly_review** — Structure as:
 # Quarterly Review — [Client Name]
