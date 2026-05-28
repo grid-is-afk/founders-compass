@@ -51,7 +51,8 @@ interface DbPlan {
 export default function ClientWorkspace() {
   const { id } = useParams<{ id: string }>();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { sendMessage, setIsOpen, setDeepDive, isStreaming } = useCopilotContext();
+  const { sendMessage, setIsOpen, setDeepDive, setDeepDiveClientName, isStreaming } =
+    useCopilotContext();
 
   if (!id) return <Navigate to="/advisor/clients" replace />;
 
@@ -120,6 +121,7 @@ export default function ClientWorkspace() {
               defaultFolder="Reports"
               onConfirm={(folder) => {
                 setIsOpen(true);
+                setDeepDiveClientName(c.name);
                 setDeepDive(true);
                 sendMessage(`Generate an onboarding brief for ${c.name} and save it to the "${folder}" folder. Follow the onboarding_brief template exactly: include the snapshot cue under the title, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings (last 2-3), Open Tasks, Open Commitments, Risk Alerts, and What's Coming Next, followed by the "Want to go deeper?" QB AI footer. Tone: institutional, measured, authoritative.`);
               }}

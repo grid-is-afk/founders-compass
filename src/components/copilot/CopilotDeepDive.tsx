@@ -43,8 +43,15 @@ function extractClientName(content: string | null | undefined): string | null {
 }
 
 export default function CopilotDeepDive() {
-  const { isDeepDive, setDeepDive, setIsOpen, messages, isStreaming, sendMessage } =
-    useCopilotContext();
+  const {
+    isDeepDive,
+    setDeepDive,
+    setIsOpen,
+    messages,
+    isStreaming,
+    sendMessage,
+    deepDiveClientName,
+  } = useCopilotContext();
   const followUpBottomRef = useRef<HTMLDivElement>(null);
 
   // Closing the deep dive also closes the underlying Copilot panel — otherwise
@@ -66,7 +73,11 @@ export default function CopilotDeepDive() {
   }, [isDeepDive, closeDeepDive]);
 
   const briefingMsg = useMemo(() => findBriefingMessage(messages), [messages]);
-  const clientName = extractClientName(briefingMsg?.content) ?? "Client";
+  // Prefer the workspace-provided name (always correct, available immediately
+  // on button click) over parsing the markdown title (which can fail if Claude
+  // phrases the heading slightly differently or hasn't streamed it yet).
+  const clientName =
+    deepDiveClientName ?? extractClientName(briefingMsg?.content) ?? "Client";
 
   // Follow-up messages = everything AFTER the briefing message
   const followUpMessages = useMemo(() => {

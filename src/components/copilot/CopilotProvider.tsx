@@ -15,6 +15,8 @@ interface CopilotContextType {
   togglePanel: () => void;
   isDeepDive: boolean;
   setDeepDive: (deep: boolean) => void;
+  deepDiveClientName: string | null;
+  setDeepDiveClientName: (name: string | null) => void;
 }
 
 const CopilotContext = createContext<CopilotContextType | null>(null);
@@ -31,6 +33,7 @@ export function CopilotProvider({
   const copilot = useCopilot(clientContext, clientId);
   const [isOpen, setIsOpen] = useState(false);
   const [isDeepDive, setDeepDive] = useState(false);
+  const [deepDiveClientName, setDeepDiveClientName] = useState<string | null>(null);
   const togglePanel = () => setIsOpen((prev) => !prev);
 
   // Reset deep-dive overlay when the advisor navigates between clients.
@@ -38,11 +41,22 @@ export function CopilotProvider({
   // workspace and renders Client A's briefing on the wrong page.
   useEffect(() => {
     setDeepDive(false);
+    setDeepDiveClientName(null);
   }, [clientId]);
 
   return (
     <CopilotContext.Provider
-      value={{ ...copilot, clientId, isOpen, setIsOpen, togglePanel, isDeepDive, setDeepDive }}
+      value={{
+        ...copilot,
+        clientId,
+        isOpen,
+        setIsOpen,
+        togglePanel,
+        isDeepDive,
+        setDeepDive,
+        deepDiveClientName,
+        setDeepDiveClientName,
+      }}
     >
       {children}
     </CopilotContext.Provider>
