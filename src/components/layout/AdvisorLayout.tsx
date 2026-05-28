@@ -3,6 +3,7 @@ import AdvisorSidebar from "./AdvisorSidebar";
 import TopBar from "./TopBar";
 import { CopilotProvider } from "@/components/copilot/CopilotProvider";
 import CopilotPanel from "@/components/copilot/CopilotPanel";
+import CopilotDeepDive from "@/components/copilot/CopilotDeepDive";
 import CopilotTrigger from "@/components/copilot/CopilotTrigger";
 import { ClientProvider } from "@/hooks/useClientContext";
 
@@ -25,6 +26,7 @@ const AdvisorLayoutInner = () => {
       </div>
       <CopilotTrigger />
       <CopilotPanel />
+      <CopilotDeepDive />
     </CopilotProvider>
   );
 };

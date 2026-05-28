@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 import { streamChat, type ChatMessage, type ChatAction, type ChatSource } from "@/lib/copilotApi";
 
 let messageCounter = 0;
@@ -38,6 +39,7 @@ export function useCopilot(clientContext?: string, clientId?: string) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const qc = useQueryClient();
 
   // Persist messages to localStorage whenever they change
   useEffect(() => {
@@ -69,6 +71,10 @@ export function useCopilot(clientContext?: string, clientId?: string) {
 
       const abortController = new AbortController();
       abortRef.current = abortController;
+
+      // Track whether a report was generated this turn, so we can refresh the
+      // Deliverables tab after the server-side finalize block completes.
+      let reportGeneratedClientId: string | null = null;
 
       try {
         // Build history from current state, not the stale closure
@@ -104,6 +110,11 @@ export function useCopilot(clientContext?: string, clientId?: string) {
           } else if (event.kind === "action") {
             const action = event.action as ChatAction;
 
+            if (action.type === "report_generated") {
+              reportGeneratedClientId =
+                (action.clientId as string | undefined) ?? clientId ?? null;
+            }
+
             // Attach action to the current assistant message
             setMessages((prev) => {
               const updated = [...prev];
@@ -138,6 +149,14 @@ export function useCopilot(clientContext?: string, clientId?: string) {
             });
           }
         }
+
+        // Stream completed cleanly — if a report was generated, refresh both
+        // Deliverables and Documents caches so the new artifact appears in the
+        // tab and the Data Room without a manual refresh.
+        if (reportGeneratedClientId) {
+          qc.invalidateQueries({ queryKey: ["deliverables", reportGeneratedClientId] });
+          qc.invalidateQueries({ queryKey: ["documents", reportGeneratedClientId] });
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.name === "AbortError") return;
         const errorMsg = err instanceof Error ? err.message : "Failed to get response";
@@ -158,7 +177,7 @@ export function useCopilot(clientContext?: string, clientId?: string) {
         abortRef.current = null;
       }
     },
-    [messages, isStreaming, clientContext, clientId]
+    [messages, isStreaming, clientContext, clientId, qc]
   );
 
   const cancelStream = useCallback(() => {

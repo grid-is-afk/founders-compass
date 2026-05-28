@@ -93,15 +93,6 @@ export function useGenerateQuarterlyReview() {
   });
 }
 
-export function useGenerateEngagementBriefing() {
-  const qc = useQueryClient();
-  return useMutation<GenerateResult, Error, { clientId: string }>({
-    mutationFn: (data) => api.post("/deliverables/generate-engagement-briefing", data),
-    onSuccess: (_, vars) =>
-      qc.invalidateQueries({ queryKey: ["deliverables", vars.clientId] }),
-  });
-}
-
 export function useGenerateReviewPrep(clientId: string) {
   const qc = useQueryClient();
   return useMutation<GenerateResult, Error, { quarter: number }>({

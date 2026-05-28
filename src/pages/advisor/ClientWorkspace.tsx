@@ -51,7 +51,8 @@ interface DbPlan {
 export default function ClientWorkspace() {
   const { id } = useParams<{ id: string }>();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { sendMessage, setIsOpen } = useCopilotContext();
+  const { sendMessage, setIsOpen, setDeepDive, setDeepDiveClientName, isStreaming } =
+    useCopilotContext();
 
   if (!id) return <Navigate to="/advisor/clients" replace />;
 
@@ -120,12 +121,17 @@ export default function ClientWorkspace() {
               defaultFolder="Reports"
               onConfirm={(folder) => {
                 setIsOpen(true);
-                sendMessage(`Generate an onboarding brief for ${c.name} and save it to the "${folder}" folder. I need to get up to speed quickly. Include: client overview, long-term objective, current TFO phase, key stakeholders, recent meeting themes, top open tasks, any open commitments, and what's likely coming up next.`);
+                setDeepDiveClientName(c.name);
+                setDeepDive(true);
+                sendMessage(`Generate an onboarding brief for ${c.name} and save it to the "${folder}" folder. Follow the onboarding_brief template exactly: include the snapshot cue under the title, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings (last 2-3), Open Tasks, Open Commitments, Risk Alerts, and What's Coming Next, followed by the "Want to go deeper?" QB AI footer. Tone: institutional, measured, authoritative.`);
               }}
             >
-              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors">
+              <button
+                disabled={isStreaming}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-muted/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <BookOpen className="w-3.5 h-3.5" />
-                Get Up to Speed
+                Generate Onboarding Brief
               </button>
             </FolderPickerPopover>
             <FolderPickerPopover
