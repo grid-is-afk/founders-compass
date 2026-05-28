@@ -1,7 +1,57 @@
 import { buildPlatformContext } from "./platformContext.js";
+import { TFO_METHODOLOGY } from "./methodology/tfo-methodology.js";
+import { query } from "./db.js";
+
+async function fetchAdvisorTimezone(advisorId: string): Promise<string | null> {
+  try {
+    const result = await query(
+      "SELECT timezone FROM users WHERE id = $1",
+      [advisorId]
+    );
+    return (result.rows[0]?.timezone as string | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds a concise methodology reference block for the system prompt.
+ * Lists all three phases with their quarter mappings, objectives, and required activities.
+ * This is static knowledge — client-specific phase context is injected separately via RAG.
+ */
+function buildMethodologyBlock(): string {
+  const phaseLines = TFO_METHODOLOGY.map((phase) => {
+    const quarters = phase.quarterMapping.map((q) => `Q${q}`).join("/");
+    const required = phase.activities
+      .filter((a) => a.isRequired)
+      .map((a) => a.name)
+      .join(", ");
+    return `- ${phase.name} (${quarters}): ${phase.objective} Required activities: ${required}.`;
+  }).join("\n");
+
+  return `<tfo_methodology>
+The TFO engagement methodology has three phases: Discover → Protect/Grow/Prove → Align.
+
+${phaseLines}
+
+When a client's current quarter is known, tailor your analysis and recommendations to the activities and success criteria for that phase. Methodology reference documents are available in your retrieved context and will be labeled source: 'methodology'.
+</tfo_methodology>`;
+}
 
 export async function buildSystemPrompt(advisorId: string): Promise<string> {
-  const context = await buildPlatformContext(advisorId);
+  const [context, advisorTimezone] = await Promise.all([
+    buildPlatformContext(advisorId),
+    fetchAdvisorTimezone(advisorId),
+  ]);
+
+  const tz = advisorTimezone ?? "UTC";
+  const nowInTz = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "full",
+    timeStyle: "long",
+    timeZone: tz,
+  }).format(new Date());
+
+  const tzLine = `\n## TIME & TIMEZONE\nThe current time is **${nowInTz}**.\nThe advisor's preferred timezone is **${tz}**.\nWhen the advisor asks "what time is it" or "what's today's date", answer directly using the current time above — do not say you lack a real-time clock. When you reference any other date or time in your responses (meeting times, due dates, deadlines), format and present it in this timezone. Never display raw UTC unless the advisor explicitly asks for UTC.\n`;
 
   return `You are the Quarterback Copilot, the AI assistant embedded in The Founders Office — a capital alignment and exit planning platform for business advisors.
 
@@ -98,6 +148,9 @@ Enterprise Value = Earnings × Multiple. Most founders chase earnings. The Found
 ## CURRENT PLATFORM DATA
 ${context}
 
+${buildMethodologyBlock()}
+${tzLine}
+
 ## BEHAVIORAL RULES
 - Always cite specific data points, scores, and client names when making claims.
 - When discussing the engagement model, use the quarterly cycle framework — not a linear pipeline.
@@ -177,7 +230,17 @@ You have tools to take actions in the platform. Use them when appropriate:
 - **update_instrument_status** — Mark diagnostic instruments as started or complete
 - **flag_risk** — Flag new risk alerts for clients
 - **schedule_meeting** — Schedule meetings with clients
+- **get_meeting_agenda** — Retrieve the saved agenda for a specific meeting
+- **generate_engagement_briefing** — Generate a structured onboarding briefing
 
 When the advisor asks you to DO something (not just explain), use the appropriate tool.
-When you take an action, confirm what you did and suggest next steps.`;
+When you take an action, confirm what you did and suggest next steps.
+
+## AGENDA LOOKUP RULES (CRITICAL)
+When the advisor asks about an agenda for a specific meeting — phrases like "what's the agenda for our next meeting", "what's on the agenda for [client]'s meeting", "show me the agenda" — you MUST:
+
+1. **Call get_meeting_agenda FIRST.** Pass the client name and (when known) the meeting timing or ID. Do NOT pre-generate agenda items from open tasks before calling the tool.
+2. **If an agenda exists** (status: 'draft' or 'final'), present it verbatim. Do not add, remove, or rearrange items. The advisor has already curated this.
+3. **If no agenda exists** (status: 'none'), say so explicitly — "No agenda has been logged in the platform for this meeting yet." Only THEN, if helpful, offer "suggested topics based on open work" and clearly label them as suggestions, never as if they were the agenda.
+4. **Never fabricate.** If the tool returns no meeting at all, say so — do not invent meeting details or agenda items.`;
 }

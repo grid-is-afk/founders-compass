@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { Sparkles, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { Sparkles, AlertCircle, AlertTriangle, Info, FileText, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { useCopilotContext } from "@/components/copilot/CopilotProvider";
 import { usePriorityActions } from "@/hooks/useDashboardIntelligence";
+import { useGenerateEngagementBriefing } from "@/hooks/useDeliverables";
 
 interface QuarterbackActionsPanelProps {
   clientId: string;
@@ -17,8 +19,28 @@ const severityDot: Record<string, React.ReactNode> = {
 export function QuarterbackActionsPanel({ clientId, clientName }: QuarterbackActionsPanelProps) {
   const { togglePanel } = useCopilotContext();
   const { data: actions = [], isLoading } = usePriorityActions(clientId);
+  const { mutate: generateBriefing, isPending: isGeneratingBriefing } = useGenerateEngagementBriefing();
 
   const top5 = actions.slice(0, 5);
+
+  const handleGenerateBriefing = () => {
+    generateBriefing(
+      { clientId },
+      {
+        onSuccess: (data) => {
+          if (data.dataRoom.saved && data.dataRoom.wasUpdate) {
+            toast.success("Briefing updated — Data Room file replaced");
+          } else if (data.dataRoom.saved) {
+            toast.success("Briefing saved to Data Room as Pending Review");
+          } else {
+            toast.warning("Generated, but Data Room save failed — file is in Deliverables only");
+          }
+        },
+        onError: () =>
+          toast.error("Failed to generate briefing. Please try again."),
+      }
+    );
+  };
 
   return (
     <div className="rounded-lg border border-border bg-sidebar p-4 space-y-4">
@@ -58,6 +80,26 @@ export function QuarterbackActionsPanel({ clientId, clientName }: QuarterbackAct
       >
         <Sparkles className="w-3.5 h-3.5" />
         Open Quarterback
+      </Button>
+
+      <Button
+        size="sm"
+        variant="outline"
+        className="w-full gap-2 text-xs"
+        onClick={handleGenerateBriefing}
+        disabled={isGeneratingBriefing}
+      >
+        {isGeneratingBriefing ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            Generating Briefing...
+          </>
+        ) : (
+          <>
+            <FileText className="w-3.5 h-3.5" />
+            Generate Briefing
+          </>
+        )}
       </Button>
     </div>
   );

@@ -1,7 +1,10 @@
-import { CalendarDays } from "lucide-react";
+import { CalendarDays, ClipboardList, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { useClientTasks } from "@/hooks/useTasks";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
+import { useGenerateReviewPrep } from "@/hooks/useDeliverables";
+import type { GenerateResult } from "@/hooks/useDeliverables";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -50,6 +53,8 @@ export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
   const { data: rawTasks = [] } = useClientTasks(client.id);
   const { data: rawAlerts = [] } = useClientRiskAlerts(client.id);
   const { data: plans = [] } = useClientQuarterlyPlans(client.id);
+  const { mutate: generateReviewPrep, isPending: isGeneratingPrep } =
+    useGenerateReviewPrep(client.id);
 
   const tasks = rawTasks as Array<{ status: string; due_date: string | null }>;
   const alerts = rawAlerts as Array<{ severity: string; resolved: boolean }>;
@@ -141,23 +146,73 @@ export function QuarterProgressWidget({ client }: QuarterProgressWidgetProps) {
 
       {days !== null && reviewPlan && (
         <div className={cn(
-          "flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium",
+          "flex items-center justify-between gap-2 rounded-lg border px-3 py-2",
           days < 0
-            ? "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
+            ? "border-red-500/30 bg-red-500/5"
             : days === 0
-            ? "border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400"
+            ? "border-red-500/30 bg-red-500/5"
             : days <= 14
-            ? "border-amber-500/30 bg-amber-500/5 text-amber-600 dark:text-amber-400"
-            : "border-border bg-muted/40 text-muted-foreground"
+            ? "border-amber-500/30 bg-amber-500/5"
+            : "border-border bg-muted/40"
         )}>
-          <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-          <span>
-            {days < 0
-              ? `Q${reviewPlan.quarter} review overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`
-              : days === 0
-              ? `Q${reviewPlan.quarter} review is today`
-              : `${days} day${days === 1 ? "" : "s"} until Q${reviewPlan.quarter} review`}
-          </span>
+          <div className={cn(
+            "flex items-center gap-2 text-xs font-medium",
+            days <= 0
+              ? "text-red-600 dark:text-red-400"
+              : days <= 14
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-muted-foreground"
+          )}>
+            <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              {days < 0
+                ? `Q${reviewPlan.quarter} review overdue by ${Math.abs(days)} day${Math.abs(days) === 1 ? "" : "s"}`
+                : days === 0
+                ? `Q${reviewPlan.quarter} review is today`
+                : `${days} day${days === 1 ? "" : "s"} until Q${reviewPlan.quarter} review`}
+            </span>
+          </div>
+
+          {days <= 14 && (
+            <button
+              onClick={() => {
+                generateReviewPrep(
+                  { quarter: reviewPlan.quarter },
+                  {
+                    onSuccess: (data: GenerateResult) => {
+                      if (data.dataRoom.saved && data.dataRoom.wasUpdate) {
+                        toast.success("Review prep updated — Data Room file replaced");
+                      } else if (data.dataRoom.saved) {
+                        toast.success("Review prep saved to Data Room as Pending Review");
+                      } else {
+                        toast.warning(
+                          "Generated, but Data Room save failed — file is in Deliverables only"
+                        );
+                      }
+                    },
+                    onError: () =>
+                      toast.error("Failed to generate review prep. Please try again."),
+                  }
+                );
+              }}
+              disabled={isGeneratingPrep}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                "border transition-colors shrink-0",
+                days <= 0
+                  ? "border-red-500/40 bg-red-500/10 text-red-700 hover:bg-red-500/20 dark:text-red-300"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300",
+                "disabled:opacity-60 disabled:cursor-not-allowed"
+              )}
+            >
+              {isGeneratingPrep ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <ClipboardList className="w-3 h-3" />
+              )}
+              {isGeneratingPrep ? "Preparing…" : "Prepare Review"}
+            </button>
+          )}
         </div>
       )}
     </div>

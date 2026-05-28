@@ -10,6 +10,7 @@ import {
   Map,
   Archive,
   ShieldCheck,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,12 @@ const navGroups = [
       { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
       { to: "/advisor/capital-strategy-roadmap", icon: Map, label: "Capital Strategy Architecture (Roadmap)" },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { to: "/advisor/settings", icon: SettingsIcon, label: "Settings" },
     ],
   },
 ];

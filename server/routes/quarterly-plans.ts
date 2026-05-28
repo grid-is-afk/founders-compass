@@ -4,7 +4,7 @@ import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
 
-const ALLOWED_PLAN_COLUMNS = new Set(["label", "status", "review_date"]);
+const ALLOWED_PLAN_COLUMNS = new Set(["label", "status", "review_date", "start_date"]);
 
 const verifyClient = verifyClientAccess;
 
@@ -44,7 +44,7 @@ router.get("/", async (req, res) => {
 
 // POST /api/quarterly-plans
 router.post("/", async (req, res) => {
-  const { client_id, quarter, year, label, status, review_date, phases } = req.body;
+  const { client_id, quarter, year, label, status, review_date, start_date, phases } = req.body;
   if (!client_id || !quarter || !year) {
     return res.status(400).json({ error: "client_id, quarter, and year required" });
   }
@@ -55,8 +55,8 @@ router.post("/", async (req, res) => {
     }
 
     const planResult = await query(
-      `INSERT INTO quarterly_plans (client_id, quarter, year, label, status, review_date)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO quarterly_plans (client_id, quarter, year, label, status, review_date, start_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         client_id,
         quarter,
@@ -64,6 +64,7 @@ router.post("/", async (req, res) => {
         label ?? null,
         status ?? "draft",
         review_date ?? null,
+        start_date ?? null,
       ]
     );
     const plan = planResult.rows[0];

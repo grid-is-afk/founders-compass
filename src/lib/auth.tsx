@@ -6,11 +6,12 @@ import {
   type ReactNode,
 } from "react";
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
   role: string;
+  timezone?: string | null;
 }
 
 interface AuthContextType {
@@ -19,6 +20,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  setUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -88,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const persistUser = (next: User) => {
+    setUser(next);
+    localStorage.setItem("tfo-user", JSON.stringify(next));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -96,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         logout,
+        setUser: persistUser,
       }}
     >
       {children}

@@ -94,9 +94,9 @@ router.get("/", async (req, res) => {
       }
       const result = await query(
         `SELECT id, prospect_id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
-                uploaded_by_role, uploaded_at
+                uploaded_by_role, uploaded_at, deliverable_id
          FROM documents
-         WHERE prospect_id = $1
+         WHERE prospect_id = $1 AND archived_at IS NULL
          ORDER BY uploaded_at DESC`,
         [prospect_id]
       );
@@ -111,9 +111,9 @@ router.get("/", async (req, res) => {
 
     const result = await query(
       `SELECT id, client_id, name, category, subfolder, file_url, size, size_bytes, type,
-              uploaded_by_role, uploaded_at
+              uploaded_by_role, uploaded_at, deliverable_id
        FROM documents
-       WHERE client_id = $1
+       WHERE client_id = $1 AND archived_at IS NULL
        ORDER BY uploaded_at DESC`,
       [client_id]
     );

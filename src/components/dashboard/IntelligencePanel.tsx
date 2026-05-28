@@ -3,12 +3,18 @@ import { Badge } from "@/components/ui/badge";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientRiskAlerts } from "@/hooks/useRiskAlerts";
 import { useClientDeliverables } from "@/hooks/useDeliverables";
-import { usePriorityActions, useDataGaps, useDashboardInsurance } from "@/hooks/useDashboardIntelligence";
+import {
+  usePriorityActions,
+  useDataGaps,
+  useDashboardInsurance,
+  useMethodologyRecommendations,
+} from "@/hooks/useDashboardIntelligence";
 import PriorityActionsTab from "./copilot/PriorityActionsTab";
 import RiskAlertsTab from "./copilot/RiskAlertsTab";
 import DataGapsTab from "./copilot/DataGapsTab";
 import DeliverablesTab from "./copilot/DeliverablesTab";
 import InsuranceTab from "./copilot/InsuranceTab";
+import MethodologyTab from "./copilot/MethodologyTab";
 
 const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
   const { selectedClientId } = useClientContext();
@@ -18,9 +24,11 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
   const { data: priorityActions = [] } = usePriorityActions(clientId);
   const { data: dataGaps = [] } = useDataGaps(clientId);
   const { data: insuranceItems = [] } = useDashboardInsurance(clientId);
+  const { data: methodologyData } = useMethodologyRecommendations(effectiveClientId ?? "");
 
   const criticalCount = (rawAlerts as Array<{ severity: string }>).filter((r) => r.severity === "critical").length;
   const deliverablesCount = (rawDeliverables as unknown[]).length;
+  const methodologyGapCount = methodologyData?.gaps?.length ?? 0;
 
   return (
     <div className="bg-card rounded-lg border border-border p-5">
@@ -66,6 +74,14 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
               </Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="methodology" className="flex items-center gap-1.5">
+            Method
+            {methodologyGapCount > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {methodologyGapCount}
+              </Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="actions">
@@ -95,6 +111,12 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
         <TabsContent value="insurance">
           <div className="max-h-[400px] overflow-y-auto">
             <InsuranceTab clientId={clientId} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="methodology">
+          <div className="max-h-[400px] overflow-y-auto">
+            <MethodologyTab clientId={effectiveClientId ?? undefined} />
           </div>
         </TabsContent>
       </Tabs>

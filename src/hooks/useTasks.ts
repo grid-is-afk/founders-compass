@@ -1,5 +1,36 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, apiFetch } from "@/lib/api";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ProposedTask {
+  title: string;
+  description: string;
+  assignee: "advisor" | "client";
+  priority: "high" | "medium" | "low";
+  phase: string;
+  rationale: string;
+  sourceContext: string;
+}
+
+export interface KickoffPlanResult {
+  tasks: ProposedTask[];
+  clientName: string;
+  phase: "Discover";
+  personalizationLevel: "full" | "methodology-only";
+}
+
+export interface KickoffPlanAlreadyExists {
+  alreadyHasTasks: true;
+  message: string;
+}
+
+export interface KickoffPlanNoScopeMaterials {
+  noScopeMaterials: true;
+  message: string;
+}
 
 export function useClientTasks(clientId: string) {
   return useQuery({
@@ -71,5 +102,20 @@ export function useDeleteTask() {
       api.delete(`/tasks/${id}`),
     onSuccess: (_, vars) =>
       qc.invalidateQueries({ queryKey: ["tasks", vars.clientId] }),
+  });
+}
+
+export function useGenerateKickoffPlan(clientId: string) {
+  return useMutation({
+    mutationFn: async (): Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials> => {
+      const res = await apiFetch(`/clients/${clientId}/kickoff-plan`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error((body as { error?: string }).error ?? `API error ${res.status}`);
+      }
+      return res.json() as Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials>;
+    },
   });
 }

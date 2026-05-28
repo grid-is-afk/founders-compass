@@ -10,6 +10,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import Settings from "./pages/Settings";
 
 import AdvisorLayout from "./components/layout/AdvisorLayout";
 import AdvisorDashboard from "./pages/advisor/AdvisorDashboard";
@@ -128,6 +129,7 @@ const App = () => (
               <Route path="capital-strategy-roadmap" element={<CapitalStrategyRoadmap />} />
               <Route path="capital-strategy-roadmap/:clientId" element={<CapitalStrategyRoadmap />} />
               <Route path="admin/users" element={<UserManagement />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
 
             {/* Protected Client Portal */}
@@ -145,6 +147,7 @@ const App = () => (
               <Route path="tasks" element={<ClientTasks />} />
               <Route path="reports" element={<ClientReports />} />
               <Route path="meetings" element={<ClientMeetings />} />
+              <Route path="settings" element={<Settings />} />
             </Route>
 
             {/* Public shared experiences */}

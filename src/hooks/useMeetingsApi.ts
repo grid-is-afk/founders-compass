@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 export interface Meeting {
@@ -22,6 +23,8 @@ export interface Meeting {
 export interface AgendaItem {
   text: string;
   source?: string;
+  /** Stakeholder names (not IDs) referenced in this item — populated by QB agenda generation */
+  stakeholders?: string[];
 }
 
 export interface AgendaSection {
@@ -54,9 +57,30 @@ export interface ProposedChange {
   confidence: "high" | "medium" | "low";
 }
 
+export interface ProposedSignal {
+  stakeholder_id: string;
+  stakeholder_name: string;
+  signal_type: "meeting_mention" | "sentiment";
+  sentiment?: "positive" | "neutral" | "negative" | "at_risk";
+  value: string;
+  source_excerpt: string;
+  confidence: "high" | "medium" | "low";
+}
+
 export interface CaptureResult {
   summary: string;
   proposed_changes: ProposedChange[];
+  /** AI-proposed stakeholder signals — always an array (never undefined) */
+  proposed_signals: ProposedSignal[];
+}
+
+export interface DeferredCarryforwardItem {
+  id: string;
+  source_meeting_id: string;
+  source_meeting_date: string | null;
+  source_meeting_type: string | null;
+  change_payload: ProposedChange;
+  created_at: string;
 }
 
 export function useClientMeetings(clientId: string) {
@@ -131,18 +155,122 @@ export function useApplyCapture() {
       meetingId,
       clientId: _clientId,
       approvedChanges,
+      deferredChanges,
+      approvedSignals,
+      deferredSignals,
     }: {
       meetingId: string;
       clientId: string;
       approvedChanges: ProposedChange[];
-    }) =>
+      deferredChanges?: ProposedChange[];
+      approvedSignals?: ProposedSignal[];
+      deferredSignals?: ProposedSignal[];
+    }): Promise<{ signals_applied?: number; signals_deferred?: number }> =>
       api.post(`/meetings/${meetingId}/capture/apply`, {
         approved_changes: approvedChanges,
+        deferred_changes: deferredChanges ?? [],
+        approved_signals: approvedSignals ?? [],
+        deferred_signals: deferredSignals ?? [],
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["meetings", vars.clientId] });
       qc.invalidateQueries({ queryKey: ["tasks", vars.clientId] });
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      // Approved signals may update stakeholder sentiment snapshots
+      qc.invalidateQueries({ queryKey: ["stakeholders", vars.clientId] });
+      // Invalidate signal timelines for each affected stakeholder so the
+      // timeline refreshes immediately after apply without a manual reload.
+      const uniqueStakeholderIds = new Set<string>(
+        (vars.approvedSignals ?? []).map((s) => s.stakeholder_id)
+      );
+      uniqueStakeholderIds.forEach((id) => {
+        qc.invalidateQueries({ queryKey: ["stakeholder-signals", id] });
+      });
     },
+    onError: (err: Error) => {
+      toast.error("Failed to apply capture", {
+        description: err.message || "Please try again.",
+      });
+    },
+  });
+}
+
+export function useDeferredCarryforward(meetingId: string) {
+  return useQuery<DeferredCarryforwardItem[]>({
+    queryKey: ["deferred-carryforward", meetingId],
+    queryFn: () => api.get(`/meetings/${meetingId}/deferred-carryforward`),
+    enabled: !!meetingId,
+  });
+}
+
+export function useResolveDeferred() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      deferredId,
+      resolvedInMeetingId,
+    }: {
+      deferredId: string;
+      meetingId: string;
+      clientId: string;
+      resolvedInMeetingId?: string;
+    }) =>
+      api.patch(`/deferred-changes/${deferredId}`, {
+        status: "resolved",
+        resolved_in_meeting_id: resolvedInMeetingId,
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      toast.success("Item resolved", {
+        description: "Removed from carry-over and won't appear in future meetings.",
+      });
+    },
+    onError: (err: Error) => {
+      toast.error("Failed to resolve item", {
+        description: err.message || "Please try again.",
+      });
+    },
+  });
+}
+
+export function useDiscardDeferred() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      deferredId,
+    }: {
+      deferredId: string;
+      meetingId: string;
+      clientId: string;
+    }) =>
+      api.patch(`/deferred-changes/${deferredId}`, {
+        status: "discarded",
+      }),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["deferred-carryforward", vars.meetingId] });
+      toast.success("Item discarded", {
+        description: "Removed from carry-over and won't appear again.",
+      });
+    },
+    onError: (err: Error) => {
+      toast.error("Failed to discard item", {
+        description: err.message || "Please try again.",
+      });
+    },
+  });
+}
+
+export interface Advisor {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export function useAdvisors() {
+  return useQuery<Advisor[]>({
+    queryKey: ["users", "advisors"],
+    queryFn: () => api.get(`/users/advisors`),
+    staleTime: 5 * 60 * 1000,
   });
 }
 

@@ -104,9 +104,27 @@ export async function retrieveChunks(
     nameChunks = nameResult.rows as RetrievedChunk[];
   }
 
-  // --- Merge: vector results first, then name-matched chunks not already included ---
+  // --- Pass 3: methodology knowledge base (global — no client_id filter) ---
+  // Top 5 methodology chunks per query — background framework knowledge.
+  // Dimension-gated same as Pass 1 to avoid vector dimension mismatches.
+  const METHODOLOGY_TOP_K = 5;
+  const methodologyResult = await query(
+    `SELECT ''::text AS document_id,
+            chunk_text,
+            metadata || '{"source":"methodology"}'::jsonb AS metadata,
+            1 - (embedding <=> $1::vector) AS similarity
+     FROM methodology_chunks
+     WHERE vector_dims(embedding) = $3
+     ORDER BY embedding <=> $1::vector
+     LIMIT $2`,
+    [vectorLiteral, METHODOLOGY_TOP_K, queryDim]
+  );
+  const methodologyChunks = methodologyResult.rows as RetrievedChunk[];
+
+  // --- Merge: vector results first, then name-matched chunks, then methodology ---
   const seen = new Set(vectorChunks.map((c) => c.chunk_text));
   const merged = [...vectorChunks];
+
   for (const c of nameChunks) {
     if (!seen.has(c.chunk_text)) {
       merged.push(c);
@@ -114,5 +132,12 @@ export async function retrieveChunks(
     }
   }
 
-  return merged.slice(0, topK);
+  for (const c of methodologyChunks) {
+    if (!seen.has(c.chunk_text)) {
+      merged.push(c);
+      seen.add(c.chunk_text);
+    }
+  }
+
+  return merged.slice(0, topK + METHODOLOGY_TOP_K);
 }

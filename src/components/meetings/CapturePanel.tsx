@@ -1,7 +1,9 @@
 import { useState, useRef } from "react";
+import { toast } from "sonner";
 import {
   Sparkles, Upload, FileText, ChevronDown, CheckCircle2, XCircle,
   AlertCircle, Loader2, CheckCheck, Clock, Pencil, MinusCircle,
+  RotateCcw, CheckSquare, Trash2, Mic, TrendingUp, TrendingDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,10 +14,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
-  useUploadTranscript,
-  type Meeting, type ProposedChange, type CaptureResult,
+  useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
+  useAdvisors,
+  type Meeting, type ProposedChange, type ProposedSignal, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
+import { SENTIMENT_CONFIG } from "@/hooks/useStakeholders";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -45,21 +49,38 @@ const CONFIDENCE_COLORS: Record<ProposedChange["confidence"], string> = {
   low: "text-orange-600",
 };
 
+const PHASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "discover", label: "Chapter 1: Discover" },
+  { value: "grow", label: "Chapter 2: Grow" },
+  { value: "strengthen", label: "Chapter 3: Strengthen" },
+  { value: "elevate", label: "Chapter 4: Elevate" },
+];
+
 export default function CapturePanel({ meeting, clientId }: Props) {
   const capture = useCaptureMeeting();
   const applyCapture = useApplyCapture();
   const checkDuplicate = useCheckTranscriptDuplicate();
   const uploadTranscript = useUploadTranscript();
   const { data: documents = [] } = useClientDocuments(clientId);
+  const { data: deferredCarryforward = [] } = useDeferredCarryforward(meeting.id);
+  const resolveDeferred = useResolveDeferred();
+  const discardDeferred = useDiscardDeferred();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [notes, setNotes] = useState("");
   const [selectedDocId, setSelectedDocId] = useState<string>("");
   const [captureResult, setCaptureResult] = useState<CaptureResult | null>(null);
+  const [recaptureMode, setRecaptureMode] = useState(false);
 
   // Per-item state: state + edited version of the change
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
   const [editedChanges, setEditedChanges] = useState<Record<number, ProposedChange>>({});
+
+  // Parallel state map for proposed signals
+  const [signalStates, setSignalStates] = useState<Record<number, ItemState>>({});;
+
+  // Carried-over items the advisor clicked "Re-process" on — surfaced as proposals
+  const [reprocessedFromDeferred, setReprocessedFromDeferred] = useState<DeferredCarryforwardItem[]>([]);
 
   const [dupDialog, setDupDialog] = useState<{
     open: boolean; filename: string; file: File | null; existingDocId: string | null;
@@ -110,26 +131,85 @@ export default function CapturePanel({ meeting, clientId }: Props) {
       notes: notes.trim() || undefined,
       documentId: selectedDocId || undefined,
     });
-    setCaptureResult(result);
+
+    // Merge any re-processed deferred items as pending proposals at the top
+    const reprocessedChanges: ProposedChange[] = reprocessedFromDeferred.map((item) => ({
+      ...item.change_payload,
+      detail: item.change_payload.detail
+        ? `[Carried over from prior meeting] ${item.change_payload.detail}`
+        : "[Carried over from prior meeting]",
+    }));
+    const merged: CaptureResult = {
+      ...result,
+      proposed_changes: [...reprocessedChanges, ...result.proposed_changes],
+    };
+
+    setCaptureResult(merged);
     const initial: Record<number, ItemState> = {};
-    result.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
+    merged.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
     setItemStates(initial);
     setEditedChanges({});
+
+    // Initialize signal states — normalize proposed_signals to always be an array
+    const initialSignalStates: Record<number, ItemState> = {};
+    const signals = (result.proposed_signals ?? []);
+    signals.forEach((_, i) => (initialSignalStates[i] = "pending"));
+    setSignalStates(initialSignalStates);
+
+    setRecaptureMode(false);
   }
 
   async function handleApplyAll() {
     if (!captureResult) return;
-    const approved = captureResult.proposed_changes
-      .map((c, i) => ({ change: getEffectiveChange(i), state: itemStates[i] }))
+    const allChanges = captureResult.proposed_changes.map((c, i) => ({
+      change: getEffectiveChange(i),
+      state: itemStates[i] ?? "pending",
+    }));
+    const approved = allChanges
       .filter(({ state }) => state === "approved" || state === "edited")
       .map(({ change }) => change);
+    const deferred = allChanges
+      .filter(({ state }) => state === "deferred")
+      .map(({ change }) => change);
 
-    await applyCapture.mutateAsync({ meetingId: meeting.id, clientId, approvedChanges: approved });
+    // Collect signal outcomes
+    const proposedSignals = captureResult.proposed_signals ?? [];
+    const approvedSignals = proposedSignals.filter((_, i) => {
+      const s = signalStates[i] ?? "pending";
+      return s === "approved" || s === "edited";
+    });
+    const deferredSignals = proposedSignals.filter((_, i) => {
+      const s = signalStates[i] ?? "pending";
+      return s === "deferred";
+    });
+
+    const result = await applyCapture.mutateAsync({
+      meetingId: meeting.id,
+      clientId,
+      approvedChanges: approved,
+      deferredChanges: deferred,
+      approvedSignals,
+      deferredSignals,
+    });
+
+    // Success toast always fires on a successful apply.
+    // Signal count line is included only when signals were applied.
+    const signalsApplied = result?.signals_applied ?? approvedSignals.length;
+    const changeCount = approved.length;
+    const changeLabel = `${changeCount} change${changeCount !== 1 ? "s" : ""}`;
+    const toastMessage =
+      signalsApplied > 0
+        ? `Applied ${changeLabel} and ${signalsApplied} signal${signalsApplied !== 1 ? "s" : ""}`
+        : `Applied ${changeLabel}`;
+    toast.success(toastMessage);
+
     setCaptureResult(null);
     setItemStates({});
     setEditedChanges({});
+    setSignalStates({});
     setNotes("");
     setSelectedDocId("");
+    setReprocessedFromDeferred([]);
   }
 
   function approveAllHighConfidence() {
@@ -141,11 +221,26 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     setItemStates(next);
   }
 
+  function approveAllMentions() {
+    if (!captureResult) return;
+    const next: Record<number, ItemState> = { ...signalStates };
+    (captureResult.proposed_signals ?? []).forEach((sig, i) => {
+      if (sig.signal_type === "meeting_mention") next[i] = "approved";
+    });
+    setSignalStates(next);
+  }
+
+  function setSignalState(idx: number, state: ItemState) {
+    setSignalStates((prev) => ({ ...prev, [idx]: prev[idx] === state ? "pending" : state }));
+  }
+
   const approvedCount = Object.values(itemStates).filter((s) => s === "approved" || s === "edited").length;
   const deferredCount = Object.values(itemStates).filter((s) => s === "deferred").length;
+  const approvedSignalCount = Object.values(signalStates).filter((s) => s === "approved").length;
+  const deferredSignalCount = Object.values(signalStates).filter((s) => s === "deferred").length;
 
   // ── Already processed view ────────────────────────────────────────────────
-  if (alreadyProcessed && !captureResult) {
+  if (alreadyProcessed && !captureResult && !recaptureMode) {
     const decisions = Array.isArray(meeting.decisions) ? meeting.decisions as Array<{ text?: string; title?: string; type?: string }> : [];
     const hasDecisions = decisions.length > 0;
     const hasCaptureNotes = !!(meeting as unknown as { capture_notes?: string }).capture_notes?.trim();
@@ -192,7 +287,17 @@ export default function CapturePanel({ meeting, clientId }: Props) {
           </p>
         )}
 
-        <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => setCaptureResult(null)}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-xs gap-1.5"
+          onClick={() => {
+            // Pre-fill the textarea with the existing notes so the advisor can edit and re-process
+            setNotes(captureNotes ?? "");
+            setSelectedDocId("");
+            setRecaptureMode(true);
+          }}
+        >
           <Sparkles className="w-3.5 h-3.5" />
           Re-capture
         </Button>
@@ -221,11 +326,27 @@ export default function CapturePanel({ meeting, clientId }: Props) {
                 </span>
               )}
             </p>
-            <Button variant="outline" size="sm" className="text-xs gap-1.5" onClick={approveAllHighConfidence}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs gap-1.5"
+              onClick={approveAllHighConfidence}
+              title="Bulk-approve every change rated HIGH or MEDIUM confidence. LOW items stay pending — they always need your judgment."
+            >
               <CheckCheck className="w-3.5 h-3.5" />
-              Approve All High-Confidence
+              Approve High &amp; Medium
             </Button>
           </div>
+
+          {/* Confidence legend */}
+          <p className="text-xs text-muted-foreground">
+            <span className={CONFIDENCE_COLORS.high + " font-semibold"}>HIGH</span>
+            {" owner + date confirmed · "}
+            <span className={CONFIDENCE_COLORS.medium + " font-semibold"}>MEDIUM</span>
+            {" partial info · "}
+            <span className={CONFIDENCE_COLORS.low + " font-semibold"}>LOW</span>
+            {" needs your input"}
+          </p>
 
           {captureResult.proposed_changes.length === 0 && (
             <p className="text-sm text-muted-foreground italic py-4 text-center">
@@ -246,24 +367,64 @@ export default function CapturePanel({ meeting, clientId }: Props) {
           ))}
         </div>
 
+        {/* Stakeholder Signals section — only shown when signals were extracted */}
+        {(captureResult.proposed_signals ?? []).length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">
+                Stakeholder Signals ({captureResult.proposed_signals.length})
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs gap-1.5"
+                onClick={approveAllMentions}
+                title="Bulk-approve all meeting mentions. Sentiment changes always need individual review."
+              >
+                <CheckCheck className="w-3.5 h-3.5" />
+                Approve all mentions
+              </Button>
+            </div>
+
+            {captureResult.proposed_signals.map((sig, idx) => (
+              <ProposedSignalRow
+                key={idx}
+                signal={sig}
+                state={signalStates[idx] ?? "pending"}
+                onApprove={() => setSignalState(idx, "approved")}
+                onReject={() => setSignalState(idx, "rejected")}
+                onDefer={() => setSignalState(idx, "deferred")}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); }}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setSignalStates({}); setReprocessedFromDeferred([]); }}>
             Back
           </Button>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">
               {approvedCount} approved
+              {deferredCount > 0 && ` · ${deferredCount} deferred`}
+              {approvedSignalCount > 0 && ` · ${approvedSignalCount} signal${approvedSignalCount !== 1 ? "s" : ""}`}
+              {deferredSignalCount > 0 && ` · ${deferredSignalCount} sig. deferred`}
             </span>
             <Button
               size="sm"
               className="gap-1.5 text-xs"
               onClick={handleApplyAll}
-              disabled={approvedCount === 0 || applyCapture.isPending}
+              disabled={
+                (approvedCount === 0 && deferredCount === 0 && approvedSignalCount === 0 && deferredSignalCount === 0) ||
+                applyCapture.isPending
+              }
             >
               {applyCapture.isPending
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Applying...</>
-                : <><CheckCircle2 className="w-3.5 h-3.5" />Apply Approved</>
+                : approvedCount === 0 && deferredCount > 0
+                  ? <><Clock className="w-3.5 h-3.5" />Save Deferred</>
+                  : <><CheckCircle2 className="w-3.5 h-3.5" />Apply Approved</>
               }
             </Button>
           </div>
@@ -275,11 +436,81 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   // ── Input form ────────────────────────────────────────────────────────────
   return (
     <div className="p-4 space-y-4">
-      <div>
-        <p className="text-sm font-medium text-foreground mb-1">Post-Meeting Capture</p>
-        <p className="text-xs text-muted-foreground">
-          Paste your notes or upload a transcript. QB will extract action items and propose workplan changes.
-        </p>
+      {/* Carried-over deferred items from prior meetings */}
+      {deferredCarryforward.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-foreground">
+            Carried Over from Prior Meetings ({deferredCarryforward.length})
+          </p>
+          {deferredCarryforward.map((item) => (
+            <DeferredCarryforwardCard
+              key={item.id}
+              item={item}
+              meetingId={meeting.id}
+              onResolve={() =>
+                resolveDeferred.mutate({
+                  deferredId: item.id,
+                  meetingId: meeting.id,
+                  clientId,
+                  resolvedInMeetingId: meeting.id,
+                })
+              }
+              onReprocess={() => {
+                // The row stays 'pending' in the DB until the advisor resolves or
+                // discards it — intentionally. The queue here is purely UI state.
+                // Resolve/Discard are disabled while queued to prevent a race where
+                // the same item is both discarded and re-processed (Fix #6/#7).
+                setReprocessedFromDeferred((prev) =>
+                  prev.some((p) => p.id === item.id) ? prev : [...prev, item]
+                );
+              }}
+              onUndoReprocess={() => {
+                setReprocessedFromDeferred((prev) => prev.filter((p) => p.id !== item.id));
+              }}
+              isReprocessQueued={reprocessedFromDeferred.some((p) => p.id === item.id)}
+              onDiscard={() =>
+                discardDeferred.mutate({
+                  deferredId: item.id,
+                  meetingId: meeting.id,
+                  clientId,
+                })
+              }
+            />
+          ))}
+          {reprocessedFromDeferred.length > 0 && (
+            <p className="text-xs text-primary font-medium">
+              {reprocessedFromDeferred.length} item{reprocessedFromDeferred.length > 1 ? "s" : ""} will be included as proposals on next capture.
+            </p>
+          )}
+          <div className="border-t border-border" />
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium text-foreground mb-1">
+            {recaptureMode ? "Re-capture Meeting" : "Post-Meeting Capture"}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {recaptureMode
+              ? "Edit the notes below and re-run QB. Existing tasks and decisions from the prior capture are NOT removed — QB will see them as context and propose updates instead of duplicates."
+              : "Paste your notes or upload a transcript. QB will extract action items and propose workplan changes."}
+          </p>
+        </div>
+        {recaptureMode && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs flex-shrink-0"
+            onClick={() => {
+              setRecaptureMode(false);
+              setNotes("");
+              setSelectedDocId("");
+            }}
+          >
+            Cancel
+          </Button>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -401,10 +632,26 @@ interface ChangeRowProps {
 function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSaveEdit }: ChangeRowProps) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ title: change.title, detail: change.detail, suggested_assignee: change.suggested_assignee ?? "", suggested_due_date: change.suggested_due_date ?? "", suggested_phase: change.suggested_phase ?? "" });
+  const [editForm, setEditForm] = useState({
+    type: change.type,
+    title: change.title,
+    detail: change.detail,
+    suggested_assignee: change.suggested_assignee ?? "",
+    suggested_due_date: change.suggested_due_date ?? "",
+    suggested_phase: change.suggested_phase ?? "",
+  });
+  const { data: advisors = [] } = useAdvisors();
 
   function handleSaveEdit() {
-    onSaveEdit({ ...change, ...editForm, suggested_assignee: editForm.suggested_assignee || null, suggested_due_date: editForm.suggested_due_date || null, suggested_phase: editForm.suggested_phase || null });
+    onSaveEdit({
+      ...change,
+      type: editForm.type,
+      title: editForm.title,
+      detail: editForm.detail,
+      suggested_assignee: editForm.suggested_assignee || null,
+      suggested_due_date: editForm.suggested_due_date || null,
+      suggested_phase: editForm.suggested_phase || null,
+    });
     setEditing(false);
   }
 
@@ -420,37 +667,73 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       isDeferred && "border-border bg-muted/20 opacity-60",
       !isApproved && !isRejected && !isDeferred && "border-border bg-card"
     )}>
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-start gap-2 min-w-0 flex-1">
-          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", CHANGE_TYPE_COLORS[change.type])}>
-            {CHANGE_TYPE_LABELS[change.type]}
-          </Badge>
-          <span className="text-sm font-medium text-foreground leading-snug">{change.title}</span>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <span className={cn("text-[10px] font-semibold uppercase mr-1", CONFIDENCE_COLORS[change.confidence])}>
-            {change.confidence}
-          </span>
-          {/* Approve */}
-          <button onClick={onApprove} className={cn("p-1 rounded transition-colors", isApproved ? "text-green-600" : "text-muted-foreground hover:text-green-600")} title="Approve">
-            <CheckCircle2 className="w-4 h-4" />
-          </button>
-          {/* Edit */}
-          {!isRejected && !isDeferred && (
-            <button onClick={() => setEditing((p) => !p)} className={cn("p-1 rounded transition-colors", editing ? "text-primary" : "text-muted-foreground hover:text-foreground")} title="Edit">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
+      {/* Header row: type badge + title + confidence badge */}
+      <div className="flex items-start gap-2 min-w-0">
+        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", CHANGE_TYPE_COLORS[change.type])}>
+          {CHANGE_TYPE_LABELS[change.type]}
+        </Badge>
+        <span className="text-sm font-medium text-foreground leading-snug flex-1">{change.title}</span>
+        <span className={cn("text-[10px] font-semibold uppercase flex-shrink-0 mt-0.5", CONFIDENCE_COLORS[change.confidence])}>
+          {change.confidence}
+        </span>
+      </div>
+
+      {/* Action row: labeled buttons */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Approve */}
+        <button
+          onClick={onApprove}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isApproved
+              ? "border-green-500/40 bg-green-50 text-green-700"
+              : "border-border text-muted-foreground hover:border-green-500/40 hover:bg-green-50 hover:text-green-700"
           )}
-          {/* Defer */}
-          <button onClick={onDefer} className={cn("p-1 rounded transition-colors", isDeferred ? "text-amber-600" : "text-muted-foreground hover:text-amber-600")} title="Defer">
-            <Clock className="w-3.5 h-3.5" />
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Approve
+        </button>
+        {/* Edit — hidden when rejected or deferred */}
+        {!isRejected && !isDeferred && (
+          <button
+            onClick={() => setEditing((p) => !p)}
+            className={cn(
+              "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+              editing
+                ? "border-primary/40 bg-primary/5 text-primary"
+                : "border-border text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+            )}
+          >
+            <Pencil className="w-3 h-3" />
+            Edit
           </button>
-          {/* Reject */}
-          <button onClick={onReject} className={cn("p-1 rounded transition-colors", isRejected ? "text-destructive" : "text-muted-foreground hover:text-destructive")} title="Reject">
-            <XCircle className="w-4 h-4" />
-          </button>
-        </div>
+        )}
+        {/* Defer */}
+        <button
+          onClick={onDefer}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isDeferred
+              ? "border-amber-500/40 bg-amber-50 text-amber-700"
+              : "border-border text-muted-foreground hover:border-amber-500/40 hover:bg-amber-50 hover:text-amber-700"
+          )}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          Defer
+        </button>
+        {/* Reject */}
+        <button
+          onClick={onReject}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isRejected
+              ? "border-destructive/40 bg-destructive/5 text-destructive"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Reject
+        </button>
       </div>
 
       {/* State badges */}
@@ -527,6 +810,28 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       {editing && (
         <div className="space-y-2 border-t border-border pt-2 mt-1">
           <div className="space-y-1">
+            <Label className="text-[10px]">Type</Label>
+            <Select
+              value={editForm.type}
+              onValueChange={(v) => setEditForm((f) => ({ ...f, type: v as ProposedChange["type"] }))}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="new_task">New Task</SelectItem>
+                <SelectItem value="task_update">Task Update</SelectItem>
+                <SelectItem value="decision">Decision</SelectItem>
+                <SelectItem value="open_question">Open Question</SelectItem>
+              </SelectContent>
+            </Select>
+            {editForm.type !== change.type && (
+              <p className="text-[10px] text-amber-600">
+                Type changed — fields below will be applied per the new type.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1">
             <Label className="text-[10px]">Title</Label>
             <Input value={editForm.title} onChange={(e) => setEditForm((f) => ({ ...f, title: e.target.value }))} className="h-7 text-xs" />
           </div>
@@ -534,21 +839,50 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
             <Label className="text-[10px]">Detail</Label>
             <Textarea value={editForm.detail} onChange={(e) => setEditForm((f) => ({ ...f, detail: e.target.value }))} className="text-xs min-h-[60px]" />
           </div>
-          {change.type === "new_task" && (
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-1">
-                <Label className="text-[10px]">Assignee</Label>
-                <Input value={editForm.suggested_assignee} onChange={(e) => setEditForm((f) => ({ ...f, suggested_assignee: e.target.value }))} className="h-7 text-xs" placeholder="Name" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px]">Due Date</Label>
-                <Input type="date" value={editForm.suggested_due_date} onChange={(e) => setEditForm((f) => ({ ...f, suggested_due_date: e.target.value }))} className="h-7 text-xs" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px]">Phase</Label>
-                <Input value={editForm.suggested_phase} onChange={(e) => setEditForm((f) => ({ ...f, suggested_phase: e.target.value }))} className="h-7 text-xs" placeholder="discover" />
-              </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px]">Assignee</Label>
+              <Select
+                value={editForm.suggested_assignee || "__none__"}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_assignee: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Unassigned</SelectItem>
+                  {advisors.map((a) => (
+                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Due Date</Label>
+              <Input type="date" value={editForm.suggested_due_date} onChange={(e) => setEditForm((f) => ({ ...f, suggested_due_date: e.target.value }))} className="h-7 text-xs" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">Phase</Label>
+              <Select
+                value={editForm.suggested_phase || "__none__"}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_phase: v === "__none__" ? "" : v }))}
+              >
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue placeholder="Select phase" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No phase</SelectItem>
+                  {PHASE_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.suggested_due_date) && (
+            <p className="text-[10px] text-muted-foreground">
+              Tip: Assignee and Due Date are only applied when Type is "New Task".
+            </p>
           )}
           <div className="flex gap-2">
             <Button size="sm" className="text-xs h-7 gap-1" onClick={handleSaveEdit}>
@@ -558,6 +892,267 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
             <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => setEditing(false)}>Cancel</Button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DeferredCarryforwardCard — compact card for a carried-over deferred item
+// ---------------------------------------------------------------------------
+
+interface DeferredCarryforwardCardProps {
+  item: DeferredCarryforwardItem;
+  meetingId: string;
+  onResolve: () => void;
+  onReprocess: () => void;
+  onUndoReprocess: () => void;
+  isReprocessQueued: boolean;
+  onDiscard: () => void;
+}
+
+function DeferredCarryforwardCard({
+  item,
+  onResolve,
+  onReprocess,
+  onUndoReprocess,
+  isReprocessQueued,
+  onDiscard,
+}: DeferredCarryforwardCardProps) {
+  const payload = item.change_payload;
+  const sourceDateLabel = item.source_meeting_date
+    ? new Date(item.source_meeting_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "Prior meeting";
+  const sourceMeetingType = item.source_meeting_type ?? "Meeting";
+
+  return (
+    <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 space-y-2">
+      {/* Title + source date */}
+      <div className="flex items-start gap-2">
+        <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-foreground leading-snug">{payload.title}</span>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            {sourceMeetingType} · {sourceDateLabel}
+          </p>
+        </div>
+        <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0", CHANGE_TYPE_COLORS[payload.type])}>
+          {CHANGE_TYPE_LABELS[payload.type]}
+        </Badge>
+      </div>
+
+      {/* Detail preview */}
+      {payload.detail && (
+        <p className="text-xs text-muted-foreground pl-5 line-clamp-2">{payload.detail}</p>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-1.5 flex-wrap pl-5">
+        {/* Resolve and Discard are disabled while the item is queued for re-process
+            to prevent a race where both a discard and a re-process apply to the same row. */}
+        <button
+          onClick={onResolve}
+          disabled={isReprocessQueued}
+          title={isReprocessQueued ? "Will be re-processed on next capture — undo first if you want to resolve/discard" : undefined}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isReprocessQueued
+              ? "border-green-500/20 bg-green-50/50 text-green-700/40 cursor-not-allowed"
+              : "border-green-500/40 bg-green-50 text-green-700 hover:bg-green-100"
+          )}
+        >
+          <CheckSquare className="w-3.5 h-3.5" />
+          Resolve
+        </button>
+        {isReprocessQueued ? (
+          <button
+            onClick={onUndoReprocess}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Undo
+          </button>
+        ) : (
+          <button
+            onClick={onReprocess}
+            className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border border-border text-muted-foreground hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Re-process
+          </button>
+        )}
+        <button
+          onClick={onDiscard}
+          disabled={isReprocessQueued}
+          title={isReprocessQueued ? "Will be re-processed on next capture — undo first if you want to resolve/discard" : undefined}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isReprocessQueued
+              ? "border-border/40 text-muted-foreground/40 cursor-not-allowed"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          Discard
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ProposedSignalRow — mirrors ProposedChangeRow style, no Edit button
+// ---------------------------------------------------------------------------
+
+interface SignalRowProps {
+  signal: ProposedSignal;
+  state: ItemState;
+  onApprove: () => void;
+  onReject: () => void;
+  onDefer: () => void;
+}
+
+const SIGNAL_TYPE_LABELS: Record<ProposedSignal["signal_type"], string> = {
+  meeting_mention: "Mention",
+  sentiment: "Sentiment",
+};
+
+const SIGNAL_TYPE_COLORS: Record<ProposedSignal["signal_type"], string> = {
+  meeting_mention: "border-blue-500/30 bg-blue-50 text-blue-700",
+  sentiment: "border-primary/30 bg-primary/5 text-primary",
+};
+
+function SignalTypeIcon({
+  signal_type,
+  sentiment,
+}: {
+  signal_type: ProposedSignal["signal_type"];
+  sentiment?: ProposedSignal["sentiment"];
+}) {
+  const base = "w-3.5 h-3.5 mt-0.5 flex-shrink-0";
+  if (signal_type === "meeting_mention") {
+    return <Mic className={cn(base, "text-muted-foreground")} />;
+  }
+  // sentiment type
+  const isNegative = sentiment === "negative" || sentiment === "at_risk";
+  const colorClass =
+    sentiment === "at_risk"
+      ? "text-destructive"
+      : sentiment === "negative"
+      ? "text-accent"
+      : "text-primary";
+  return isNegative ? (
+    <TrendingDown className={cn(base, colorClass)} />
+  ) : (
+    <TrendingUp className={cn(base, colorClass)} />
+  );
+}
+
+function ProposedSignalRow({ signal, state, onApprove, onReject, onDefer }: SignalRowProps) {
+  const isApproved = state === "approved";
+  const isRejected = state === "rejected";
+  const isDeferred = state === "deferred";
+
+  // For sentiment-type signals, use the sentiment's pill color for the type badge
+  const typeBadgeColor =
+    signal.signal_type === "sentiment" && signal.sentiment
+      ? SENTIMENT_CONFIG[signal.sentiment].container
+      : SIGNAL_TYPE_COLORS[signal.signal_type];
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-3 space-y-2 transition-colors",
+        isApproved && "border-green-500/40 bg-green-50/50",
+        isRejected && "border-border opacity-40",
+        isDeferred && "border-border bg-muted/20 opacity-60",
+        !isApproved && !isRejected && !isDeferred && "border-border bg-card"
+      )}
+    >
+      {/* Header: type icon + stakeholder name + sentiment pill + confidence */}
+      <div className="flex items-start gap-2 min-w-0">
+        <SignalTypeIcon signal_type={signal.signal_type} sentiment={signal.sentiment} />
+        <span className="text-sm font-medium text-foreground leading-snug flex-1">
+          {signal.stakeholder_name}
+        </span>
+        <Badge
+          variant="outline"
+          className={cn("text-[10px] px-1.5 py-0 flex-shrink-0 mt-0.5", typeBadgeColor)}
+        >
+          {SIGNAL_TYPE_LABELS[signal.signal_type]}
+        </Badge>
+        {signal.sentiment && (
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full text-[10px] px-1.5 py-0 border font-medium flex-shrink-0 mt-0.5",
+              SENTIMENT_CONFIG[signal.sentiment].container
+            )}
+          >
+            <span
+              className={cn(
+                "w-1.5 h-1.5 rounded-full inline-block mr-1 flex-shrink-0",
+                SENTIMENT_CONFIG[signal.sentiment].dot
+              )}
+            />
+            {SENTIMENT_CONFIG[signal.sentiment].label}
+          </span>
+        )}
+        <span className={cn("text-[10px] font-semibold uppercase flex-shrink-0 mt-0.5", CONFIDENCE_COLORS[signal.confidence])}>
+          {signal.confidence}
+        </span>
+      </div>
+
+      {/* Source excerpt — always visible for signals (primary evidence) */}
+      {signal.source_excerpt && (
+        <blockquote className="mt-1 pl-2 border-l-2 border-muted text-xs text-muted-foreground italic">
+          "{signal.source_excerpt}"
+        </blockquote>
+      )}
+
+      {/* Action cluster — Approve, Defer, Reject (no Edit — signals are extracted facts) */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          onClick={onApprove}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isApproved
+              ? "border-green-500/40 bg-green-50 text-green-700"
+              : "border-border text-muted-foreground hover:border-green-500/40 hover:bg-green-50 hover:text-green-700"
+          )}
+        >
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Approve
+        </button>
+        <button
+          onClick={onDefer}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isDeferred
+              ? "border-amber-500/40 bg-amber-50 text-amber-700"
+              : "border-border text-muted-foreground hover:border-amber-500/40 hover:bg-amber-50 hover:text-amber-700"
+          )}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          Defer
+        </button>
+        <button
+          onClick={onReject}
+          className={cn(
+            "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+            isRejected
+              ? "border-destructive/40 bg-destructive/5 text-destructive"
+              : "border-border text-muted-foreground hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive"
+          )}
+        >
+          <XCircle className="w-3.5 h-3.5" />
+          Reject
+        </button>
+      </div>
+
+      {isDeferred && (
+        <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-600">
+          Deferred — excluded from apply
+        </Badge>
       )}
     </div>
   );

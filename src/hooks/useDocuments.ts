@@ -14,6 +14,10 @@ export interface Document {
   type: "pdf" | "spreadsheet" | "document";
   uploaded_by_role: "advisor" | "client";
   uploaded_at: string;
+  /** Set when the document was auto-saved from a Deliverable (Quarterly
+   *  Review, Onboarding Brief, etc.) — enables markdown preview in the
+   *  Data Room modal by fetching the linked deliverable's content. */
+  deliverable_id?: string | null;
 }
 
 export interface StorageInfo {

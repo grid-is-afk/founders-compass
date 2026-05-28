@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS documents (
 
 CREATE INDEX IF NOT EXISTS idx_documents_client ON documents(client_id);
 
+-- Migration: link documents back to the originating deliverable (one row per deliverable)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS deliverable_id UUID
+  REFERENCES deliverables(id) ON DELETE CASCADE;
+-- Migration: track when a document was last modified (separate from uploaded_at)
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_deliverable
+  ON documents(deliverable_id) WHERE deliverable_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_documents_deliverable
+  ON documents(deliverable_id);
+
 -- ============================================================
 -- Protection items
 -- ============================================================
@@ -228,6 +240,10 @@ CREATE TABLE IF NOT EXISTS deliverables (
 );
 
 CREATE INDEX IF NOT EXISTS idx_deliverables_client ON deliverables(client_id);
+
+-- Migrations: deliverables additional columns
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS review_status TEXT;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS content TEXT;
 
 -- ============================================================
 -- Meetings
@@ -662,3 +678,33 @@ CREATE TABLE IF NOT EXISTS data_room_folders (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (client_id, category, name)
 );
+
+-- ============================================================
+-- UC-07: Quarterly plan start date — canonical chapter start
+-- ============================================================
+
+ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS start_date DATE;
+
+-- One quarterly plan per (client, quarter, year). Makes upserts deterministic
+-- and protects against race conditions in syncQ1PlanStartDate.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_quarterly_plans_client_quarter_year
+  ON quarterly_plans(client_id, quarter, year);
+
+-- ============================================================
+-- Soft-delete / archive support for deliverables + documents
+-- ============================================================
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_deliverables_archived
+  ON deliverables(client_id, archived_at);
+
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_documents_archived
+  ON documents(client_id, archived_at);
+
+-- ============================================================
+-- Deliverable audit trail: stable generation timestamp + approver
+-- ============================================================
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_by  UUID
+  REFERENCES users(id) ON DELETE SET NULL;

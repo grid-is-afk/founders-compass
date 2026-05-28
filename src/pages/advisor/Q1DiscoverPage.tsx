@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useOutletContext } from "react-router-dom";
-import { Pencil, ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react";
+import { useOutletContext, Link } from "react-router-dom";
+import { Pencil, ChevronDown, ChevronRight as ChevronRightIcon, Wand2, Loader2 } from "lucide-react";
 import { PhaseTracker, type Q1PhaseId } from "@/components/clients/PhaseTracker";
 import { Q1TimelineChart } from "@/components/clients/Q1TimelineChart";
 import { useUpdateClient } from "@/hooks/useClients";
@@ -13,6 +13,16 @@ import { DiagnosePanel } from "@/components/clients/DiagnosePanel";
 import { DesignTFOPanel } from "@/components/clients/DesignTFOPanel";
 import { DesignOutsideTFOPanel } from "@/components/clients/DesignOutsideTFOPanel";
 import { ReviewWrapPanel } from "@/components/clients/ReviewWrapPanel";
+import { KickoffPlanModal } from "@/components/clients/KickoffPlanModal";
+import {
+  useClientTasks,
+  useCreateTask,
+  useGenerateKickoffPlan,
+  type ProposedTask,
+} from "@/hooks/useTasks";
+import { useClientDocuments } from "@/hooks/useDocuments";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 
 // ---------------------------------------------------------------------------
 // Context shape from ClientWorkspace
@@ -38,10 +48,26 @@ interface WorkspaceContext {
 export default function Q1DiscoverPage() {
   const { client } = useOutletContext<WorkspaceContext>();
   const updateClient = useUpdateClient();
+  const qc = useQueryClient();
 
   // Local phase drives which panel is visible. Defaults to DB value or "kickoff".
   const initialPhase = (client.q1_phase as Q1PhaseId) ?? "kickoff";
   const [activePhase, setActivePhase] = useState<Q1PhaseId>(initialPhase);
+
+  // Kickoff plan modal state
+  const [kickoffTasks, setKickoffTasks] = useState<ProposedTask[] | null>(null);
+  const [showKickoffModal, setShowKickoffModal] = useState(false);
+  const [isCreatingTasks, setIsCreatingTasks] = useState(false);
+  const [kickoffPersonalizationLevel, setKickoffPersonalizationLevel] = useState<
+    "full" | "methodology-only" | undefined
+  >(undefined);
+
+  // Hooks for the kickoff plan feature
+  const { data: tasksRaw = [] } = useClientTasks(client.id);
+  const { data: documents } = useClientDocuments(client.id);
+  const docCount = documents?.length ?? 0;
+  const generateKickoffPlan = useGenerateKickoffPlan(client.id);
+  const createTask = useCreateTask();
 
   // FIX-5: Keep local state in sync if the server record is refreshed externally
   // (e.g. the parent workspace invalidates the client query after a phase advance).
@@ -70,6 +96,71 @@ export default function Q1DiscoverPage() {
 
   const handlePhaseComplete = () => {
     if (nextPhase) setActivePhase(nextPhase);
+  };
+
+  // True when the client has no tasks at all (across any phase)
+  const hasTasks = (tasksRaw as unknown[]).length > 0;
+
+  const handleGenerateKickoffPlan = async () => {
+    try {
+      const result = await generateKickoffPlan.mutateAsync();
+      if ("alreadyHasTasks" in result && result.alreadyHasTasks) {
+        toast.info(result.message);
+        return;
+      }
+      if ("noScopeMaterials" in result && result.noScopeMaterials) {
+        toast.info(result.message);
+        return;
+      }
+      if ("tasks" in result) {
+        setKickoffTasks(result.tasks);
+        setKickoffPersonalizationLevel(result.personalizationLevel);
+        setShowKickoffModal(true);
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to generate kickoff plan. Please try again."
+      );
+    }
+  };
+
+  const handleApproveKickoffPlan = async (approvedTasks: ProposedTask[]) => {
+    setIsCreatingTasks(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const task of approvedTasks) {
+      try {
+        await createTask.mutateAsync({
+          client_id: client.id,
+          title: task.title,
+          assignee: task.assignee,
+          priority: task.priority,
+          phase: "kickoff",
+          notes: task.description || null,
+          status: "todo",
+        });
+        successCount++;
+      } catch {
+        failCount++;
+      }
+    }
+
+    // Invalidate so all panels pick up the new tasks
+    await qc.invalidateQueries({ queryKey: ["tasks", client.id] });
+
+    setIsCreatingTasks(false);
+    setShowKickoffModal(false);
+    setKickoffTasks(null);
+    setKickoffPersonalizationLevel(undefined);
+
+    if (failCount === 0) {
+      toast.success(`Kickoff plan created — ${successCount} task${successCount !== 1 ? "s" : ""} added`);
+    } else {
+      toast.warning(
+        `${successCount} task${successCount !== 1 ? "s" : ""} added, ${failCount} failed. Please try again for the remaining items.`
+      );
+    }
   };
 
   function renderPanel() {
@@ -220,8 +311,87 @@ export default function Q1DiscoverPage() {
       {/* Divider */}
       <div className="border-t border-border/60" />
 
+      {/* Kickoff plan generator — shown only when no tasks exist yet */}
+      {!hasTasks && (
+        <div className="flex items-center justify-between rounded-lg border border-dashed border-violet-300/60 bg-violet-50/30 px-4 py-3">
+          {docCount === 0 ? (
+            <>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">No tasks yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Upload your contract or scope document to the Data Room first — the kickoff plan generator needs them to personalize your Q1 plan.
+                </p>
+              </div>
+              <div className="ml-4 shrink-0 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  disabled
+                  className="gap-1.5"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  Generate Kickoff Plan
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  asChild
+                >
+                  <Link to={`/advisor/clients/${client.id}/data-room`}>
+                    Go to Data Room →
+                  </Link>
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-foreground">No tasks yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Generate an AI-powered Q1 kickoff plan based on the TFO Discover methodology and this client's uploaded documents.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleGenerateKickoffPlan}
+                disabled={generateKickoffPlan.isPending}
+                className="ml-4 shrink-0 gap-1.5"
+              >
+                {generateKickoffPlan.isPending ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="w-3.5 h-3.5" />
+                    Generate Kickoff Plan
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Active phase panel */}
       {renderPanel()}
+
+      {/* Kickoff plan review modal */}
+      {showKickoffModal && kickoffTasks !== null && (
+        <KickoffPlanModal
+          open={showKickoffModal}
+          tasks={kickoffTasks}
+          clientName={client.name}
+          personalizationLevel={kickoffPersonalizationLevel}
+          onClose={() => {
+            setShowKickoffModal(false);
+            setKickoffTasks(null);
+            setKickoffPersonalizationLevel(undefined);
+          }}
+          onApprove={handleApproveKickoffPlan}
+          isApproving={isCreatingTasks}
+        />
+      )}
     </div>
   );
 }

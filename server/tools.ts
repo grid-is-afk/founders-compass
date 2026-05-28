@@ -1,4 +1,5 @@
 import { query } from "./db.js";
+import { parseAgendaSections } from "./lib/agendaParser.js";
 
 export const tools = [
   {
@@ -151,6 +152,46 @@ export const tools = [
       required: ["clientName", "meetingType", "date"],
     },
   },
+  {
+    name: "get_meeting_agenda",
+    description:
+      "Look up the agenda for a specific meeting. ALWAYS call this first when the advisor asks about an agenda for an upcoming, recent, or specific meeting — never invent or guess agenda items from open tasks before calling this tool. Returns the locked or draft agenda if one exists, or a clear 'no agenda' signal if not.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: {
+          type: "string",
+          description: "Name of the client whose meeting agenda to look up",
+        },
+        meetingId: {
+          type: "string",
+          description: "Exact meeting UUID if known. Optional.",
+        },
+        when: {
+          type: "string",
+          enum: ["upcoming", "last"],
+          description:
+            "If meetingId is unknown: 'upcoming' returns the next future meeting (default), 'last' returns the most recent past meeting.",
+        },
+      },
+      required: ["clientName"],
+    },
+  },
+  {
+    name: "generate_engagement_briefing",
+    description:
+      "Generate a structured onboarding briefing for a client engagement. Covers client history, current quarter state, open tasks, risk alerts, stakeholders, and upcoming priorities. Use this when an advisor asks to be briefed on a client, or says 'brief me', 'onboard me', 'catch me up', or similar.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: {
+          type: "string",
+          description: "The name of the client to generate the briefing for",
+        },
+      },
+      required: ["clientName"],
+    },
+  },
 ];
 
 // Helper: look up a client by name for this advisor, returns null if not found
@@ -257,6 +298,111 @@ export async function executeTool(
       };
       const reportTitle = titleMap[input.reportType as string] ?? String(input.reportType);
 
+      // Build type-specific context from DB for richer generation
+      let contextBlock = "";
+      if (clientId) {
+        try {
+          const reportType = input.reportType as string;
+
+          if (reportType === "meeting_recap") {
+            const mtgResult = await query(
+              `SELECT type, date, notes, status FROM meetings
+               WHERE client_id = $1
+               ORDER BY date DESC NULLS LAST LIMIT 1`,
+              [clientId]
+            );
+            if (mtgResult.rows.length > 0) {
+              const m = mtgResult.rows[0];
+              const dateStr = m.date ? new Date(m.date as string).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Date unknown";
+              contextBlock = `\n\nMost recent meeting context:\n- Type: ${m.type ?? "General"}\n- Date: ${dateStr}\n- Status: ${m.status}\n- Notes: ${m.notes ?? "(no notes recorded)"}`;
+            } else {
+              contextBlock = "\n\nNo meetings on record yet — draft a general recap template.";
+            }
+          } else if (reportType === "quarterly_review") {
+            const qpResult = await query(
+              `SELECT qp.label, qp.status, qp.quarter, qp.year,
+                      COUNT(t.id) FILTER (WHERE t.status = 'done') AS completed_tasks,
+                      COUNT(t.id) FILTER (WHERE t.status != 'done') AS open_tasks
+               FROM quarterly_plans qp
+               LEFT JOIN tasks t ON t.client_id = qp.client_id
+               WHERE qp.client_id = $1
+               ORDER BY qp.year DESC, qp.quarter DESC LIMIT 1`,
+              [clientId]
+            );
+            const phaseResult = await query(
+              `SELECT phase, label, status FROM quarterly_phases
+               WHERE plan_id IN (
+                 SELECT id FROM quarterly_plans WHERE client_id = $1
+                 ORDER BY year DESC, quarter DESC LIMIT 1
+               ) ORDER BY sort_order`,
+              [clientId]
+            );
+            if (qpResult.rows.length > 0) {
+              const qp = qpResult.rows[0];
+              const phases = phaseResult.rows.map((p: { phase: string; label: string; status: string }) => `  - ${p.label ?? p.phase}: ${p.status}`).join("\n");
+              contextBlock = `\n\nQuarterly plan context (Q${qp.quarter as number} ${qp.year as number}):\n- Plan label: ${qp.label ?? "Unnamed"}\n- Status: ${qp.status}\n- Completed tasks: ${qp.completed_tasks as number}\n- Open tasks: ${qp.open_tasks as number}\nPhases:\n${phases || "  (no phases recorded)"}`;
+            }
+          } else if (reportType === "monthly_status_update") {
+            const taskResult = await query(
+              `SELECT
+                 COUNT(*) FILTER (WHERE status != 'done') AS open_count,
+                 COUNT(*) FILTER (WHERE status = 'done' AND updated_at >= NOW() - INTERVAL '30 days') AS completed_this_month
+               FROM tasks WHERE client_id = $1`,
+              [clientId]
+            );
+            const riskResult = await query(
+              `SELECT COUNT(*) AS active_risks FROM risk_alerts
+               WHERE client_id = $1 AND resolved_at IS NULL`,
+              [clientId]
+            );
+            const t = taskResult.rows[0];
+            const r = riskResult.rows[0];
+            contextBlock = `\n\nMonthly status context:\n- Open tasks: ${t?.open_count ?? 0}\n- Tasks completed in last 30 days: ${t?.completed_this_month ?? 0}\n- Active risk alerts: ${r?.active_risks ?? 0}`;
+          } else if (reportType === "risk_summary") {
+            const risksResult = await query(
+              `SELECT title, severity, detail FROM risk_alerts
+               WHERE client_id = $1 AND resolved_at IS NULL
+               ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`,
+              [clientId]
+            );
+            if (risksResult.rows.length > 0) {
+              const riskLines = risksResult.rows.map(
+                (r: { title: string; severity: string; detail: string | null }) =>
+                  `  - [${(r.severity as string).toUpperCase()}] ${r.title as string}${r.detail ? ": " + (r.detail as string) : ""}`
+              ).join("\n");
+              contextBlock = `\n\nActive risk alerts (${risksResult.rows.length as number} total):\n${riskLines}`;
+            } else {
+              contextBlock = "\n\nNo active risk alerts on record — note this in the summary.";
+            }
+          } else if (
+            reportType === "capital_readiness_memo" ||
+            reportType === "client_brief" ||
+            reportType === "board_update" ||
+            reportType === "assessment_summary"
+          ) {
+            const keysResult = await query(
+              `SELECT clarity, alignment, structure, stewardship, velocity, legacy, notes
+               FROM client_six_keys WHERE client_id = $1
+               ORDER BY created_at DESC LIMIT 1`,
+              [clientId]
+            );
+            if (keysResult.rows.length > 0) {
+              const k = keysResult.rows[0];
+              const scores = ["clarity", "alignment", "structure", "stewardship", "velocity", "legacy"]
+                .map((key) => `  - ${key.charAt(0).toUpperCase() + key.slice(1)}: ${(k[key] as number | null) ?? "N/A"}/100`)
+                .join("\n");
+              contextBlock = `\n\nSix Keys scores:\n${scores}${k.notes ? "\n- Notes: " + (k.notes as string) : ""}`;
+            } else {
+              contextBlock = "\n\nNo Six Keys scores on record — use available client context to draft best-effort report.";
+            }
+          }
+          // onboarding_brief: handled by generate_engagement_briefing — no extra context needed
+        } catch (contextErr) {
+          // Non-fatal — proceed without context if DB query fails
+          console.warn("generate_report: context query failed:", contextErr);
+        }
+      }
+
       try {
         if (clientId) {
           await query(
@@ -268,14 +414,14 @@ export async function executeTool(
         }
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. The report is being saved to the client's Data Room under Reports.`,
+          result: `Report "${reportTitle}" created for ${input.clientName as string}. Now write the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report. Structure it clearly with headers, bullet points where appropriate, and a concise executive summary at the top.`,
           action: { type: "report_generated", ...input, clientId, reportTitle },
         };
       } catch (err) {
         console.error("generate_report DB error:", err);
         return {
           success: true,
-          result: `Report "${reportTitle}" generated for ${input.clientName}. The report content is in this chat response.`,
+          result: `Now write the full "${reportTitle}" report in professional markdown for ${input.clientName as string}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top.`,
           action: { type: "report_generated", ...input, reportTitle },
         };
       }
@@ -381,6 +527,161 @@ export async function executeTool(
       } catch (err) {
         console.error("schedule_meeting DB error:", err);
         return { success: false, result: "Failed to save meeting to database." };
+      }
+    }
+
+    case "get_meeting_agenda": {
+      let clientId = activeClientId ?? null;
+      if (input.clientName) {
+        const found = await findClientByName(input.clientName as string, advisorId);
+        if (found) clientId = found;
+      }
+      if (!clientId) {
+        return {
+          success: false,
+          result: `Could not resolve client "${input.clientName ?? "(none)"}". No agenda lookup possible.`,
+          action: { type: "agenda_lookup_failed", reason: "client_not_found" },
+        };
+      }
+
+      try {
+        let meetingRow:
+          | {
+              id: string;
+              type: string | null;
+              date: string | null;
+              agenda: string | null;
+              agenda_status: string | null;
+            }
+          | undefined;
+
+        if (input.meetingId) {
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE id = $1 AND client_id = $2`,
+            [input.meetingId, clientId]
+          );
+          meetingRow = r.rows[0];
+        } else if (input.when === "last") {
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE client_id = $1 AND date IS NOT NULL AND date < NOW()
+              ORDER BY date DESC
+              LIMIT 1`,
+            [clientId]
+          );
+          meetingRow = r.rows[0];
+        } else {
+          // Default: nearest upcoming meeting
+          const r = await query(
+            `SELECT id, type, date, agenda, agenda_status
+               FROM meetings
+              WHERE client_id = $1 AND date IS NOT NULL AND date >= NOW()
+              ORDER BY date ASC
+              LIMIT 1`,
+            [clientId]
+          );
+          meetingRow = r.rows[0];
+        }
+
+        if (!meetingRow) {
+          return {
+            success: true,
+            result: `No matching meeting found for ${input.clientName as string}.`,
+            action: { type: "agenda_not_found", reason: "meeting_not_found" },
+          };
+        }
+
+        const dateIso = meetingRow.date ?? "no date";
+
+        if (!meetingRow.agenda || meetingRow.agenda_status === "none" || !meetingRow.agenda_status) {
+          return {
+            success: true,
+            result: `Meeting found: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}. STATUS: NO AGENDA HAS BEEN LOGGED for this meeting. You may suggest topics for the advisor to consider — but you MUST explicitly label them as "suggested" or "proposed", and never present them as if they were the actual agenda.`,
+            action: {
+              type: "agenda_retrieved",
+              meetingId: meetingRow.id,
+              status: "none",
+            },
+          };
+        }
+
+        const sections = parseAgendaSections(meetingRow.agenda);
+        if (sections.length === 0) {
+          return {
+            success: false,
+            result: `Agenda data for meeting ${meetingRow.id} could not be parsed. Treat this as no agenda available.`,
+            action: { type: "agenda_parse_error", meetingId: meetingRow.id },
+          };
+        }
+
+        const agendaMd = sections
+          .map((s, i) => {
+            const items = s.items
+              .map((it) => `  - ${it.text}${it.source ? `\n    Context: ${it.source}` : ""}`)
+              .join("\n");
+            return `${i + 1}. ${s.title}\n${items}`;
+          })
+          .join("\n\n");
+
+        const statusLabel =
+          meetingRow.agenda_status === "final" ? "FINAL (locked)" : "DRAFT";
+
+        return {
+          success: true,
+          result: `Meeting: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}.\nAgenda status: ${statusLabel}\n\nAgenda items:\n${agendaMd}\n\nPresent this agenda to the advisor as-is. Do not invent additional items or replace it with task-derived suggestions.`,
+          action: {
+            type: "agenda_retrieved",
+            meetingId: meetingRow.id,
+            status: meetingRow.agenda_status,
+          },
+        };
+      } catch (err) {
+        console.error("get_meeting_agenda DB error:", err);
+        return { success: false, result: "Failed to look up meeting agenda." };
+      }
+    }
+
+    case "generate_engagement_briefing": {
+      let clientId = activeClientId ?? null;
+      if (input.clientName) {
+        const found = await findClientByName(input.clientName as string, advisorId);
+        if (found) clientId = found;
+      }
+
+      if (!clientId) {
+        return {
+          success: false,
+          result: `Briefing not generated: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
+          action: { type: "briefing_failed", reason: "client_not_found" },
+        };
+      }
+
+      try {
+        await query(
+          `INSERT INTO deliverables (client_id, title, status, engine)
+           VALUES ($1, $2, 'ready', 'Copilot')
+           ON CONFLICT DO NOTHING`,
+          [clientId, `Engagement Briefing — ${input.clientName as string}`]
+        );
+        return {
+          success: true,
+          result: `Engagement briefing created for ${input.clientName as string}. Now write the full structured briefing in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch. Use all context available.`,
+          action: {
+            type: "briefing_generated",
+            clientId,
+            clientName: input.clientName,
+          },
+        };
+      } catch (err) {
+        console.error("generate_engagement_briefing DB error:", err);
+        return {
+          success: true,
+          result: `Now write the full engagement briefing for ${input.clientName as string} in markdown covering: client overview, Six Keys snapshot, current quarter state, open tasks, recent progress, risk alerts, stakeholders, last 3 meetings, and what to watch.`,
+          action: { type: "briefing_generated", clientName: input.clientName },
+        };
       }
     }
 
