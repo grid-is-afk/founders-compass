@@ -5,6 +5,10 @@ import {
   Eye, Zap, X, Trash2, Loader2, ChevronRight,
   LayoutGrid, List,
 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useAnalyzeDataRoom } from "@/hooks/useAnalyzeDataRoom";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -346,6 +350,77 @@ const DocumentTableRow = ({ doc, onView, onDownload, onDelete }: DocRowProps) =>
 };
 
 // ---------------------------------------------------------------------------
+// Deliverable markdown preview — used inside the Data Room preview modal
+// when the previewed document is auto-saved from a Deliverable. Fetches the
+// linked deliverable's markdown content and renders it the same way the
+// Deliverables tab does (ReactMarkdown + remark-gfm + prose classes).
+// ---------------------------------------------------------------------------
+
+interface DeliverablePreviewRow {
+  id: string;
+  title: string;
+  content: string | null;
+}
+
+function DeliverableMarkdownPreview({ deliverableId }: { deliverableId: string }) {
+  const { data, isLoading, isError } = useQuery<DeliverablePreviewRow>({
+    queryKey: ["deliverable", deliverableId],
+    queryFn: () => api.get(`/deliverables/${deliverableId}`),
+    enabled: !!deliverableId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex items-center justify-center gap-3">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        <p className="text-xs text-muted-foreground">Loading preview…</p>
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
+        <FileText className="w-10 h-10 text-muted-foreground/40" />
+        <p className="text-xs text-muted-foreground text-center">
+          Could not load preview. Try downloading the file instead.
+        </p>
+      </div>
+    );
+  }
+  if (!data.content) {
+    return (
+      <div className="rounded-lg bg-muted/40 border border-border p-6 min-h-[200px] flex flex-col items-center justify-center gap-3">
+        <FileText className="w-10 h-10 text-muted-foreground/40" />
+        <p className="text-xs text-muted-foreground text-center">
+          This document hasn&apos;t been generated yet.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "rounded-md border border-border bg-muted/20 p-4 max-h-[60vh] overflow-y-auto",
+        "prose prose-sm max-w-none text-foreground",
+        "[&_h1]:text-base [&_h1]:font-semibold [&_h1]:mb-2",
+        "[&_h2]:text-sm [&_h2]:font-semibold [&_h2]:mb-1.5 [&_h2]:mt-3",
+        "[&_h3]:text-xs [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2",
+        "[&_p]:text-xs [&_p]:leading-relaxed [&_p]:mb-2",
+        "[&_ul]:text-xs [&_ul]:space-y-0.5 [&_ul]:pl-4 [&_ul]:list-disc",
+        "[&_ol]:text-xs [&_ol]:space-y-0.5 [&_ol]:pl-4 [&_ol]:list-decimal",
+        "[&_li]:leading-relaxed",
+        "[&_strong]:font-semibold",
+        "[&_code]:text-xs [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded",
+        "[&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-muted-foreground",
+      )}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{data.content}</ReactMarkdown>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -405,6 +480,7 @@ export const AdvisorDataRoom = ({
     category: string;
     date: string;
     file_url: string | null;
+    deliverable_id: string | null;
   } | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
@@ -602,6 +678,7 @@ export const AdvisorDataRoom = ({
       category: doc.category ?? "Other",
       date: formatDate(doc.uploaded_at),
       file_url: doc.file_url,
+      deliverable_id: doc.deliverable_id ?? null,
     });
   };
 
@@ -1441,6 +1518,11 @@ export const AdvisorDataRoom = ({
           </DialogHeader>
           {previewDoc &&
             (() => {
+              // Deliverable-linked docs render the source markdown — the
+              // same view advisors get from the Deliverables tab.
+              if (previewDoc.deliverable_id) {
+                return <DeliverableMarkdownPreview deliverableId={previewDoc.deliverable_id} />;
+              }
               const ext =
                 previewDoc.name.split(".").pop()?.toLowerCase() ?? "";
               const url = previewDoc.file_url;

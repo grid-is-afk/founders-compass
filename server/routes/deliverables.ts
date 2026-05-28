@@ -149,7 +149,7 @@ router.post("/generate-quarterly-review", async (req, res) => {
     // Fetch (or confirm) the deliverable row created by executeTool
     const delResult = await query(
       `SELECT * FROM deliverables
-       WHERE client_id = $1 AND title = 'Quarterly Review'
+       WHERE client_id = $1 AND title = 'Quarterly Review' AND archived_at IS NULL
        ORDER BY created_at DESC LIMIT 1`,
       [clientId]
     );
@@ -300,7 +300,7 @@ router.post("/generate-engagement-briefing", async (req, res) => {
     // Fetch the deliverable row created by the tool handler
     const delResult = await query(
       `SELECT * FROM deliverables
-       WHERE client_id = $1 AND title = $2
+       WHERE client_id = $1 AND title = $2 AND archived_at IS NULL
        ORDER BY created_at DESC LIMIT 1`,
       [clientId, briefingTitle]
     );
@@ -655,7 +655,7 @@ The document MUST follow this exact structure:
 
     const existingPrep = await query(
       `SELECT id FROM deliverables
-       WHERE client_id = $1 AND title LIKE $2
+       WHERE client_id = $1 AND title LIKE $2 AND archived_at IS NULL
        ORDER BY created_at DESC
        LIMIT 1`,
       [clientId, titlePattern]
@@ -719,6 +719,31 @@ The document MUST follow this exact structure:
   } catch (err) {
     console.error("POST /deliverables/generate-review-prep error:", err);
     return res.status(500).json({ error: "Review prep generation failed" });
+  }
+});
+
+// ── GET /api/deliverables/:id ──────────────────────────────────────────────
+// Single deliverable fetch (includes content). Used by the Data Room preview
+// modal to render markdown for deliverable-linked .docx files.
+router.get("/:id", async (req, res) => {
+  try {
+    const dResult = await query(
+      `SELECT d.*, u.name AS approved_by_name
+         FROM deliverables d
+         LEFT JOIN users u ON u.id = d.approved_by
+        WHERE d.id = $1`,
+      [req.params.id]
+    );
+    if (dResult.rows.length === 0) {
+      return res.status(404).json({ error: "Deliverable not found" });
+    }
+    if (!(await verifyClient(dResult.rows[0].client_id, req.user!.id, req.user!.role))) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    return res.json(dResult.rows[0]);
+  } catch (err) {
+    console.error("GET /deliverables/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 });
 
