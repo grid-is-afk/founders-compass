@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useCopilot } from "@/hooks/useCopilot";
+import { useAuth } from "@/lib/auth";
 import type { ChatMessage } from "@/lib/copilotApi";
 
 interface CopilotContextType {
@@ -30,7 +31,10 @@ export function CopilotProvider({
   clientContext?: string;
   clientId?: string;
 }) {
-  const copilot = useCopilot(clientContext, clientId);
+  // Scope chat history to the logged-in advisor so one advisor's client
+  // conversations are never loaded into another advisor's session.
+  const { user } = useAuth();
+  const copilot = useCopilot(clientContext, clientId, user?.id);
   const [isOpen, setIsOpen] = useState(false);
   const [isDeepDive, setDeepDive] = useState(false);
   const [deepDiveClientName, setDeepDiveClientName] = useState<string | null>(null);

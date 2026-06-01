@@ -5,7 +5,14 @@ import { streamChat, type ChatMessage, type ChatAction, type ChatSource } from "
 
 let messageCounter = 0;
 
-const STORAGE_KEY = "qb-chat-history";
+// Chat history is scoped per advisor AND per client so one client's
+// conversation (and its onboarding briefs) can never bleed into another
+// client's workspace, and one advisor's chats are never visible to another
+// advisor on a shared browser. The "global" segment holds the advisor-home
+// chat (no client selected).
+function historyKey(userId?: string, clientId?: string): string {
+  return `qb-chat-history:${userId ?? "anon"}:${clientId ?? "global"}`;
+}
 
 const actionToastLabels: Record<string, string> = {
   task_created: "Task created",
@@ -16,9 +23,9 @@ const actionToastLabels: Record<string, string> = {
   meeting_scheduled: "Meeting scheduled",
 };
 
-function loadMessages(): ChatMessage[] {
+function loadMessages(key: string): ChatMessage[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(key);
     if (!saved) return [];
     const parsed = JSON.parse(saved) as ChatMessage[];
     // Advance counter past saved message ids so new ids don't collide
@@ -34,17 +41,41 @@ function loadMessages(): ChatMessage[] {
   }
 }
 
-export function useCopilot(clientContext?: string, clientId?: string) {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
+export function useCopilot(
+  clientContext?: string,
+  clientId?: string,
+  userId?: string,
+) {
+  // The storage key the currently-loaded `messages` belong to. Kept in a ref
+  // so the persist effect always writes back to the right key even mid-switch,
+  // never leaking the previous client's messages into the new client's bucket.
+  const keyRef = useRef(historyKey(userId, clientId));
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadMessages(keyRef.current),
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const qc = useQueryClient();
 
-  // Persist messages to localStorage whenever they change
+  // When the advisor switches clients (or the logged-in advisor changes),
+  // abort any in-flight stream and swap in that scope's saved history. This is
+  // the reset that stops Client A's briefing from rendering under Client B.
+  useEffect(() => {
+    const nextKey = historyKey(userId, clientId);
+    if (nextKey === keyRef.current) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsStreaming(false);
+    keyRef.current = nextKey;
+    setMessages(loadMessages(nextKey));
+  }, [clientId, userId]);
+
+  // Persist messages to localStorage whenever they change, always to the key
+  // the loaded messages belong to (keyRef), never a stale closure value.
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(keyRef.current, JSON.stringify(messages));
     }
   }, [messages]);
 
@@ -189,7 +220,7 @@ export function useCopilot(clientContext?: string, clientId?: string) {
     cancelStream();
     setMessages([]);
     setError(null);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(keyRef.current);
   }, [cancelStream]);
 
   return { messages, isStreaming, error, sendMessage, cancelStream, clearConversation };
