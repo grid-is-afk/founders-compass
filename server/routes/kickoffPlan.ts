@@ -341,7 +341,14 @@ router.post("/:id/kickoff-plan/apply", async (req, res) => {
         const due = t.dueDate;
         const dueDate =
           typeof due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null;
-        const notes = String(t.description ?? "").trim() || null;
+        // Persist the "what" (description) plus the "why" (rationale) so the
+        // rationale survives into the kickoff checklist as the task description.
+        const description = String(t.description ?? "").trim();
+        const rationale = String(t.rationale ?? "").trim();
+        const notes =
+          [description, rationale && `Why this matters: ${rationale}`]
+            .filter(Boolean)
+            .join("\n\n") || null;
         return { title, priority, assignee, dueDate, notes };
       })
       .filter((t) => t.title.length > 0);

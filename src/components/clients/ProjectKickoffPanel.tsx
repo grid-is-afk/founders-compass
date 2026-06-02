@@ -63,6 +63,7 @@ export function ProjectKickoffPanel({
         phase: string;
         status: string;
         due_date: string | null;
+        notes: string | null;
         subtasks: SubtaskItem[];
       }>
     )
@@ -170,6 +171,7 @@ export function ProjectKickoffPanel({
               key={task.id}
               label={task.title}
               dueDate={task.due_date}
+              description={task.notes}
               isDone={task.status === "done"}
               subtasks={task.subtasks ?? []}
               isPending={updateTask.isPending}
