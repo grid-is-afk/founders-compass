@@ -186,24 +186,44 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       `  "activityId": "string — the bracketed id of the Discover activity this task maps to (e.g. 'discover-master-intake')",\n` +
       `  "phase": "string — the Discover phase activity name this task belongs to (e.g. 'Master Intake')",\n` +
       `  "rationale": "string — why this task matters for this engagement",\n` +
-      `  "sourceContext": "string — excerpt from client docs that informed this task, or empty string if none"\n` +
+      `  "sourceContext": "string — a short excerpt (max ~200 chars) from client docs that informed this task, or empty string if none"\n` +
       `}`;
 
+    // max_tokens must comfortably exceed the full JSON array. With document excerpts
+    // the model quotes into sourceContext, so a 2000-token cap truncates the array
+    // mid-string and breaks JSON.parse. 8000 gives ample headroom (typical output ~2k).
     const aiResponse = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 2000,
+      max_tokens: 8000,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });
 
-    // 8. Parse Claude's JSON response — strip any accidental markdown code fences
+    // 8. Parse Claude's JSON response.
     const rawText =
       aiResponse.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "[]";
 
-    const jsonText = rawText
+    // If the model hit the token ceiling the JSON is truncated — fail with a clear reason.
+    if (aiResponse.stop_reason === "max_tokens") {
+      console.error("kickoff-plan: response truncated (stop_reason=max_tokens). Raw text tail:", rawText.slice(-200));
+      return res.status(500).json({
+        error: "The AI response was too long and got cut off. Please try again.",
+      });
+    }
+
+    // Strip accidental code fences, then isolate the JSON array (first '[' .. last ']')
+    // so any stray prose around it doesn't break parsing.
+    let jsonText = rawText
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```\s*$/, "")
       .trim();
+    const firstBracket = jsonText.indexOf("[");
+    const lastBracket = jsonText.lastIndexOf("]");
+    if (firstBracket > 0 || (lastBracket !== -1 && lastBracket < jsonText.length - 1)) {
+      if (firstBracket !== -1 && lastBracket > firstBracket) {
+        jsonText = jsonText.slice(firstBracket, lastBracket + 1);
+      }
+    }
 
     let tasks: ProposedTask[];
     try {
