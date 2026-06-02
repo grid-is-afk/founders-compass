@@ -44,6 +44,7 @@ interface DbDeliverable {
   generated_at?: string | null;
   approved_at?: string | null;
   approved_by_name?: string | null;
+  client_approved_at?: string | null;
 }
 
 const TITLE_DISPLAY_MAP: Record<string, string> = {
@@ -68,10 +69,15 @@ function resolveDeliverableTitle(rawTitle: string): string {
   return TITLE_DISPLAY_MAP[rawTitle] ?? rawTitle;
 }
 
-/** Options shown in the per-card review status dropdown. */
+/**
+ * Options shown in the per-card review status dropdown — the three-stage
+ * lifecycle: advisor drafts → advisor approves → founder (client) approves.
+ * Reaching "Client Approved" is what confirms a review prep's objectives.
+ */
 const REVIEW_STATUS_OPTIONS = [
   { value: "pending_review", label: "Pending Review" },
   { value: "approved", label: "Approved" },
+  { value: "client_approved", label: "Client Approved" },
 ] as const;
 
 type ReviewStatusValue = (typeof REVIEW_STATUS_OPTIONS)[number]["value"];
@@ -88,12 +94,18 @@ interface MappedDeliverable {
   generated_at: string | null;
   approved_at: string | null;
   approved_by_name: string | null;
+  client_approved_at: string | null;
 }
 
 /** Tailwind classes for the pill-shaped dropdown trigger by review_status. */
 function reviewStatusTriggerClass(status: ReviewStatusValue | null): string {
-  if (status === "approved") {
+  if (status === "client_approved") {
+    // final / founder-agreed
     return "bg-green-50 text-green-700 border border-green-500/30 hover:bg-green-100";
+  }
+  if (status === "approved") {
+    // interim — advisor signed off, awaiting client
+    return "bg-blue-50 text-blue-700 border border-blue-500/30 hover:bg-blue-100";
   }
   // pending_review or null (treated as pending_review)
   return "bg-amber-50 text-amber-700 border border-amber-500/30 hover:bg-amber-100";
@@ -178,6 +190,7 @@ const DeliverablesTab = () => {
       generated_at: d.generated_at ?? d.created_at ?? null,
       approved_at: d.approved_at ?? null,
       approved_by_name: d.approved_by_name ?? null,
+      client_approved_at: d.client_approved_at ?? null,
     };
   }
 
@@ -218,11 +231,13 @@ const DeliverablesTab = () => {
       {
         onSuccess: (data: UpdateDeliverableResult) => {
           const dataRoomRenamed = data?.dataRoomRenamed === true;
-          if (value === "approved") {
+          if (value === "client_approved") {
             toast.success(
-              dataRoomRenamed
-                ? "Approved — Data Room file renamed to final version"
-                : "Approved"
+              "Client approved — any review objectives are now confirmed"
+            );
+          } else if (value === "approved") {
+            toast.success(
+              dataRoomRenamed ? "Advisor approved — Data Room file renamed" : "Advisor approved"
             );
           } else {
             toast(
@@ -317,14 +332,18 @@ const DeliverablesTab = () => {
           const isDownloading = downloadingIds.has(del.id);
 
           const effectiveReviewStatus: ReviewStatusValue =
-            del.review_status === "approved" ? "approved" : "pending_review";
+            del.review_status === "approved" || del.review_status === "client_approved"
+              ? del.review_status
+              : "pending_review";
 
           const timestampLabel = del.generated_at
             ? `Generated ${formatDistanceToNow(new Date(del.generated_at), { addSuffix: true })}`
             : "Not yet generated";
           const approvalLabel =
-            del.review_status === "approved" && del.approved_at
-              ? `Approved ${formatDistanceToNow(new Date(del.approved_at), { addSuffix: true })} by ${del.approved_by_name ?? "an advisor"}`
+            del.review_status === "client_approved" && del.client_approved_at
+              ? `Client approved ${formatDistanceToNow(new Date(del.client_approved_at), { addSuffix: true })}`
+              : del.review_status === "approved" && del.approved_at
+              ? `Advisor approved ${formatDistanceToNow(new Date(del.approved_at), { addSuffix: true })} by ${del.approved_by_name ?? "an advisor"}`
               : null;
 
           return (

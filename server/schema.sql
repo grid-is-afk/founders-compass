@@ -708,3 +708,44 @@ ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_by  UUID
   REFERENCES users(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- UC-07: Quarterly objectives (structured persistence)
+-- The Q-objectives a founder commits to at the quarterly review.
+-- Captured BOTH ways: AI-extracted from the review-prep doc
+-- (status 'proposed', source 'extracted') and advisor-entered/confirmed
+-- (source 'advisor'). Unblocks UC-08 (workplan maintenance) and the
+-- UC-11 orphan-objective rule.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS quarterly_objectives (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  -- Next quarter's plan often doesn't exist yet, so quarter/year are stored
+  -- directly; plan_id is backfilled when the plan is created.
+  plan_id     UUID REFERENCES quarterly_plans(id) ON DELETE SET NULL,
+  quarter     INT NOT NULL,
+  year        INT NOT NULL,
+  title       TEXT NOT NULL,
+  description TEXT,
+  status      TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (status IN ('proposed', 'confirmed', 'achieved', 'dropped')),
+  source      TEXT NOT NULL DEFAULT 'advisor'
+                CHECK (source IN ('extracted', 'advisor')),
+  sort_order  INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quarterly_objectives_client
+  ON quarterly_objectives(client_id, year, quarter);
+
+-- Link supporting tasks to an objective so UC-11 can detect objectives
+-- that have no supporting tasks (orphan-objective rule).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS objective_id UUID
+  REFERENCES quarterly_objectives(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_objective ON tasks(objective_id);
+
+-- Third review-status stage: 'client_approved' (the founder has agreed). This
+-- is the transition that promotes a review-prep's objectives to 'confirmed'.
+-- review_status is free-text TEXT (no constraint), so only audit columns are added.
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS client_approved_at TIMESTAMPTZ;
