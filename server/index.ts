@@ -491,6 +491,23 @@ app.get("{*path}", (_req, res) => {
 });
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
+
+// Apply the schema (idempotent — CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT
+// EXISTS / guarded DO blocks) on boot so every deployed environment self-migrates
+// on each release. Wrapped so a migration failure can never block the server from
+// starting — it logs and continues.
+async function applySchemaOnBoot() {
+  try {
+    const schemaSql = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+    await query(schemaSql);
+    console.log("Schema applied (boot migration).");
+  } catch (err) {
+    console.error("Boot migration failed (starting server anyway):", err);
+  }
+}
+
+await applySchemaOnBoot();
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Founders Compass running on http://localhost:${PORT}`);
 });
