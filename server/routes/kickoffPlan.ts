@@ -1,15 +1,21 @@
 import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
-import { query } from "../db.js";
+import pool, { query } from "../db.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { retrieveChunks } from "../lib/retrieval.js";
 import { getPhaseForQuarter } from "../methodology/tfo-methodology.js";
+import { computeDueDates, addDaysUTC } from "../lib/kickoffSchedule.js";
 
 const router = Router();
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+/** Default discovery window when the advisor doesn't specify one (matches the Discover phase typical duration). */
+const DEFAULT_DISCOVERY_DAYS = 90;
+
+const VALID_PRIORITIES = new Set(["high", "medium", "low"]);
 
 export interface ProposedTask {
   title: string;
@@ -19,6 +25,10 @@ export interface ProposedTask {
   phase: string;
   rationale: string;
   sourceContext: string;
+  /** Methodology activity id this task maps to — drives back-scheduling. */
+  activityId: string;
+  /** Back-scheduled due date (YYYY-MM-DD); advisor may move it before applying. */
+  dueDate: string | null;
 }
 
 interface KickoffPlanResponse {
@@ -26,11 +36,10 @@ interface KickoffPlanResponse {
   clientName: string;
   phase: "Discover";
   personalizationLevel: "full" | "methodology-only";
-}
-
-interface AlreadyHasTasksResponse {
-  alreadyHasTasks: true;
-  message: string;
+  startDate: string;
+  durationDays: number;
+  /** Number of existing kickoff-phase tasks — non-zero means applying will replace them. */
+  existingKickoffCount: number;
 }
 
 interface NoScopeMaterialsResponse {
@@ -48,29 +57,43 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       return res.status(404).json({ error: "Client not found" });
     }
 
-    // 2. Fetch client name
+    // 2. Fetch client name + onboarding date (the Q1 start the schedule anchors to)
     const clientResult = await query(
-      `SELECT name FROM clients WHERE id = $1`,
+      `SELECT name, onboarded_at FROM clients WHERE id = $1`,
       [clientId]
     );
     if (clientResult.rows.length === 0) {
       return res.status(404).json({ error: "Client not found" });
     }
     const clientName = clientResult.rows[0].name as string;
+    const onboardedAt = clientResult.rows[0].onboarded_at as string | null;
 
-    // 3. Check whether the client already has tasks
+    // 2b. Resolve the scheduling window from the request, with sensible defaults.
+    //     startDate defaults to the client's onboarded_at (else today); duration defaults to 90 days.
+    const rawDuration = (req.body as { durationDays?: unknown })?.durationDays;
+    const durationDays =
+      rawDuration === undefined || rawDuration === null
+        ? DEFAULT_DISCOVERY_DAYS
+        : Number(rawDuration);
+    if (!Number.isInteger(durationDays) || durationDays <= 0) {
+      return res.status(400).json({ error: "durationDays must be a positive integer" });
+    }
+
+    const rawStart = (req.body as { startDate?: unknown })?.startDate;
+    const startDate =
+      typeof rawStart === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawStart)
+        ? rawStart
+        : onboardedAt
+        ? new Date(onboardedAt).toISOString().slice(0, 10)
+        : new Date().toISOString().slice(0, 10);
+
+    // 3. Count existing kickoff-phase tasks. This is no longer a hard block —
+    //    regenerate is first-class — but the count tells the UI that applying will replace them.
     const taskCountResult = await query(
-      `SELECT COUNT(*)::int AS count FROM tasks WHERE client_id = $1`,
+      `SELECT COUNT(*)::int AS count FROM tasks WHERE client_id = $1 AND phase = 'kickoff'`,
       [clientId]
     );
-    const taskCount = Number(taskCountResult.rows[0]?.count ?? 0);
-    if (taskCount > 0) {
-      const response: AlreadyHasTasksResponse = {
-        alreadyHasTasks: true,
-        message: `${clientName} already has ${taskCount} task${taskCount !== 1 ? "s" : ""}. The kickoff plan generator is only available when no tasks exist yet.`,
-      };
-      return res.json(response);
-    }
+    const existingKickoffCount = Number(taskCountResult.rows[0]?.count ?? 0);
 
     // 4. Gate on scope materials — at least one uploaded document is required.
     //    Also fetch indexed chunk count in the same query for personalization level.
@@ -103,7 +126,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
     const activitiesText = discoverPhase.activities
       .map(
         (a) =>
-          `- ${a.name}: ${a.description}${a.isRequired ? " [REQUIRED]" : " [optional]"}` +
+          `- [${a.id}] ${a.name}: ${a.description}${a.isRequired ? " [REQUIRED]" : " [optional]"}` +
           `\n  Success indicator: ${a.successIndicator}`
       )
       .join("\n");
@@ -151,7 +174,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       docContext +
       `\n\n## Instructions\n` +
       `Create 6–10 specific, actionable tasks for the advisor and client to complete during Q1. ` +
-      `Each task should map to one of the Discover phase activities above. ` +
+      `Each task should map to exactly one of the Discover phase activities above. ` +
       `Prioritize required activities. ` +
       `If client documents were provided above, use them to personalise task descriptions and rationale. ` +
       `\n\nReturn a JSON array where each element has exactly these fields:\n` +
@@ -160,6 +183,7 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       `  "description": "string — 1–2 sentences explaining what needs to be done",\n` +
       `  "assignee": "advisor" or "client",\n` +
       `  "priority": "high", "medium", or "low",\n` +
+      `  "activityId": "string — the bracketed id of the Discover activity this task maps to (e.g. 'discover-master-intake')",\n` +
       `  "phase": "string — the Discover phase activity name this task belongs to (e.g. 'Master Intake')",\n` +
       `  "rationale": "string — why this task matters for this engagement",\n` +
       `  "sourceContext": "string — excerpt from client docs that informed this task, or empty string if none"\n` +
@@ -204,9 +228,11 @@ router.post("/:id/kickoff-plan", async (req, res) => {
               : item.priority === "low"
               ? ("low" as const)
               : ("medium" as const),
+          activityId: String(item.activityId ?? "").trim(),
           phase: String(item.phase ?? "Discover"),
           rationale: String(item.rationale ?? ""),
           sourceContext: String(item.sourceContext ?? ""),
+          dueDate: null as string | null,
         }));
     } catch (parseErr) {
       console.error("kickoff-plan JSON parse error:", parseErr, "\nRaw text:", rawText);
@@ -220,16 +246,122 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       });
     }
 
+    // 9. Back-schedule due dates across the discovery window, respecting prerequisites.
+    //    The server is the sole date authority — Claude only tags each task with an activityId.
+    const dueDateByActivity = computeDueDates(discoverPhase.activities, startDate, durationDays);
+    const windowEnd = addDaysUTC(startDate, durationDays);
+    // Name -> id lookup (lowercased) for fallback when Claude omits/garbles activityId.
+    const idByName = new Map(
+      discoverPhase.activities.map((a) => [a.name.toLowerCase(), a.id])
+    );
+
+    for (const task of tasks) {
+      let activityId = task.activityId;
+      if (!dueDateByActivity[activityId]) {
+        // Fallback: match the LLM's phase/name string against a known activity name.
+        const guessed = idByName.get(task.phase.trim().toLowerCase());
+        if (guessed) {
+          activityId = guessed;
+          task.activityId = guessed;
+        } else {
+          console.warn(
+            `kickoff-plan: task "${task.title}" has unresolved activityId "${task.activityId}" / phase "${task.phase}" — defaulting due date to window end`
+          );
+        }
+      }
+      task.dueDate = dueDateByActivity[activityId] ?? windowEnd;
+    }
+
     const responsePayload: KickoffPlanResponse = {
       tasks,
       clientName,
       phase: "Discover",
       personalizationLevel,
+      startDate,
+      durationDays,
+      existingKickoffCount,
     };
 
     return res.json(responsePayload);
   } catch (err) {
     console.error("POST /api/clients/:id/kickoff-plan error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/clients/:id/kickoff-plan/apply
+// Persist a reviewed kickoff plan. When `replace` is true, existing kickoff-phase
+// tasks are deleted first (regenerate). The whole operation is transactional, so a
+// failure mid-way rolls back and leaves the existing tasks untouched.
+router.post("/:id/kickoff-plan/apply", async (req, res) => {
+  const { id: clientId } = req.params;
+  const { tasks: rawTasks, replace } = (req.body ?? {}) as {
+    tasks?: unknown;
+    replace?: unknown;
+  };
+
+  if (!Array.isArray(rawTasks) || rawTasks.length === 0) {
+    return res.status(400).json({ error: "tasks must be a non-empty array" });
+  }
+
+  try {
+    if (!(await verifyClientAccess(clientId, req.user!.id, req.user!.role))) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    // Validate + normalise each incoming task into a flat insert shape.
+    const toInsert = rawTasks
+      .filter((t): t is Record<string, unknown> => t !== null && typeof t === "object")
+      .map((t) => {
+        const title = String(t.title ?? "").trim().slice(0, 200);
+        const priority = VALID_PRIORITIES.has(String(t.priority))
+          ? String(t.priority)
+          : "medium";
+        const assignee = t.assignee === "client" ? "client" : "advisor";
+        const due = t.dueDate;
+        const dueDate =
+          typeof due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : null;
+        const notes = String(t.description ?? "").trim() || null;
+        return { title, priority, assignee, dueDate, notes };
+      })
+      .filter((t) => t.title.length > 0);
+
+    if (toInsert.length === 0) {
+      return res.status(400).json({ error: "No valid tasks to apply (each needs a title)" });
+    }
+
+    const dbClient = await pool.connect();
+    try {
+      await dbClient.query("BEGIN");
+
+      if (replace === true) {
+        await dbClient.query(
+          `DELETE FROM tasks WHERE client_id = $1 AND phase = 'kickoff'`,
+          [clientId]
+        );
+      }
+
+      const created = [];
+      for (const t of toInsert) {
+        const result = await dbClient.query(
+          `INSERT INTO tasks (client_id, title, status, priority, phase, due_date, notes, assignee)
+           VALUES ($1, $2, 'todo', $3, 'kickoff', $4, $5, $6)
+           RETURNING id, client_id, title, status, priority, phase, due_date, notes, assignee, created_at`,
+          [clientId, t.title, t.priority, t.dueDate, t.notes, t.assignee]
+        );
+        created.push(result.rows[0]);
+      }
+
+      await dbClient.query("COMMIT");
+      return res.status(201).json({ tasks: created, replaced: replace === true });
+    } catch (txErr) {
+      await dbClient.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      dbClient.release();
+    }
+  } catch (err) {
+    console.error("POST /api/clients/:id/kickoff-plan/apply error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
