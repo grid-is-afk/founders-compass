@@ -1,3 +1,4 @@
+import { Brain } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useClientContext } from "@/hooks/useClientContext";
@@ -32,6 +33,10 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
 
   return (
     <div className="bg-card rounded-lg border border-border p-5">
+      <div className="mb-4 flex items-center gap-2">
+        <Brain className="h-5 w-5 text-muted-foreground" />
+        <h3 className="font-display text-lg font-semibold text-foreground">Portfolio Intelligence</h3>
+      </div>
       <Tabs defaultValue="actions">
         <TabsList className="mb-4">
           <TabsTrigger value="actions" className="flex items-center gap-1.5">
