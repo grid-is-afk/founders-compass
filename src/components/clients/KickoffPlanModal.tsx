@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertCircle, ChevronDown, ChevronRight, Trash2, Wand2 } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronDown, ChevronRight, Trash2, Wand2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +37,7 @@ function toEditableTasks(tasks: ProposedTask[]): EditableTask[] {
 // ---------------------------------------------------------------------------
 
 const PRIORITY_CYCLE: ProposedTask["priority"][] = ["high", "medium", "low"];
+const PRIORITY_RANK: Record<ProposedTask["priority"], number> = { high: 0, medium: 1, low: 2 };
 const ASSIGNEE_LABELS: Record<ProposedTask["assignee"], string> = {
   advisor: "Advisor",
   client: "Client",
@@ -57,6 +58,7 @@ interface TaskCardProps {
   onTitleChange: (value: string) => void;
   onToggleAssignee: () => void;
   onCyclePriority: () => void;
+  onDueDateChange: (value: string) => void;
   onToggleRationale: () => void;
   onRemove: () => void;
 }
@@ -67,6 +69,7 @@ function TaskCard({
   onTitleChange,
   onToggleAssignee,
   onCyclePriority,
+  onDueDateChange,
   onToggleRationale,
   onRemove,
 }: TaskCardProps) {
@@ -140,6 +143,22 @@ function TaskCard({
             >
               {task.priority}
             </button>
+
+            {/* Due date — back-scheduled from prerequisites; advisor can move it */}
+            <label className="flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarDays className="w-3.5 h-3.5" />
+              <input
+                type="date"
+                value={task.dueDate ?? ""}
+                onChange={(e) => onDueDateChange(e.target.value)}
+                disabled={!task.included}
+                className={cn(
+                  "rounded border border-border bg-background px-1.5 py-0.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring",
+                  !task.included && "cursor-not-allowed opacity-60"
+                )}
+                aria-label="Due date"
+              />
+            </label>
           </div>
 
           {/* Description */}
@@ -229,6 +248,18 @@ export function KickoffPlanModal({
   const approvedTasks = editableTasks.filter((t) => t.included);
   const approvedCount = approvedTasks.length;
 
+  // Render in schedule order: by due date ascending (date-less last), then priority.
+  const sortedTasks = [...editableTasks].sort((a, b) => {
+    if (a.dueDate && b.dueDate) {
+      if (a.dueDate !== b.dueDate) return a.dueDate < b.dueDate ? -1 : 1;
+    } else if (a.dueDate) {
+      return -1;
+    } else if (b.dueDate) {
+      return 1;
+    }
+    return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+  });
+
   // ---------------------------------------------------------------------------
   // Mutation helpers — all produce a new array reference (no mutation in place)
   // ---------------------------------------------------------------------------
@@ -292,7 +323,7 @@ export function KickoffPlanModal({
               All tasks have been removed. Add tasks back or cancel.
             </p>
           ) : (
-            editableTasks.map((task) => (
+            sortedTasks.map((task) => (
               <TaskCard
                 key={task._key}
                 task={task}
@@ -312,6 +343,9 @@ export function KickoffPlanModal({
                   const next = PRIORITY_CYCLE[(idx + 1) % PRIORITY_CYCLE.length];
                   updateTask(task._key, { priority: next });
                 }}
+                onDueDateChange={(value) =>
+                  updateTask(task._key, { dueDate: value || null })
+                }
                 onToggleRationale={() =>
                   updateTask(task._key, {
                     rationaleExpanded: !task.rationaleExpanded,

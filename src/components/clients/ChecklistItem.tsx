@@ -27,9 +27,18 @@ export interface DocumentOption {
 
 const SKIP_REASONS = ["Not required", "Other (please specify)"] as const;
 
+/** Format a YYYY-MM-DD due date as a short "Mar 5" chip. Parsed as local midnight to avoid tz drift. */
+function formatDueDate(dueDate: string): string {
+  const d = new Date(`${dueDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dueDate;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 interface ChecklistItemProps {
   label: string;
   category?: string;
+  /** Optional due date (YYYY-MM-DD) — rendered as a small chip beside the label. */
+  dueDate?: string | null;
   isDone: boolean;
   isSkipped?: boolean;
   skipReason?: string | null;
@@ -55,6 +64,7 @@ interface ChecklistItemProps {
 export function ChecklistItem({
   label,
   category,
+  dueDate,
   isDone,
   isSkipped = false,
   skipReason,
@@ -181,6 +191,13 @@ export function ChecklistItem({
               <p className="text-[10px] text-muted-foreground/60">{category}</p>
             ) : null}
           </div>
+
+          {/* Due date chip */}
+          {dueDate && !isSkipped && (
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums flex-shrink-0 whitespace-nowrap">
+              {formatDueDate(dueDate)}
+            </span>
+          )}
 
           {/* Subtask count */}
           {hasSubtasks && !isSkipped && (

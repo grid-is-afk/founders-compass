@@ -10,9 +10,13 @@ export interface ProposedTask {
   description: string;
   assignee: "advisor" | "client";
   priority: "high" | "medium" | "low";
+  /** Methodology activity id this task maps to. */
+  activityId: string;
   phase: string;
   rationale: string;
   sourceContext: string;
+  /** Back-scheduled due date (YYYY-MM-DD); advisor may move it before applying. */
+  dueDate: string | null;
 }
 
 export interface KickoffPlanResult {
@@ -20,16 +24,20 @@ export interface KickoffPlanResult {
   clientName: string;
   phase: "Discover";
   personalizationLevel: "full" | "methodology-only";
-}
-
-export interface KickoffPlanAlreadyExists {
-  alreadyHasTasks: true;
-  message: string;
+  startDate: string;
+  durationDays: number;
+  existingKickoffCount: number;
 }
 
 export interface KickoffPlanNoScopeMaterials {
   noScopeMaterials: true;
   message: string;
+}
+
+/** Options passed to the kickoff-plan generator (scheduling window). */
+export interface GenerateKickoffPlanInput {
+  startDate?: string;
+  durationDays?: number;
 }
 
 export function useClientTasks(clientId: string) {
@@ -107,15 +115,28 @@ export function useDeleteTask() {
 
 export function useGenerateKickoffPlan(clientId: string) {
   return useMutation({
-    mutationFn: async (): Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials> => {
+    mutationFn: async (
+      input: GenerateKickoffPlanInput = {}
+    ): Promise<KickoffPlanResult | KickoffPlanNoScopeMaterials> => {
       const res = await apiFetch(`/clients/${clientId}/kickoff-plan`, {
         method: "POST",
+        body: JSON.stringify(input),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "Request failed" }));
         throw new Error((body as { error?: string }).error ?? `API error ${res.status}`);
       }
-      return res.json() as Promise<KickoffPlanResult | KickoffPlanAlreadyExists | KickoffPlanNoScopeMaterials>;
+      return res.json() as Promise<KickoffPlanResult | KickoffPlanNoScopeMaterials>;
     },
+  });
+}
+
+/** Persist a reviewed kickoff plan in one transactional call. `replace` regenerates. */
+export function useApplyKickoffPlan(clientId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { tasks: ProposedTask[]; replace?: boolean }) =>
+      api.post(`/clients/${clientId}/kickoff-plan/apply`, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks", clientId] }),
   });
 }

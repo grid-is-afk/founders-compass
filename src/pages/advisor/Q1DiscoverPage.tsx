@@ -16,12 +16,11 @@ import { ReviewWrapPanel } from "@/components/clients/ReviewWrapPanel";
 import { KickoffPlanModal } from "@/components/clients/KickoffPlanModal";
 import {
   useClientTasks,
-  useCreateTask,
   useGenerateKickoffPlan,
+  useApplyKickoffPlan,
   type ProposedTask,
 } from "@/hooks/useTasks";
 import { useClientDocuments } from "@/hooks/useDocuments";
-import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 
 // ---------------------------------------------------------------------------
@@ -48,7 +47,6 @@ interface WorkspaceContext {
 export default function Q1DiscoverPage() {
   const { client } = useOutletContext<WorkspaceContext>();
   const updateClient = useUpdateClient();
-  const qc = useQueryClient();
 
   // Local phase drives which panel is visible. Defaults to DB value or "kickoff".
   const initialPhase = (client.q1_phase as Q1PhaseId) ?? "kickoff";
@@ -61,13 +59,18 @@ export default function Q1DiscoverPage() {
   const [kickoffPersonalizationLevel, setKickoffPersonalizationLevel] = useState<
     "full" | "methodology-only" | undefined
   >(undefined);
+  // Whether applying the reviewed plan should replace existing kickoff tasks
+  // (true when the client already had kickoff tasks — i.e. a regenerate).
+  const [kickoffWillReplace, setKickoffWillReplace] = useState(false);
+  // Discovery window length (days) used for back-scheduling on first generation.
+  const [discoveryDays, setDiscoveryDays] = useState(90);
 
   // Hooks for the kickoff plan feature
   const { data: tasksRaw = [] } = useClientTasks(client.id);
   const { data: documents } = useClientDocuments(client.id);
   const docCount = documents?.length ?? 0;
   const generateKickoffPlan = useGenerateKickoffPlan(client.id);
-  const createTask = useCreateTask();
+  const applyKickoffPlan = useApplyKickoffPlan(client.id);
 
   // FIX-5: Keep local state in sync if the server record is refreshed externally
   // (e.g. the parent workspace invalidates the client query after a phase advance).
@@ -98,16 +101,17 @@ export default function Q1DiscoverPage() {
     if (nextPhase) setActivePhase(nextPhase);
   };
 
-  // True when the client has no tasks at all (across any phase)
-  const hasTasks = (tasksRaw as unknown[]).length > 0;
+  // True when the client already has kickoff-phase tasks — drives whether the
+  // first-time generate card is shown vs. the in-panel regenerate affordance.
+  const kickoffTaskCount = (
+    tasksRaw as Array<{ phase?: string | null }>
+  ).filter((t) => t.phase === "kickoff").length;
+  const hasKickoffTasks = kickoffTaskCount > 0;
 
-  const handleGenerateKickoffPlan = async () => {
+  // Shared by the first-time "Generate" card and the in-panel "Regenerate" action.
+  const handleGenerateKickoffPlan = async (durationDays: number) => {
     try {
-      const result = await generateKickoffPlan.mutateAsync();
-      if ("alreadyHasTasks" in result && result.alreadyHasTasks) {
-        toast.info(result.message);
-        return;
-      }
+      const result = await generateKickoffPlan.mutateAsync({ durationDays });
       if ("noScopeMaterials" in result && result.noScopeMaterials) {
         toast.info(result.message);
         return;
@@ -115,6 +119,7 @@ export default function Q1DiscoverPage() {
       if ("tasks" in result) {
         setKickoffTasks(result.tasks);
         setKickoffPersonalizationLevel(result.personalizationLevel);
+        setKickoffWillReplace(result.existingKickoffCount > 0);
         setShowKickoffModal(true);
       }
     } catch (err) {
@@ -126,40 +131,24 @@ export default function Q1DiscoverPage() {
 
   const handleApproveKickoffPlan = async (approvedTasks: ProposedTask[]) => {
     setIsCreatingTasks(true);
-    let successCount = 0;
-    let failCount = 0;
-
-    for (const task of approvedTasks) {
-      try {
-        await createTask.mutateAsync({
-          client_id: client.id,
-          title: task.title,
-          assignee: task.assignee,
-          priority: task.priority,
-          phase: "kickoff",
-          notes: task.description || null,
-          status: "todo",
-        });
-        successCount++;
-      } catch {
-        failCount++;
-      }
-    }
-
-    // Invalidate so all panels pick up the new tasks
-    await qc.invalidateQueries({ queryKey: ["tasks", client.id] });
-
-    setIsCreatingTasks(false);
-    setShowKickoffModal(false);
-    setKickoffTasks(null);
-    setKickoffPersonalizationLevel(undefined);
-
-    if (failCount === 0) {
-      toast.success(`Kickoff plan created — ${successCount} task${successCount !== 1 ? "s" : ""} added`);
-    } else {
-      toast.warning(
-        `${successCount} task${successCount !== 1 ? "s" : ""} added, ${failCount} failed. Please try again for the remaining items.`
+    try {
+      const result = await applyKickoffPlan.mutateAsync({
+        tasks: approvedTasks,
+        replace: kickoffWillReplace,
+      });
+      const count = Array.isArray(result?.tasks) ? result.tasks.length : approvedTasks.length;
+      setShowKickoffModal(false);
+      setKickoffTasks(null);
+      setKickoffPersonalizationLevel(undefined);
+      toast.success(
+        `${kickoffWillReplace ? "Kickoff plan regenerated" : "Kickoff plan created"} — ${count} task${count !== 1 ? "s" : ""}`
       );
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to save the kickoff plan. Please try again."
+      );
+    } finally {
+      setIsCreatingTasks(false);
     }
   };
 
@@ -171,6 +160,8 @@ export default function Q1DiscoverPage() {
             clientId={client.id}
             nextPhase={nextPhase}
             onPhaseComplete={handlePhaseComplete}
+            onRegenerate={handleGenerateKickoffPlan}
+            isRegenerating={generateKickoffPlan.isPending}
           />
         );
       case "prove":
@@ -311,8 +302,9 @@ export default function Q1DiscoverPage() {
       {/* Divider */}
       <div className="border-t border-border/60" />
 
-      {/* Kickoff plan generator — shown only when no tasks exist yet */}
-      {!hasTasks && (
+      {/* Kickoff plan generator — shown only when no kickoff tasks exist yet.
+          Once a plan exists, regeneration lives inside the kickoff panel below. */}
+      {!hasKickoffTasks && (
         <div className="flex items-center justify-between rounded-lg border border-dashed border-violet-300/60 bg-violet-50/30 px-4 py-3">
           {docCount === 0 ? (
             <>
@@ -350,24 +342,39 @@ export default function Q1DiscoverPage() {
                   Generate an AI-powered Q1 kickoff plan based on the TFO Discover methodology and this client's uploaded documents.
                 </p>
               </div>
-              <Button
-                size="sm"
-                onClick={handleGenerateKickoffPlan}
-                disabled={generateKickoffPlan.isPending}
-                className="ml-4 shrink-0 gap-1.5"
-              >
-                {generateKickoffPlan.isPending ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-3.5 h-3.5" />
-                    Generate Kickoff Plan
-                  </>
-                )}
-              </Button>
+              <div className="ml-4 shrink-0 flex items-center gap-3">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Discovery window
+                  <input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={discoveryDays}
+                    onChange={(e) => setDiscoveryDays(Math.max(1, Math.floor(Number(e.target.value) || 0)))}
+                    className="w-16 rounded border border-border bg-background px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    aria-label="Discovery window in days"
+                  />
+                  days
+                </label>
+                <Button
+                  size="sm"
+                  onClick={() => handleGenerateKickoffPlan(discoveryDays)}
+                  disabled={generateKickoffPlan.isPending}
+                  className="gap-1.5"
+                >
+                  {generateKickoffPlan.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Wand2 className="w-3.5 h-3.5" />
+                      Generate Kickoff Plan
+                    </>
+                  )}
+                </Button>
+              </div>
             </>
           )}
         </div>
