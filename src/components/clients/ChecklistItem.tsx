@@ -39,6 +39,8 @@ interface ChecklistItemProps {
   category?: string;
   /** Optional due date (YYYY-MM-DD) — rendered as a small chip beside the label. */
   dueDate?: string | null;
+  /** Optional description / rationale — rendered as a muted block under the row. */
+  description?: string | null;
   isDone: boolean;
   isSkipped?: boolean;
   skipReason?: string | null;
@@ -65,6 +67,7 @@ export function ChecklistItem({
   label,
   category,
   dueDate,
+  description,
   isDone,
   isSkipped = false,
   skipReason,
@@ -313,6 +316,18 @@ export function ChecklistItem({
           )}
         </div>
       </div>
+
+      {/* Description / rationale — muted block under the row (non-interactive) */}
+      {description && (
+        <p
+          className={cn(
+            "pl-10 pr-4 pb-3 -mt-1 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground",
+            isSkipped && "opacity-60"
+          )}
+        >
+          {description}
+        </p>
+      )}
 
       {/* Skip form — inline, below the row */}
       {showSkipForm && (
