@@ -432,7 +432,7 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="todo">
+          <TabsContent value="todo" className="max-h-[460px] overflow-y-auto pr-1">
             {todo.length === 0 ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
@@ -448,7 +448,7 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
             )}
           </TabsContent>
 
-          <TabsContent value="achieved">
+          <TabsContent value="achieved" className="max-h-[460px] overflow-y-auto pr-1">
             {achieved.length === 0 ? (
               <p className="text-sm text-muted-foreground">No achieved objectives yet.</p>
             ) : (
@@ -456,7 +456,7 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
             )}
           </TabsContent>
 
-          <TabsContent value="dropped">
+          <TabsContent value="dropped" className="max-h-[460px] overflow-y-auto pr-1">
             {dropped.length === 0 ? (
               <p className="text-sm text-muted-foreground">No dropped objectives.</p>
             ) : (

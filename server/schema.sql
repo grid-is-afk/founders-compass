@@ -747,5 +747,13 @@ CREATE INDEX IF NOT EXISTS idx_tasks_objective ON tasks(objective_id);
 
 -- Third review-status stage: 'client_approved' (the founder has agreed). This
 -- is the transition that promotes a review-prep's objectives to 'confirmed'.
--- review_status is free-text TEXT (no constraint), so only audit columns are added.
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS client_approved_at TIMESTAMPTZ;
+
+-- An older migration left a CHECK constraint allowing only pending_review/approved,
+-- which rejected the new 'client_approved' stage. Widen it to all three stages.
+DO $$ BEGIN
+  ALTER TABLE deliverables DROP CONSTRAINT IF EXISTS deliverables_review_status_check;
+  ALTER TABLE deliverables ADD CONSTRAINT deliverables_review_status_check
+    CHECK (review_status IN ('pending_review', 'approved', 'client_approved'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
