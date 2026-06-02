@@ -266,9 +266,29 @@ router.post("/:id/kickoff-plan", async (req, res) => {
       });
     }
 
-    // 9. Back-schedule due dates across the discovery window, respecting prerequisites.
-    //    The server is the sole date authority — Claude only tags each task with an activityId.
-    const dueDateByActivity = computeDueDates(discoverPhase.activities, startDate, durationDays);
+    // 9. Back-schedule due dates by each activity's canonical Chapter-1 section, scaled to the
+    //    discovery window. The section timeline (q1_phase_config) is the single source of truth;
+    //    the server is the sole date authority — Claude only tags each task with an activityId.
+    const phaseCfg = await query(`SELECT phase, day_end FROM q1_phase_config`);
+    const sectionDayEnds: Record<string, number> = {};
+    for (const row of phaseCfg.rows) {
+      sectionDayEnds[row.phase as string] = Number(row.day_end);
+    }
+    // Fallback to the canonical 90-day windows if the table is empty (defensive).
+    if (Object.keys(sectionDayEnds).length === 0) {
+      Object.assign(sectionDayEnds, {
+        kickoff: 7, prove: 28, diagnose: 49, design_tfo: 70, design_outside: 87, review: 90,
+      });
+    }
+    const methodologyTotalDays = Math.max(...Object.values(sectionDayEnds), 1);
+
+    const dueDateByActivity = computeDueDates(
+      discoverPhase.activities,
+      sectionDayEnds,
+      methodologyTotalDays,
+      startDate,
+      durationDays,
+    );
     const windowEnd = addDaysUTC(startDate, durationDays);
     // Name -> id lookup (lowercased) for fallback when Claude omits/garbles activityId.
     const idByName = new Map(

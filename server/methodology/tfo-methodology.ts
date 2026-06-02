@@ -17,7 +17,13 @@ export interface MethodologyActivity {
   expectedDeliverable?: string; // matches deliverable types in DB
   isRequired: boolean;
   successIndicator: string;
-  prerequisites?: string[];     // activity ids that must be due before this one (Miro ordering)
+  /**
+   * Canonical Chapter-1 section this activity belongs to (a `q1_phase_config.phase` id:
+   * kickoff | prove | diagnose | design_tfo | design_outside | review). Drives back-scheduling —
+   * the section's position in the Q1 timeline determines the activity's due date. Mirrors the
+   * TFO Client Journey (Miro) and the Chapter-1 panels (Prove/Diagnose/Design TFO).
+   */
+  section?: string;
 }
 
 export interface MethodologyPhase {
@@ -53,8 +59,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "FEI report completed and shared; exposure score reviewed with founder; top 3 risks documented.",
-        // Pre-engagement risk diagnostic — runs before the engagement begins, so no prerequisite.
-        prerequisites: [],
+        section: "diagnose",
       },
       {
         id: "discover-six-cs",
@@ -65,8 +70,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "Six Cs profile scored and documented; gaps identified relative to capital alignment objectives.",
-        // Consumes intake data to score capital readiness.
-        prerequisites: ["discover-master-intake"],
+        section: "prove",
       },
       {
         id: "discover-master-intake",
@@ -78,8 +82,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "All three intake categories completed (business, personal, financial); data verified with founder.",
-        // Single source of truth for all diagnostic instruments — the root activity.
-        prerequisites: [],
+        section: "prove",
       },
       {
         id: "discover-founder-matrix",
@@ -91,8 +94,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "Matrix completed and scored; founder's primary motivators and risk profile documented.",
-        // Maps values/motivations captured during intake.
-        prerequisites: ["discover-master-intake"],
+        section: "diagnose",
       },
       {
         id: "discover-founder-snapshot",
@@ -104,8 +106,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "Snapshot completed; baseline scores recorded for all five measurement dimensions.",
-        // Baseline coordinates drawn from the verified intake data.
-        prerequisites: ["discover-master-intake"],
+        section: "diagnose",
       },
       {
         id: "discover-six-keys-baseline",
@@ -117,8 +118,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "All six keys scored; baseline scorecard reviewed with founder; delta targets set for Q2.",
-        // Initial scoring depends on the intake data set.
-        prerequisites: ["discover-master-intake"],
+        section: "diagnose",
       },
       {
         id: "discover-csa",
@@ -131,15 +131,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "CSA document drafted, reviewed with founder, and approved as the engagement roadmap.",
-        // "Designed after all diagnostic instruments are complete" — the sink activity.
-        prerequisites: [
-          "discover-fei",
-          "discover-six-cs",
-          "discover-founder-matrix",
-          "discover-founder-snapshot",
-          "discover-six-keys-baseline",
-          "discover-wealth-gap",
-        ],
+        section: "design_tfo",
       },
       {
         id: "discover-wealth-gap",
@@ -151,8 +143,7 @@ export const TFO_METHODOLOGY: MethodologyPhase[] = [
         isRequired: true,
         successIndicator:
           "Gap dollar amount calculated; economic certainty target agreed upon with founder.",
-        // Anchors the economic certainty target; needs intake financials + Six Cs capital readiness.
-        prerequisites: ["discover-master-intake", "discover-six-cs"],
+        section: "design_tfo",
       },
     ],
     keyQuestions: [
