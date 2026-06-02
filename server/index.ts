@@ -29,6 +29,7 @@ import deliverableRoutes from "./routes/deliverables.js";
 import meetingRoutes from "./routes/meetings.js";
 import documentRoutes from "./routes/documents.js";
 import quarterlyPlanRoutes from "./routes/quarterly-plans.js";
+import quarterlyObjectiveRoutes from "./routes/quarterlyObjectives.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import activityRoutes from "./routes/activity.js";
 import exposureIndexRoutes from "./routes/exposureIndex.js";
@@ -125,6 +126,7 @@ app.use("/api/deliverables", authMiddleware, deliverableRoutes);
 app.use("/api/meetings", authMiddleware, meetingRoutes);
 app.use("/api/documents", authMiddleware, documentRoutes);
 app.use("/api/quarterly-plans", authMiddleware, quarterlyPlanRoutes);
+app.use("/api/quarterly-objectives", authMiddleware, quarterlyObjectiveRoutes);
 app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -354,7 +356,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
                 } else {
                   const liveReviewStatus = updatedRow.review_status as
                     | "pending_review"
-                    | "approved";
+                    | "approved"
+                    | "client_approved";
 
                   const clientResult = await query(
                     "SELECT name FROM clients WHERE id = $1",

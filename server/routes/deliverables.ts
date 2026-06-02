@@ -7,6 +7,11 @@ import { saveReportToDataRoom } from "../lib/saveReport.js";
 import type { SaveReportResult } from "../lib/saveReport.js";
 import { getPhaseForQuarter } from "../methodology/tfo-methodology.js";
 import { buildDeliverableDocx, buildDeliverableFilename } from "../lib/deliverableDocx.js";
+import {
+  extractObjectivesFromMarkdown,
+  syncExtractedObjectives,
+  confirmExtractedObjectives,
+} from "../lib/quarterlyObjectives.js";
 
 const router = Router();
 
@@ -715,7 +720,30 @@ The document MUST follow this exact structure:
       };
     }
 
-    return res.status(201).json({ deliverable: savedRow, dataRoom });
+    // -----------------------------------------------------------------------
+    // 12. UC-07 — extract the "Recommended Objectives for Q{n+1}" section into
+    //     structured quarterly_objectives rows (status 'proposed'). The doc is
+    //     unchanged; this is a parallel structured copy the advisor confirms
+    //     post-meeting. Non-fatal — falls back to manual entry on any error.
+    // -----------------------------------------------------------------------
+    let objectivesExtracted = 0;
+    try {
+      const rawNext = effectiveQuarter + 1;
+      const targetQuarter = rawNext > 4 ? 1 : rawNext;
+      const baseYear = client.current_year ?? new Date().getFullYear();
+      const targetYear = rawNext > 4 ? baseYear + 1 : baseYear;
+      const titles = extractObjectivesFromMarkdown(docContent);
+      objectivesExtracted = await syncExtractedObjectives({
+        clientId,
+        quarter: targetQuarter,
+        year: targetYear,
+        titles,
+      });
+    } catch (objErr) {
+      console.error("Objective extraction failed for generate-review-prep:", objErr);
+    }
+
+    return res.status(201).json({ deliverable: savedRow, dataRoom, objectivesExtracted });
   } catch (err) {
     console.error("POST /deliverables/generate-review-prep error:", err);
     return res.status(500).json({ error: "Review prep generation failed" });
@@ -837,9 +865,11 @@ router.patch("/:id", async (req, res) => {
     const setClauses = keys.map((k, i) => `${k} = $${i + 1}`);
     const values = keys.map((k) => fields[k]);
 
-    // Audit trail: stamp approved_at + approved_by on a transition into
-    // 'approved' (skip if already approved — preserve the original approval
-    // history). Clear them on a transition into 'pending_review'.
+    // Audit trail across the three review stages:
+    //   pending_review → approved (advisor) → client_approved (founder agreed)
+    // Stamp approved_at/approved_by on advisor approval; client_approved_at on
+    // client approval (back-filling advisor approval if it was skipped). A
+    // transition back to pending_review clears every stamp.
     const currentReviewStatus = dResult.rows[0].review_status as string | null;
     if ("review_status" in fields) {
       const newStatus = fields.review_status as string;
@@ -847,9 +877,16 @@ router.patch("/:id", async (req, res) => {
         setClauses.push(`approved_at = NOW()`);
         setClauses.push(`approved_by = $${values.length + 1}`);
         values.push(req.user!.id);
+      } else if (newStatus === "client_approved" && currentReviewStatus !== "client_approved") {
+        setClauses.push(`client_approved_at = NOW()`);
+        // Client approval implies advisor approval — back-fill if missing.
+        setClauses.push(`approved_at = COALESCE(approved_at, NOW())`);
+        setClauses.push(`approved_by = COALESCE(approved_by, $${values.length + 1})`);
+        values.push(req.user!.id);
       } else if (newStatus === "pending_review") {
         setClauses.push(`approved_at = NULL`);
         setClauses.push(`approved_by = NULL`);
+        setClauses.push(`client_approved_at = NULL`);
       }
     }
 
@@ -860,7 +897,9 @@ router.patch("/:id", async (req, res) => {
     );
     const updatedRow = result.rows[0];
 
-    // If review_status was changed, rename the linked Data Room document
+    // If review_status was changed, rename the linked Data Room document to
+    // reflect the stage. client_approved is the true-final clean name; advisor
+    // 'approved' is an interim "(Advisor Approved)"; pending keeps "(Pending Review)".
     let dataRoomRenamed = false;
     if ("review_status" in fields) {
       const newStatus = fields.review_status as string;
@@ -870,16 +909,17 @@ router.patch("/:id", async (req, res) => {
       );
       if (docResult.rows.length > 0) {
         const docRow = docResult.rows[0] as { id: string; name: string };
+        const extMatch = docRow.name.match(/(\.[^.]+)$/);
+        const ext = extMatch ? extMatch[1] : "";
+        const baseName = ext ? docRow.name.slice(0, -ext.length) : docRow.name;
+        // Strip any known stage suffix before re-applying the current one.
+        const cleanBase = baseName.replace(/ \((Pending Review|Advisor Approved)\)$/, "");
         let newName: string;
-        if (newStatus === "approved") {
-          // Strip "(Pending Review)" suffix if present
-          newName = docRow.name.replace(/ \(Pending Review\)(\.[^.]+)$/, "$1");
+        if (newStatus === "client_approved") {
+          newName = `${cleanBase}${ext}`; // final clean name
+        } else if (newStatus === "approved") {
+          newName = `${cleanBase} (Advisor Approved)${ext}`;
         } else {
-          // pending_review — ensure suffix is present (don't double-append)
-          const hasExtMatch = docRow.name.match(/(\.[^.]+)$/);
-          const ext = hasExtMatch ? hasExtMatch[1] : "";
-          const baseName = ext ? docRow.name.slice(0, -ext.length) : docRow.name;
-          const cleanBase = baseName.replace(/ \(Pending Review\)$/, "");
           newName = `${cleanBase} (Pending Review)${ext}`;
         }
         await query(
@@ -887,6 +927,40 @@ router.patch("/:id", async (req, res) => {
           [newName, docRow.id]
         );
         dataRoomRenamed = true;
+      }
+    }
+
+    // UC-07: when a quarterly review-prep deliverable becomes CLIENT-approved, the
+    // founder has agreed — promote its objectives to 'confirmed', re-reading the
+    // final (possibly advisor-edited) content. Non-fatal: an extraction failure
+    // never blocks the status change.
+    if (
+      "review_status" in fields &&
+      fields.review_status === "client_approved" &&
+      currentReviewStatus !== "client_approved"
+    ) {
+      try {
+        const titleMatch = String(updatedRow.title).match(/Q(\d+)\s+Review Prep/i);
+        if (titleMatch && updatedRow.content) {
+          const reviewQuarter = parseInt(titleMatch[1], 10);
+          const rawNext = reviewQuarter + 1;
+          const targetQuarter = rawNext > 4 ? 1 : rawNext;
+          const clientRow = await query(
+            "SELECT current_year FROM clients WHERE id = $1",
+            [updatedRow.client_id]
+          );
+          const baseYear = clientRow.rows[0]?.current_year ?? new Date().getFullYear();
+          const targetYear = rawNext > 4 ? baseYear + 1 : baseYear;
+          const titles = extractObjectivesFromMarkdown(String(updatedRow.content));
+          await confirmExtractedObjectives({
+            clientId: updatedRow.client_id,
+            quarter: targetQuarter,
+            year: targetYear,
+            titles,
+          });
+        }
+      } catch (objErr) {
+        console.error("Objective confirmation on client_approved failed:", objErr);
       }
     }
 

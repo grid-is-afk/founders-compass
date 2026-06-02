@@ -10,8 +10,8 @@ export interface SaveReportOptions {
   extension: string;
   /** When provided, enables UPSERT behaviour — one Data Room row per deliverable. */
   deliverableId?: string;
-  /** Controls the "(Pending Review)" filename suffix. */
-  reviewStatus?: "pending_review" | "approved" | null;
+  /** Controls the stage filename suffix (Pending Review / Advisor Approved / final). */
+  reviewStatus?: "pending_review" | "approved" | "client_approved" | null;
   category?: string;
 }
 
@@ -49,7 +49,11 @@ export async function saveReportToDataRoom(
   } = options;
 
   const suffix =
-    reviewStatus === "pending_review" ? " (Pending Review)" : "";
+    reviewStatus === "pending_review"
+      ? " (Pending Review)"
+      : reviewStatus === "approved"
+      ? " (Advisor Approved)"
+      : ""; // client_approved or null → final clean name
   const fileName = `${baseTitle}${suffix}.${extension}`;
 
   const sizeLabel =
