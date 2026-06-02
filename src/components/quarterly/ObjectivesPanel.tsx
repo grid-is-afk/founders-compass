@@ -13,12 +13,14 @@ import {
   Link2,
   Unlink,
   AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,7 +38,7 @@ import {
 } from "@/hooks/useQuarterlyObjectives";
 
 // ---------------------------------------------------------------------------
-// Status presentation — uses built-in Badge variants only (no custom palette).
+// Status presentation — built-in Badge variants only (no custom palette).
 // ---------------------------------------------------------------------------
 const STATUS_META: Record<
   ObjectiveStatus,
@@ -60,8 +62,16 @@ interface TaskLite {
   objective_id: string | null;
 }
 
+// A small status dot for a linked/linkable task.
+function taskStatusDot(status: string): string {
+  if (status === "done") return "bg-emerald-500";
+  if (status === "in_progress") return "bg-amber-500";
+  if (status === "blocked") return "bg-red-500";
+  return "bg-muted-foreground/40"; // todo
+}
+
 // ---------------------------------------------------------------------------
-// Single objective row (incl. supporting-task links — UC-08)
+// Single objective row — actions adapt to status (To do / Achieved / Dropped)
 // ---------------------------------------------------------------------------
 function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite[] }) {
   const update = useUpdateObjective();
@@ -71,11 +81,13 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
   const [draft, setDraft] = useState(obj.title);
 
   const meta = STATUS_META[obj.status];
-  const isDropped = obj.status === "dropped";
+  const isActive = obj.status === "proposed" || obj.status === "confirmed";
 
   const linkedTasks = tasks.filter((t) => t.objective_id === obj.id);
-  const unlinkedTasks = tasks.filter((t) => !t.objective_id);
-  // A confirmed objective with no supporting tasks is exactly what UC-11 flags.
+  // Only active, unlinked tasks are linkable (hide done/skipped noise).
+  const linkableTasks = tasks.filter(
+    (t) => !t.objective_id && t.status !== "done" && t.status !== "skipped"
+  );
   const isOrphan = obj.status === "confirmed" && linkedTasks.length === 0;
 
   const setStatus = (status: ObjectiveStatus) =>
@@ -115,10 +127,10 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
     <div
       className={cn(
         "rounded-lg border border-border bg-card px-4 py-3",
-        isDropped && "opacity-60"
+        obj.status === "dropped" && "opacity-60"
       )}
     >
-      {/* Top row: objective title + actions */}
+      {/* Top row: title + status-aware actions */}
       <div className="group flex items-start gap-3">
         <Target className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
 
@@ -152,7 +164,12 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
             </div>
           ) : (
             <>
-              <p className={cn("text-sm text-foreground", isDropped && "line-through")}>
+              <p
+                className={cn(
+                  "text-sm text-foreground",
+                  obj.status === "dropped" && "line-through"
+                )}
+              >
                 {obj.title}
               </p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -186,22 +203,34 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
                 <Trophy className="h-3.5 w-3.5" /> Achieved
               </Button>
             )}
-            {!isDropped && obj.status !== "achieved" && (
+            {isActive && (
               <Button size="sm" variant="ghost" className="h-7 gap-1 px-2" onClick={() => setStatus("dropped")}>
                 <Ban className="h-3.5 w-3.5" /> Drop
               </Button>
             )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-7 gap-1 px-2"
-              onClick={() => {
-                setDraft(obj.title);
-                setEditing(true);
-              }}
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </Button>
+            {obj.status === "achieved" && (
+              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2" onClick={() => setStatus("confirmed")}>
+                <RotateCcw className="h-3.5 w-3.5" /> Reopen
+              </Button>
+            )}
+            {obj.status === "dropped" && (
+              <Button size="sm" variant="ghost" className="h-7 gap-1 px-2" onClick={() => setStatus("confirmed")}>
+                <RotateCcw className="h-3.5 w-3.5" /> Restore
+              </Button>
+            )}
+            {isActive && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 gap-1 px-2"
+                onClick={() => {
+                  setDraft(obj.title);
+                  setEditing(true);
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -219,17 +248,12 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
         )}
       </div>
 
-      {/* Supporting tasks — only meaningful once the objective isn't dropped */}
-      {!editing && !isDropped && (
+      {/* Supporting tasks + linking — only for active objectives (To do tab) */}
+      {!editing && isActive && (
         <div className="mt-2 space-y-1.5 pl-7">
           {linkedTasks.map((t) => (
             <div key={t.id} className="group/task flex items-center gap-2 text-xs text-muted-foreground">
-              <span
-                className={cn(
-                  "h-1.5 w-1.5 shrink-0 rounded-full",
-                  t.status === "done" ? "bg-emerald-500" : "bg-muted-foreground/40"
-                )}
-              />
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", taskStatusDot(t.status))} />
               <span className={cn("truncate text-foreground/80", t.status === "done" && "line-through")}>
                 {t.title}
               </span>
@@ -248,16 +272,17 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
                 size="sm"
                 variant="ghost"
                 className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-                disabled={unlinkedTasks.length === 0}
+                disabled={linkableTasks.length === 0}
               >
                 <Link2 className="h-3.5 w-3.5" />
-                {unlinkedTasks.length === 0 ? "No unlinked tasks" : "Link task"}
+                {linkableTasks.length === 0 ? "No tasks to link" : "Link task"}
               </Button>
             </DropdownMenuTrigger>
-            {unlinkedTasks.length > 0 && (
+            {linkableTasks.length > 0 && (
               <DropdownMenuContent align="start" className="max-h-64 w-72 overflow-y-auto">
-                {unlinkedTasks.map((t) => (
-                  <DropdownMenuItem key={t.id} onClick={() => linkTask(t.id)} className="text-xs">
+                {linkableTasks.map((t) => (
+                  <DropdownMenuItem key={t.id} onClick={() => linkTask(t.id)} className="gap-2 text-xs">
+                    <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", taskStatusDot(t.status))} />
                     <span className="truncate">{t.title}</span>
                   </DropdownMenuItem>
                 ))}
@@ -314,14 +339,19 @@ function AddObjectiveForm({
 }
 
 // ---------------------------------------------------------------------------
-// Main panel
+// Grouped list of objectives (by quarter/year), shared across tabs
 // ---------------------------------------------------------------------------
-export default function ObjectivesPanel({ clientId }: { clientId: string }) {
-  const { data: objectives = [], isLoading } = useClientObjectives(clientId);
-  const { data: rawTasks = [] } = useClientTasks(clientId);
-  const tasks = rawTasks as TaskLite[];
-
-  // Group by quarter/year, preserving the server's DESC ordering.
+function ObjectiveGroups({
+  objectives,
+  tasks,
+  clientId,
+  showAdd,
+}: {
+  objectives: QuarterlyObjective[];
+  tasks: TaskLite[];
+  clientId: string;
+  showAdd: boolean;
+}) {
   const groups: { quarter: number; year: number; items: QuarterlyObjective[] }[] = [];
   for (const obj of objectives) {
     let g = groups.find((x) => x.quarter === obj.quarter && x.year === obj.year);
@@ -332,44 +362,108 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
     g.items.push(obj);
   }
 
+  return (
+    <div className="space-y-6">
+      {groups.map((g) => (
+        <div key={`${g.year}-${g.quarter}`} className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Q{g.quarter} {g.year}
+          </p>
+          {g.items.map((obj) => (
+            <ObjectiveRow key={obj.id} obj={obj} tasks={tasks} />
+          ))}
+          {showAdd && <AddObjectiveForm clientId={clientId} quarter={g.quarter} year={g.year} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main panel — tabbed (To do / Achieved / Dropped), Intelligence-Panel styling
+// ---------------------------------------------------------------------------
+export default function ObjectivesPanel({ clientId }: { clientId: string }) {
+  const { data: objectives = [], isLoading } = useClientObjectives(clientId);
+  const { data: rawTasks = [] } = useClientTasks(clientId);
+  const tasks = rawTasks as TaskLite[];
+
+  const todo = objectives.filter((o) => o.status === "proposed" || o.status === "confirmed");
+  const achieved = objectives.filter((o) => o.status === "achieved");
+  const dropped = objectives.filter((o) => o.status === "dropped");
+
   const fallbackQuarter = currentQuarter();
   const fallbackYear = new Date().getFullYear();
 
   return (
-    <div className="rounded-xl border border-border bg-card p-6">
+    <div className="rounded-lg border border-border bg-card p-5">
       <div className="mb-4 flex items-center gap-2">
         <Target className="h-5 w-5 text-muted-foreground" />
-        <h3 className="font-display text-lg font-semibold text-foreground">
-          Quarterly Objectives
-        </h3>
+        <h3 className="font-display text-lg font-semibold text-foreground">Quarterly Objectives</h3>
       </div>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading objectives…</p>
-      ) : groups.length === 0 ? (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            No objectives yet. They appear here automatically as{" "}
-            <span className="font-medium text-foreground">AI-suggested</span> when you generate a
-            quarterly review prep, and are confirmed when the founder approves the review — or add
-            the ones the founder committed to manually below.
-          </p>
-          <AddObjectiveForm clientId={clientId} quarter={fallbackQuarter} year={fallbackYear} />
-        </div>
       ) : (
-        <div className="space-y-6">
-          {groups.map((g) => (
-            <div key={`${g.year}-${g.quarter}`} className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Q{g.quarter} {g.year}
-              </p>
-              {g.items.map((obj) => (
-                <ObjectiveRow key={obj.id} obj={obj} tasks={tasks} />
-              ))}
-              <AddObjectiveForm clientId={clientId} quarter={g.quarter} year={g.year} />
-            </div>
-          ))}
-        </div>
+        <Tabs defaultValue="todo">
+          <TabsList className="mb-4">
+            <TabsTrigger value="todo" className="flex items-center gap-1.5">
+              To do
+              {todo.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-[10px]">
+                  {todo.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="achieved" className="flex items-center gap-1.5">
+              Achieved
+              {achieved.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-[10px]">
+                  {achieved.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="dropped" className="flex items-center gap-1.5">
+              Dropped
+              {dropped.length > 0 && (
+                <Badge variant="secondary" className="ml-1 text-[10px]">
+                  {dropped.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="todo">
+            {todo.length === 0 ? (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  No objectives in progress. They appear here as{" "}
+                  <span className="font-medium text-foreground">AI-suggested</span> when you generate a
+                  quarterly review prep (confirmed once the founder approves the review) — or add one
+                  the founder committed to below.
+                </p>
+                <AddObjectiveForm clientId={clientId} quarter={fallbackQuarter} year={fallbackYear} />
+              </div>
+            ) : (
+              <ObjectiveGroups objectives={todo} tasks={tasks} clientId={clientId} showAdd />
+            )}
+          </TabsContent>
+
+          <TabsContent value="achieved">
+            {achieved.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No achieved objectives yet.</p>
+            ) : (
+              <ObjectiveGroups objectives={achieved} tasks={tasks} clientId={clientId} showAdd={false} />
+            )}
+          </TabsContent>
+
+          <TabsContent value="dropped">
+            {dropped.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No dropped objectives.</p>
+            ) : (
+              <ObjectiveGroups objectives={dropped} tasks={tasks} clientId={clientId} showAdd={false} />
+            )}
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );
