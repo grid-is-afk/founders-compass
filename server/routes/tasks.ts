@@ -13,6 +13,7 @@ const ALLOWED_COLUMNS = new Set([
   "notes",
   "document_id",
   "skip_reason",
+  "objective_id", // UC-08: link a task to the quarterly objective it supports (null = unlink)
 ]);
 
 // Helper: verify client access — team members can access any client, clients verify via user_id
