@@ -5,7 +5,7 @@ import crypto from "crypto";
 import pool, { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
-import { generateAgenda, captureMeeting, ProposedSignal } from "../lib/meetingIntelligence.js";
+import { generateAgenda, captureMeeting, derivePriorityFromDueDate, ProposedSignal, TaskPriority } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { buildAgendaDocx, buildAgendaFilename } from "../lib/agendaDocx.js";
 import { parseAgendaSections } from "../lib/agendaParser.js";
@@ -396,11 +396,19 @@ router.post("/:id/capture/apply", async (req, res) => {
         noteParts.push(attribution);
         const taskNotes = noteParts.filter(Boolean).join("\n");
 
+        // UC-03: persist the advisor's priority. Never trust the wire blindly —
+        // accept only low/medium/high, otherwise fall back to the date-driven
+        // default, then medium.
+        const allowedPriorities: TaskPriority[] = ["low", "medium", "high"];
+        const priority: TaskPriority = allowedPriorities.includes(change.priority as TaskPriority)
+          ? (change.priority as TaskPriority)
+          : derivePriorityFromDueDate(change.suggested_due_date);
+
         const taskRes = await dbClient.query(
           `INSERT INTO tasks (client_id, title, status, priority, due_date, phase, notes, assignee_id)
-           VALUES ($1, $2, 'todo', 'medium', $3, $4, $5, $6)
+           VALUES ($1, $2, 'todo', $3, $4, $5, $6, $7)
            RETURNING *`,
-          [clientId, change.title, change.suggested_due_date ?? null, change.suggested_phase ?? null, taskNotes, assigneeId]
+          [clientId, change.title, priority, change.suggested_due_date ?? null, change.suggested_phase ?? null, taskNotes, assigneeId]
         );
         createdTasks.push(taskRes.rows[0]);
 
@@ -409,6 +417,9 @@ router.post("/:id/capture/apply", async (req, res) => {
           [clientId, req.user!.id, `QB capture: created task "${change.title}" from meeting notes`]
         );
       } else if (change.type === "task_update" && change.existing_task_id) {
+        // Note: UC-03 priority is intentionally applied only on new_task. A
+        // task_update appends a note and does not re-prioritize the existing
+        // task; change.priority is present on the payload but unused here.
         await dbClient.query(
           `UPDATE tasks SET notes = COALESCE(notes, '') || $1::text, updated_at = NOW()
            WHERE id = $2 AND client_id = $3`,

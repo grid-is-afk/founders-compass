@@ -55,6 +55,8 @@ export interface ProposedChange {
   existing_task_id?: string;
   existing_task_snapshot?: ExistingTaskSnapshot;
   confidence: "high" | "medium" | "low";
+  /** UC-03: date-driven priority (≤7 days out = high), advisor-overridable. */
+  priority?: "low" | "medium" | "high";
 }
 
 export interface ProposedSignal {
