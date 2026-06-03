@@ -792,3 +792,33 @@ END $$;
 -- after locked_at are flagged by the risk scanner. Additive, idempotent.
 -- ============================================================
 ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+
+-- ============================================================
+-- UC-13: Cross-engagement pattern recognition ("Firm Insights")
+-- Firm-level patterns surfaced across ALL engagements: what's working, what
+-- consistently blocks progress, and where the methodology is strongest/weakest.
+-- Numbers are computed deterministically in SQL (server/routes/firmInsights.ts);
+-- the narrative is written by Claude from those pre-computed aggregates only.
+-- TFO-only: gated to advisor/admin (never the client role) at the route layer.
+--   • category  — which of the four spec buckets this insight belongs to
+--   • metrics   — the computed aggregates the narrative is grounded in (audit)
+--   • engagements_referenced — client ids cited as internal evidence (Katie:
+--     drafts may reference specific engagement ids; the UI shows their names)
+--   • status    — draft → approved | dismissed. A re-scan replaces only drafts;
+--     approved/dismissed rows survive so human decisions are never lost.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS firm_insights (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category               TEXT NOT NULL CHECK (category IN ('working', 'blocker', 'strength', 'weakness')),
+  title                  TEXT NOT NULL,
+  narrative              TEXT NOT NULL,
+  metrics                JSONB,
+  engagements_referenced UUID[] NOT NULL DEFAULT '{}',
+  status                 TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'dismissed')),
+  generated_by           UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_at            TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_firm_insights_status ON firm_insights(status);
