@@ -15,7 +15,7 @@ import {
 
 const router = Router();
 
-const ALLOWED_COLUMNS = new Set(["title", "status", "engine", "review_status", "content"]);
+const ALLOWED_COLUMNS = new Set(["title", "status", "engine", "review_status", "content", "due_date"]);
 
 const verifyClient = verifyClientAccess;
 

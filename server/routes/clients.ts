@@ -23,6 +23,8 @@ const ALLOWED_COLUMNS = new Set([
   "q4_phase",
   "source_prospect_id",
   "onboarded_at",
+  "flagged_at",
+  "flagged_reason",
 ]);
 
 /**
