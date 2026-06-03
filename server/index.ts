@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
@@ -489,6 +489,31 @@ app.use(express.static(distPath));
 app.get("{*path}", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
+
+// ============================================================
+// Centralized error handler — must be registered last. Body-parser rejects an
+// over-limit request body before it reaches the route, so the request itself
+// can't be rescued here; this just turns that PayloadTooLargeError (and any
+// other unhandled error) into a clean JSON response with a friendly message
+// instead of a raw stack trace / HTML.
+// ============================================================
+const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (
+    err &&
+    (err.type === "entity.too.large" ||
+      err.status === 413 ||
+      err.statusCode === 413)
+  ) {
+    return res.status(413).json({
+      error:
+        "This conversation has grown too large to send. Start a new chat to continue.",
+    });
+  }
+  console.error("Unhandled error:", err);
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: "Internal server error" });
+};
+app.use(errorHandler);
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
 
