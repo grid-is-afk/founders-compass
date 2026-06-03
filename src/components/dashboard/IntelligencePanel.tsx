@@ -10,7 +10,9 @@ import {
   useDashboardInsurance,
   useMethodologyRecommendations,
 } from "@/hooks/useDashboardIntelligence";
+import { useClientCommitments } from "@/hooks/useTasks";
 import PriorityActionsTab from "./copilot/PriorityActionsTab";
+import CommitmentsTab from "./copilot/CommitmentsTab";
 import RiskAlertsTab from "./copilot/RiskAlertsTab";
 import DataGapsTab from "./copilot/DataGapsTab";
 import DeliverablesTab from "./copilot/DeliverablesTab";
@@ -26,10 +28,13 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
   const { data: dataGaps = [] } = useDataGaps(clientId);
   const { data: insuranceItems = [] } = useDashboardInsurance(clientId);
   const { data: methodologyData } = useMethodologyRecommendations(effectiveClientId ?? "");
+  const { data: clientTasks = [] } = useClientCommitments(effectiveClientId ?? "");
 
   const criticalCount = (rawAlerts as Array<{ severity: string }>).filter((r) => r.severity === "critical").length;
   const deliverablesCount = (rawDeliverables as unknown[]).length;
   const methodologyGapCount = methodologyData?.gaps?.length ?? 0;
+  // UC-12: badge counts open commitments (TFO + client) for this client.
+  const openCommitmentsCount = clientTasks.filter((t) => t.status !== "done").length;
 
   return (
     <div className="bg-card rounded-lg border border-border p-5">
@@ -44,6 +49,14 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
             {priorityActions.length > 0 && (
               <Badge variant="secondary" className="text-[10px] ml-1">
                 {priorityActions.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="commitments" className="flex items-center gap-1.5">
+            Commitments
+            {openCommitmentsCount > 0 && (
+              <Badge variant="secondary" className="text-[10px] ml-1">
+                {openCommitmentsCount}
               </Badge>
             )}
           </TabsTrigger>
@@ -92,6 +105,12 @@ const IntelligencePanel = ({ clientId }: { clientId?: string }) => {
         <TabsContent value="actions">
           <div className="max-h-[400px] overflow-y-auto">
             <PriorityActionsTab clientId={clientId} />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="commitments">
+          <div className="max-h-[400px] overflow-y-auto">
+            <CommitmentsTab clientId={effectiveClientId ?? undefined} />
           </div>
         </TabsContent>
 

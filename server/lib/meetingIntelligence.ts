@@ -45,6 +45,16 @@ export interface ProposedChange {
   confidence: "high" | "medium" | "low";
   /** UC-03: date-driven priority (≤7 days out = high), advisor-overridable. */
   priority?: TaskPriority;
+  /**
+   * UC-12: who is on the hook for this commitment.
+   * 'tfo' (default) → a TFO team member owns it (suggested_assignee).
+   * 'client' → a named client stakeholder owns it (owner_stakeholder_id).
+   */
+  owner_type?: "tfo" | "client";
+  /** UC-12: stakeholder UUID from the KNOWN STAKEHOLDERS list, when owner_type='client'. */
+  owner_stakeholder_id?: string | null;
+  /** UC-12: display name for the owning stakeholder (advisor convenience). */
+  owner_stakeholder_name?: string | null;
 }
 
 // UC-03: deterministic date → priority. An item needed within 7 days (or
@@ -111,9 +121,11 @@ export async function generateAgenda(
     await Promise.all([
       query(`SELECT * FROM meetings WHERE id = $1`, [meetingId]),
       query(
-        `SELECT t.title, t.status, t.priority, t.due_date, t.phase, t.notes, u.name AS assignee_name
+        `SELECT t.title, t.status, t.priority, t.due_date, t.phase, t.notes,
+                t.owner_type, u.name AS assignee_name, st.name AS owner_stakeholder_name
          FROM tasks t
          LEFT JOIN users u ON u.id = t.assignee_id
+         LEFT JOIN stakeholders st ON st.id = t.owner_stakeholder_id
          WHERE t.client_id = $1
            AND t.status NOT IN ('done', 'skipped')
          ORDER BY
@@ -280,6 +292,18 @@ export async function generateAgenda(
   const blockedTasks = tasks.filter((t) => t.status === "blocked");
   const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
 
+  // UC-12: a commitment owned by the client surfaces under the stakeholder's
+  // name (tagged "client"); a TFO-owned one keeps the assignee name. Lets the
+  // agenda's Outstanding Commitments Review name who is on the hook on each side.
+  const ownerLabel = (t: {
+    owner_type?: string | null;
+    assignee_name?: string | null;
+    owner_stakeholder_name?: string | null;
+  }): string =>
+    t.owner_type === "client"
+      ? `${t.owner_stakeholder_name ?? "Client"} (client)`
+      : t.assignee_name ?? "Unassigned";
+
   const context = `
 You are preparing a pre-meeting agenda for a TFO (The Founders Office) advisory session.
 
@@ -297,15 +321,15 @@ ${(plan.phases as Array<{ phase: string; label: string; status: string; complete
     : "No active quarterly plan."
 }
 
-OPEN TASKS (${tasks.length} total):
+OPEN TASKS / COMMITMENTS (${tasks.length} total — owner shown is who is on the hook; "(client)" marks a client-side commitment):
 Overdue (${overdueTasks.length}):
-${overdueTasks.map((t) => `  • [OVERDUE] ${t.title} — ${t.assignee_name ?? "Unassigned"} — due ${new Date(t.due_date).toLocaleDateString()}`).join("\n") || "  None"}
+${overdueTasks.map((t) => `  • [OVERDUE] ${t.title} — ${ownerLabel(t)} — due ${new Date(t.due_date).toLocaleDateString()}`).join("\n") || "  None"}
 
 Blocked (${blockedTasks.length}):
-${blockedTasks.map((t) => `  • [BLOCKED] ${t.title} — ${t.notes ?? ""}`).join("\n") || "  None"}
+${blockedTasks.map((t) => `  • [BLOCKED] ${t.title} — ${ownerLabel(t)}${t.notes ? ` — ${t.notes}` : ""}`).join("\n") || "  None"}
 
 In Progress (${inProgressTasks.length}):
-${inProgressTasks.map((t) => `  • ${t.title} — ${t.assignee_name ?? "Unassigned"}`).join("\n") || "  None"}
+${inProgressTasks.map((t) => `  • ${t.title} — ${ownerLabel(t)}`).join("\n") || "  None"}
 
 RISK ALERTS:
 ${risks.map((r) => `  • [${r.severity.toUpperCase()}] ${r.title}: ${r.detail}`).join("\n") || "  None"}
@@ -432,7 +456,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
         title: COMMITMENTS_SECTION,
         items: overdueTasks.slice(0, 3).map((t) => ({
           text: `Review status: ${t.title}`,
-          source: `From overdue task assigned to ${t.assignee_name ?? "unassigned"}`,
+          source: `From overdue commitment owned by ${ownerLabel(t)}`,
         })),
       },
       {
@@ -545,7 +569,10 @@ CRITICAL — avoid duplicate tasks:
 Before classifying any item as new_task, scan the EXISTING OPEN TASKS list above. If your proposed action semantically matches an existing task — even if the wording differs (e.g., "Tom will draft the LOI" matches existing task "Finalize LOI for Acme acquisition") — use type "task_update" with that task's existing_task_id, NOT new_task. The match does not need to be word-for-word; match on intent and subject. When in doubt between new_task and task_update, prefer task_update. This is especially important when the advisor is re-capturing a meeting that has already been processed once.
 
 For new_task items:
-- suggested_assignee: exact name from team list, or null
+- owner_type: who is on the hook for this commitment. Use "client" when a named person from the KNOWN STAKEHOLDERS list is the one who committed to do it (e.g. "Sarah will send the cap table"). Use "tfo" when a TFO team member owns it, or when ownership is unclear. Default to "tfo".
+- owner_stakeholder_id: REQUIRED when owner_type is "client" — the exact stakeholder UUID from the KNOWN STAKEHOLDERS list. Never invent an id; if no stakeholder from the list matches, use owner_type "tfo" instead.
+- owner_stakeholder_name: the matching stakeholder's name when owner_type is "client", else null.
+- suggested_assignee: exact name from team list when owner_type is "tfo", or null. Leave null for client-owned commitments.
 - suggested_due_date: ISO date YYYY-MM-DD, or null
 - suggested_phase: must exactly match one of the phase values above (e.g. "discover"). Capitalize it to match the roadmap domain tabs: "Discover", "Protect", "Grow", "Prove & Align", or null
 - suggested_dependencies: brief note if this task depends on another (e.g. "Depends on: Finalize LOI"), or null
@@ -581,6 +608,9 @@ Return ONLY valid JSON (no markdown):
       "detail": "...",
       "source_excerpt": "...",
       "source_timestamp": "00:05:32 or null",
+      "owner_type": "tfo or client",
+      "owner_stakeholder_id": "uuid-from-known-stakeholders-list when owner_type is client, else null",
+      "owner_stakeholder_name": "Name when owner_type is client, else null",
       "suggested_assignee": "Name or null",
       "suggested_due_date": "YYYY-MM-DD or null",
       "suggested_phase": "discover or null",
@@ -677,12 +707,30 @@ Return ONLY valid JSON (no markdown):
       return !sentimentExcerpts.has(`${s.stakeholder_id}::${s.source_excerpt}`);
     });
 
+    // UC-12: stakeholder id → name lookup for normalizing owner fields
+    const stakeholderNameById = new Map(captureStakeholders.map((s) => [s.id, s.name]));
+
     // Gap 3: Enrich task_update changes with a snapshot of the existing task
     for (const change of result.proposed_changes) {
       // UC-03: seed a date-driven default priority for task-creating items.
       // The advisor can override this in the capture panel before applying.
       if (change.type === "new_task" || change.type === "task_update") {
         change.priority = derivePriorityFromDueDate(change.suggested_due_date);
+      }
+
+      // UC-12: harden the owner classification on new tasks. Claude occasionally
+      // marks a commitment "client" but omits or invents the stakeholder id —
+      // downgrade those to "tfo" so we never persist a dangling owner reference.
+      // Mirrors the defensive filter applied to proposed_signals above.
+      if (change.type === "new_task") {
+        if (change.owner_type === "client" && change.owner_stakeholder_id && stakeholderIdSet.has(change.owner_stakeholder_id)) {
+          change.owner_stakeholder_name = stakeholderNameById.get(change.owner_stakeholder_id) ?? null;
+          change.suggested_assignee = undefined; // client-owned: not a TFO assignee
+        } else {
+          change.owner_type = "tfo";
+          change.owner_stakeholder_id = null;
+          change.owner_stakeholder_name = null;
+        }
       }
       if (change.type === "task_update" && change.existing_task_id) {
         const existing = existingTasks.find((t) => t.id === change.existing_task_id);
