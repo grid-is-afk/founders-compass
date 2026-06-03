@@ -381,8 +381,18 @@ router.post("/:id/capture/apply", async (req, res) => {
 
     for (const change of approved_changes) {
       if (change.type === "new_task") {
+        // UC-12: resolve commitment ownership. A client-owned commitment is on a
+        // stakeholder (validated against this client's stakeholders), never a TFO
+        // assignee; a TFO-owned one resolves the suggested assignee to a user id.
+        const isClientOwned =
+          change.owner_type === "client" &&
+          typeof change.owner_stakeholder_id === "string" &&
+          validStakeholderIds.has(change.owner_stakeholder_id);
+        const ownerType: "tfo" | "client" = isClientOwned ? "client" : "tfo";
+        const ownerStakeholderId: string | null = isClientOwned ? change.owner_stakeholder_id! : null;
+
         let assigneeId: string | null = null;
-        if (change.suggested_assignee) {
+        if (!isClientOwned && change.suggested_assignee) {
           const userRes = await dbClient.query(
             `SELECT id FROM users WHERE name = $1 LIMIT 1`,
             [change.suggested_assignee]
@@ -405,10 +415,23 @@ router.post("/:id/capture/apply", async (req, res) => {
           : derivePriorityFromDueDate(change.suggested_due_date);
 
         const taskRes = await dbClient.query(
-          `INSERT INTO tasks (client_id, title, status, priority, due_date, phase, notes, assignee_id)
-           VALUES ($1, $2, 'todo', $3, $4, $5, $6, $7)
+          `INSERT INTO tasks
+             (client_id, title, status, priority, due_date, phase, notes, assignee_id,
+              owner_type, owner_stakeholder_id, source_kind, source_id)
+           VALUES ($1, $2, 'todo', $3, $4, $5, $6, $7, $8, $9, 'meeting', $10)
            RETURNING *`,
-          [clientId, change.title, priority, change.suggested_due_date ?? null, change.suggested_phase ?? null, taskNotes, assigneeId]
+          [
+            clientId,
+            change.title,
+            priority,
+            change.suggested_due_date ?? null,
+            change.suggested_phase ?? null,
+            taskNotes,
+            assigneeId,
+            ownerType,
+            ownerStakeholderId,
+            req.params.id,
+          ]
         );
         createdTasks.push(taskRes.rows[0]);
 

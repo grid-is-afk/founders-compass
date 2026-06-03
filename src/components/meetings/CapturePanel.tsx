@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
   useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
@@ -19,7 +19,7 @@ import {
   type Meeting, type ProposedChange, type ProposedSignal, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
-import { SENTIMENT_CONFIG } from "@/hooks/useStakeholders";
+import { SENTIMENT_CONFIG, useStakeholders } from "@/hooks/useStakeholders";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -422,6 +422,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
               key={idx}
               change={getEffectiveChange(idx)}
               state={itemStates[idx] ?? "pending"}
+              clientId={clientId}
               onApprove={() => setItemState(idx, "approved")}
               onReject={() => setItemState(idx, "rejected")}
               onDefer={() => setItemState(idx, "deferred")}
@@ -687,6 +688,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
 interface ChangeRowProps {
   change: ProposedChange;
   state: ItemState;
+  clientId: string;
   onApprove: () => void;
   onReject: () => void;
   onDefer: () => void;
@@ -694,7 +696,12 @@ interface ChangeRowProps {
   onSetPriority: (priority: Priority) => void;
 }
 
-function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSaveEdit, onSetPriority }: ChangeRowProps) {
+// UC-12: sentinel values for the combined owner picker. Advisors are keyed by
+// name (matches the apply route's user lookup); stakeholders by "st:<uuid>".
+const OWNER_NONE = "__none__";
+const STAKEHOLDER_PREFIX = "st:";
+
+function ProposedChangeRow({ change, state, clientId, onApprove, onReject, onDefer, onSaveEdit, onSetPriority }: ChangeRowProps) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -704,17 +711,50 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
     suggested_assignee: change.suggested_assignee ?? "",
     suggested_due_date: change.suggested_due_date ?? "",
     suggested_phase: change.suggested_phase ?? "",
+    owner_type: change.owner_type ?? "tfo",
+    owner_stakeholder_id: change.owner_stakeholder_id ?? "",
   });
   const { data: advisors = [] } = useAdvisors();
+  const { data: stakeholders = [] } = useStakeholders(clientId);
+
+  // Current owner select value: stakeholder id (client-owned), advisor name
+  // (tfo-owned), or the unassigned sentinel.
+  const ownerSelectValue =
+    editForm.owner_type === "client" && editForm.owner_stakeholder_id
+      ? `${STAKEHOLDER_PREFIX}${editForm.owner_stakeholder_id}`
+      : editForm.suggested_assignee || OWNER_NONE;
+
+  function handleOwnerChange(v: string) {
+    if (v === OWNER_NONE) {
+      setEditForm((f) => ({ ...f, owner_type: "tfo", owner_stakeholder_id: "", suggested_assignee: "" }));
+    } else if (v.startsWith(STAKEHOLDER_PREFIX)) {
+      setEditForm((f) => ({
+        ...f,
+        owner_type: "client",
+        owner_stakeholder_id: v.slice(STAKEHOLDER_PREFIX.length),
+        suggested_assignee: "",
+      }));
+    } else {
+      // advisor name → TFO-owned
+      setEditForm((f) => ({ ...f, owner_type: "tfo", owner_stakeholder_id: "", suggested_assignee: v }));
+    }
+  }
 
   function handleSaveEdit() {
     const newDueDate = editForm.suggested_due_date || null;
+    const isClientOwned = editForm.owner_type === "client" && !!editForm.owner_stakeholder_id;
     onSaveEdit({
       ...change,
       type: editForm.type,
       title: editForm.title,
       detail: editForm.detail,
-      suggested_assignee: editForm.suggested_assignee || null,
+      // UC-12: client-owned commitments carry the stakeholder, not a TFO assignee.
+      owner_type: isClientOwned ? "client" : "tfo",
+      owner_stakeholder_id: isClientOwned ? editForm.owner_stakeholder_id : null,
+      owner_stakeholder_name: isClientOwned
+        ? stakeholders.find((s) => s.id === editForm.owner_stakeholder_id)?.name ?? null
+        : null,
+      suggested_assignee: isClientOwned ? null : editForm.suggested_assignee || null,
       suggested_due_date: newDueDate,
       suggested_phase: editForm.suggested_phase || null,
       // Re-derive the date-driven baseline from the edited due date. An explicit
@@ -880,8 +920,14 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       {/* Meta chips for new tasks */}
       {change.type === "new_task" && (
         <div className="flex flex-wrap gap-1.5 pl-1">
-          {change.suggested_assignee && (
-            <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Assignee: {change.suggested_assignee}</span>
+          {change.owner_type === "client" ? (
+            <span className="text-[10px] rounded px-1.5 py-0.5 border border-amber-500/30 bg-amber-50 text-amber-700">
+              Client owner: {change.owner_stakeholder_name ?? "stakeholder"}
+            </span>
+          ) : (
+            change.suggested_assignee && (
+              <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Assignee: {change.suggested_assignee}</span>
+            )
           )}
           {change.suggested_due_date && (
             <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Due: {change.suggested_due_date}</span>
@@ -948,19 +994,31 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label className="text-[10px]">Assignee</Label>
-              <Select
-                value={editForm.suggested_assignee || "__none__"}
-                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_assignee: v === "__none__" ? "" : v }))}
-              >
+              <Label className="text-[10px]">Owner</Label>
+              <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
                 <SelectTrigger className="h-7 text-xs">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {advisors.map((a) => (
-                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
-                  ))}
+                  <SelectItem value={OWNER_NONE}>Unassigned</SelectItem>
+                  {advisors.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px]">TFO Team</SelectLabel>
+                      {advisors.map((a) => (
+                        <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {stakeholders.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px]">Client</SelectLabel>
+                      {stakeholders.map((s) => (
+                        <SelectItem key={s.id} value={`${STAKEHOLDER_PREFIX}${s.id}`}>
+                          {s.name}{s.role ? ` · ${s.role}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -1001,9 +1059,9 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
               </Select>
             </div>
           )}
-          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.suggested_due_date) && (
+          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.owner_stakeholder_id || editForm.suggested_due_date) && (
             <p className="text-[10px] text-muted-foreground">
-              Tip: Assignee and Due Date are only applied when Type is "New Task".
+              Tip: Owner and Due Date are only applied when Type is "New Task".
             </p>
           )}
           <div className="flex gap-2">

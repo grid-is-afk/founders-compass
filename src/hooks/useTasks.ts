@@ -40,8 +40,56 @@ export interface GenerateKickoffPlanInput {
   durationDays?: number;
 }
 
+export type TaskStatus = "todo" | "in_progress" | "done" | "blocked";
+export type TaskPriorityLevel = "low" | "medium" | "high" | "urgent";
+
+/** UC-12: who is on the hook for a commitment. */
+export type CommitmentOwnerType = "tfo" | "client";
+
+/**
+ * A task as returned by GET /tasks?client_id (includes UC-12 commitment
+ * ownership + provenance). The Commitments ledger reads from this shape.
+ */
+export interface ClientTask {
+  id: string;
+  client_id: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriorityLevel;
+  due_date: string | null;
+  phase: string | null;
+  notes: string | null;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  // UC-12
+  owner_type: CommitmentOwnerType;
+  owner_stakeholder_id: string | null;
+  owner_stakeholder_name: string | null;
+  source_kind: "meeting" | "email" | "call" | "note" | "manual" | null;
+  source_id: string | null;
+  created_at: string;
+  updated_at: string;
+  subtasks?: Array<{ id: string; task_id: string; title: string; done: boolean; sort_order: number }>;
+}
+
+// Note: intentionally left untyped (returns any) — many existing call sites
+// cast the result to their own local row shapes. UC-12 code that needs the
+// commitment fields should use useClientCommitments() below, which is typed.
 export function useClientTasks(clientId: string) {
   return useQuery({
+    queryKey: ["tasks", clientId],
+    queryFn: () => api.get(`/tasks?client_id=${clientId}`),
+    enabled: !!clientId,
+  });
+}
+
+/**
+ * UC-12: same data as useClientTasks but typed as ClientTask[] (includes
+ * commitment ownership + provenance). Shares the ["tasks", clientId] query key
+ * so it reuses the same cache entry — no extra request.
+ */
+export function useClientCommitments(clientId: string) {
+  return useQuery<ClientTask[]>({
     queryKey: ["tasks", clientId],
     queryFn: () => api.get(`/tasks?client_id=${clientId}`),
     enabled: !!clientId,
@@ -53,14 +101,18 @@ export interface AdvisorTask {
   client_id: string;
   client_name: string;
   title: string;
-  status: "todo" | "in_progress" | "done" | "blocked";
-  priority: "low" | "medium" | "high" | "urgent";
+  status: TaskStatus;
+  priority: TaskPriorityLevel;
   due_date: string | null;
   assignee: string | null;
   assignee_id: string | null;
   assignee_name: string | null;
   phase: string | null;
   notes: string | null;
+  // UC-12: bilateral commitment ownership
+  owner_type: CommitmentOwnerType;
+  owner_stakeholder_id: string | null;
+  owner_stakeholder_name: string | null;
 }
 
 export function useAdvisorTasks(filters: { status?: string; priority?: string; clientId?: string } = {}) {

@@ -822,3 +822,29 @@ CREATE TABLE IF NOT EXISTS firm_insights (
 );
 
 CREATE INDEX IF NOT EXISTS idx_firm_insights_status ON firm_insights(status);
+
+-- ============================================================
+-- UC-12: Commitment tracking — bilateral ownership + provenance
+-- A commitment is just a task with an owner that may be the CLIENT (a
+-- stakeholder) rather than a TFO advisor. We extend `tasks` rather than create a
+-- parallel table so the existing capture/agenda/workplan machinery applies
+-- unchanged (Katie: "UC-12 is just a task").
+--   • owner_type           — 'tfo' (a team member owns it) | 'client' (a
+--                            stakeholder owns it). Existing rows default to 'tfo'.
+--   • owner_stakeholder_id  — set when owner_type='client'; the client person on
+--                            the hook. App invariant: tfo→assignee_id may be set,
+--                            owner_stakeholder_id NULL; client→owner_stakeholder_id
+--                            set, assignee_id NULL (enforced in routes/tasks.ts).
+--   • source_kind/source_id — where the commitment came from (meeting capture
+--                            stamps 'meeting' + the meeting id). v1 sources:
+--                            meeting | email | call | note | manual.
+-- Additive, idempotent — picked up by the boot self-migration (index.ts).
+-- ============================================================
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_type TEXT NOT NULL DEFAULT 'tfo'
+  CHECK (owner_type IN ('tfo', 'client'));
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_stakeholder_id UUID
+  REFERENCES stakeholders(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_kind TEXT
+  CHECK (source_kind IN ('meeting', 'email', 'call', 'note', 'manual'));
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_id UUID;
+CREATE INDEX IF NOT EXISTS idx_tasks_owner_stakeholder ON tasks(owner_stakeholder_id);
