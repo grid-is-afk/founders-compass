@@ -45,6 +45,7 @@ interface DbDeliverable {
   approved_at?: string | null;
   approved_by_name?: string | null;
   client_approved_at?: string | null;
+  due_date?: string | null;
 }
 
 const TITLE_DISPLAY_MAP: Record<string, string> = {
@@ -95,6 +96,7 @@ interface MappedDeliverable {
   approved_at: string | null;
   approved_by_name: string | null;
   client_approved_at: string | null;
+  due_date: string | null;
 }
 
 /** Tailwind classes for the pill-shaped dropdown trigger by review_status. */
@@ -191,6 +193,8 @@ const DeliverablesTab = () => {
       approved_at: d.approved_at ?? null,
       approved_by_name: d.approved_by_name ?? null,
       client_approved_at: d.client_approved_at ?? null,
+      // DATE column — normalize to YYYY-MM-DD for the native date input.
+      due_date: d.due_date ? d.due_date.slice(0, 10) : null,
     };
   }
 
@@ -250,6 +254,19 @@ const DeliverablesTab = () => {
         onError: () => {
           toast.error("Failed to update review status");
         },
+      }
+    );
+  };
+
+  // Promised date (UC-11): when set and past with the deliverable not yet
+  // delivered, the risk scan raises a "missed deliverable promise" alert.
+  const handleDueDateChange = (del: MappedDeliverable, value: string) => {
+    updateDeliverable.mutate(
+      { id: del.id, clientId: selectedClientId, due_date: value || null },
+      {
+        onSuccess: () =>
+          toast(value ? "Promised date updated" : "Promised date cleared"),
+        onError: () => toast.error("Failed to update promised date"),
       }
     );
   };
@@ -331,6 +348,12 @@ const DeliverablesTab = () => {
           const hasContent = !!del.content;
           const isDownloading = downloadingIds.has(del.id);
 
+          // A promised date in the past with the deliverable not yet delivered
+          // is what the UC-11 risk scan flags as a "missed promise".
+          const isDelivered = del.status === "complete" || del.status === "ready";
+          const isOverdue =
+            !!del.due_date && del.due_date < new Date().toISOString().slice(0, 10) && !isDelivered;
+
           const effectiveReviewStatus: ReviewStatusValue =
             del.review_status === "approved" || del.review_status === "client_approved"
               ? del.review_status
@@ -363,6 +386,32 @@ const DeliverablesTab = () => {
                       {approvalLabel}
                     </p>
                   )}
+                  {/* Promised date — feeds the UC-11 missed-promise risk rule */}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <label
+                      htmlFor={`due-${del.id}`}
+                      className="text-[10px] text-muted-foreground"
+                    >
+                      Promised
+                    </label>
+                    <input
+                      id={`due-${del.id}`}
+                      type="date"
+                      value={del.due_date ?? ""}
+                      onChange={(e) => handleDueDateChange(del, e.target.value)}
+                      className={cn(
+                        "h-6 rounded border bg-background px-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary/50",
+                        isOverdue
+                          ? "border-red-500/40 text-red-700"
+                          : "border-border text-muted-foreground"
+                      )}
+                    />
+                    {isOverdue && (
+                      <span className="text-[10px] font-medium text-red-700">
+                        Overdue
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {/* Status area: static badge when not ready, dropdown when ready */}

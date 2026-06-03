@@ -757,3 +757,15 @@ DO $$ BEGIN
     CHECK (review_status IN ('pending_review', 'approved', 'client_approved'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
+
+-- ============================================================
+-- UC-11: Drift detection — advisor flag + deliverable promise date
+-- Powers two new risk rules in server/routes/riskScan.ts:
+--   • advisor-flagged engagement  (clients.flagged_at / flagged_reason)
+--   • missed deliverable promise  (deliverables.due_date)
+-- Additive, idempotent — picked up by the boot self-migration (index.ts).
+-- ============================================================
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_at     TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_reason TEXT;
+
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS due_date DATE;

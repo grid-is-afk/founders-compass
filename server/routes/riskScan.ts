@@ -120,6 +120,129 @@ router.post("/:clientId", async (req, res) => {
       }
     }
 
+    // Rule 6: Orphan objectives — confirmed objective, 7+ days old, no supporting task.
+    // (UC-07 added quarterly_objectives + tasks.objective_id; Katie: trigger "C — 7 days".)
+    const orphanResult = await query(
+      `SELECT qo.id, qo.title, qo.created_at
+       FROM quarterly_objectives qo
+       LEFT JOIN tasks t ON t.objective_id = qo.id
+       WHERE qo.client_id = $1
+         AND qo.status = 'confirmed'
+         AND qo.created_at < NOW() - INTERVAL '7 days'
+       GROUP BY qo.id, qo.title, qo.created_at
+       HAVING COUNT(t.id) = 0`,
+      [clientId]
+    );
+    for (const o of orphanResult.rows) {
+      const days = Math.round((Date.now() - new Date(o.created_at).getTime()) / 86400000);
+      detections.push({
+        title: o.title,
+        detail: `[auto] Confirmed objective has no supporting tasks ${days} days after creation — break it into tasks or drop it.`,
+        severity: "warning",
+        source_id: o.id,
+        source_type: "objective",
+      });
+    }
+
+    // Scope-creep rules (7 & 8) reference the active quarter's start as a "Q-lock"
+    // boundary. No literal lock column exists, so use start_date (fallback created_at).
+    const activePlanResult = await query(
+      `SELECT COALESCE(start_date, created_at::date) AS lock_date
+       FROM quarterly_plans
+       WHERE client_id = $1 AND status = 'active'
+       ORDER BY year DESC, quarter DESC
+       LIMIT 1`,
+      [clientId]
+    );
+    const lockDate = activePlanResult.rows[0]?.lock_date;
+    if (lockDate) {
+      // Rule 7: Scope creep — active tasks added after Q-lock with no objective link.
+      const creepTasks = Number(
+        (
+          await query(
+            `SELECT COUNT(*)::int AS n FROM tasks
+             WHERE client_id = $1
+               AND objective_id IS NULL
+               AND created_at::date > $2
+               AND status NOT IN ('complete', 'done', 'skipped')`,
+            [clientId, lockDate]
+          )
+        ).rows[0]?.n ?? 0
+      );
+      if (creepTasks > 0) {
+        detections.push({
+          title: `Scope creep — ${creepTasks} task${creepTasks !== 1 ? "s" : ""} added after the quarter started`,
+          detail: `[auto] ${creepTasks} active task${creepTasks !== 1 ? "s were" : " was"} added after the current quarter began, none tied to a confirmed objective. Confirm they belong in this quarter's scope.`,
+          severity: "warning",
+        });
+      }
+
+      // Rule 8: Scope creep — deliverables added mid-quarter.
+      const creepDeliv = Number(
+        (
+          await query(
+            `SELECT COUNT(*)::int AS n FROM deliverables
+             WHERE client_id = $1
+               AND archived_at IS NULL
+               AND created_at::date > $2`,
+            [clientId, lockDate]
+          )
+        ).rows[0]?.n ?? 0
+      );
+      if (creepDeliv > 0) {
+        detections.push({
+          title: `Scope creep — ${creepDeliv} deliverable${creepDeliv !== 1 ? "s" : ""} added mid-quarter`,
+          detail: `[auto] ${creepDeliv} deliverable${creepDeliv !== 1 ? "s were" : " was"} created after the current quarter began. Confirm they were planned, not unscoped additions.`,
+          severity: "warning",
+        });
+      }
+    }
+
+    // TODO(UC-11): scope-creep "hour overages" vector is deferred — no hours/effort
+    // column exists yet. It's blocked on the UC-08 capacity model (Katie must first
+    // define how TFO measures advisor load). Build alongside UC-08, not here.
+
+    // Rule 9: Advisor-flagged engagement — manual flag set on the client.
+    const flag = (
+      await query(
+        `SELECT flagged_at, flagged_reason FROM clients WHERE id = $1`,
+        [clientId]
+      )
+    ).rows[0];
+    if (flag?.flagged_at) {
+      const reason = (flag.flagged_reason ?? "").trim();
+      detections.push({
+        title: "Engagement flagged for follow-up",
+        detail: `[auto] An advisor flagged this engagement${reason ? `: ${reason}` : "."}`,
+        severity: "warning",
+      });
+    }
+
+    // Rule 10: Missed deliverable promises — past due_date, not yet delivered.
+    const promiseResult = await query(
+      `SELECT id, title, due_date FROM deliverables
+       WHERE client_id = $1
+         AND archived_at IS NULL
+         AND due_date IS NOT NULL
+         AND due_date < CURRENT_DATE
+         AND status NOT IN ('complete', 'ready')`,
+      [clientId]
+    );
+    for (const d of promiseResult.rows) {
+      const days = Math.round((Date.now() - new Date(d.due_date).getTime()) / 86400000);
+      detections.push({
+        title: d.title,
+        detail: `[auto] Deliverable is ${days} day${days !== 1 ? "s" : ""} past its promised date and not yet delivered.`,
+        severity: days >= 14 ? "critical" : "warning",
+        source_id: d.id,
+        source_type: "deliverable",
+      });
+    }
+
+    // TODO(UC-11): "sentiment decline" signal is deferred — no sentiment is captured.
+    // A real version needs an AI pass scoring recent meeting notes against a baseline;
+    // that's its own slice, not a riskScan rule.
+
     // Clear previous auto-generated alerts, preserve manual ones
     await query(
       `DELETE FROM risk_alerts

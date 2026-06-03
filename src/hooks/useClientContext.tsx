@@ -24,6 +24,8 @@ interface ApiClient {
   current_quarter: number;
   current_year: number;
   updated_at: string;
+  flagged_at: string | null;
+  flagged_reason: string | null;
 }
 
 const FALLBACK_CLIENT: ApiClient = {
@@ -39,6 +41,8 @@ const FALLBACK_CLIENT: ApiClient = {
   current_quarter: 1,
   current_year: new Date().getFullYear(),
   updated_at: new Date().toISOString(),
+  flagged_at: null,
+  flagged_reason: null,
 };
 
 interface ClientContextType {
