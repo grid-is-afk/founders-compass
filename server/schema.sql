@@ -784,3 +784,11 @@ DO $$ BEGIN
     CHECK (severity IN ('low', 'medium', 'high', 'critical', 'warning', 'info'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
+
+-- ============================================================
+-- Quarter lock: the moment the founder approved the quarter's plan (set when a
+-- "Qn Review Prep" deliverable hits client_approved — see server/routes/
+-- deliverables.ts). Becomes the scope-creep baseline: tasks/objectives created
+-- after locked_at are flagged by the risk scanner. Additive, idempotent.
+-- ============================================================
+ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;

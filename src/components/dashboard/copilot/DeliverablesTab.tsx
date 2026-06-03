@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FileText, Loader2, Pencil, Eye, X, Save, Download, Archive } from "lucide-react";
+import { FileText, Loader2, Pencil, Eye, X, Save, Download, Archive, Lock } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -226,10 +226,20 @@ const DeliverablesTab = () => {
     );
   };
 
-  const handleReviewStatusChange = (
-    del: MappedDeliverable,
-    value: string
-  ) => {
+  // Approving a "Qn Review Prep" locks that quarter's plan as the agreed
+  // baseline (server-side), so confirm with the advisor before applying it.
+  const REVIEW_PREP_RE = /Q\d+\s+Review Prep/i;
+  const [lockConfirmDel, setLockConfirmDel] = useState<MappedDeliverable | null>(null);
+
+  const handleReviewStatusChange = (del: MappedDeliverable, value: string) => {
+    if (value === "client_approved" && REVIEW_PREP_RE.test(del.title)) {
+      setLockConfirmDel(del); // intercept → confirm dialog; Select reverts on cancel
+      return;
+    }
+    applyReviewStatus(del, value);
+  };
+
+  const applyReviewStatus = (del: MappedDeliverable, value: string) => {
     updateDeliverable.mutate(
       { id: del.id, clientId: selectedClientId, review_status: value },
       {
@@ -651,6 +661,51 @@ const DeliverablesTab = () => {
             >
               <Download className="w-3 h-3" />
               Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lock confirmation — shown before a review-prep is client-approved */}
+      <Dialog
+        open={!!lockConfirmDel}
+        onOpenChange={(open) => {
+          if (!open) setLockConfirmDel(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base font-semibold flex items-center gap-2">
+              <Lock className="w-4 h-4 text-muted-foreground" />
+              Lock this quarter&apos;s plan?
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Marking <span className="font-medium text-foreground">{lockConfirmDel?.title}</span> as
+              Client Approved confirms the quarter&apos;s objectives and{" "}
+              <span className="font-medium text-foreground">locks the plan as the agreed baseline</span>.
+              Tasks or objectives added afterward will be flagged as scope creep. Continue?
+            </p>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLockConfirmDel(null)}
+              disabled={updateDeliverable.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                if (lockConfirmDel) applyReviewStatus(lockConfirmDel, "client_approved");
+                setLockConfirmDel(null);
+              }}
+              disabled={updateDeliverable.isPending}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Approve &amp; Lock
             </Button>
           </DialogFooter>
         </DialogContent>
