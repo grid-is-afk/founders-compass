@@ -144,8 +144,13 @@ router.post("/:clientId", async (req, res) => {
       });
     }
 
-    // Scope-creep rules (7 & 8) reference the active quarter's start as a "Q-lock"
-    // boundary. No literal lock column exists, so use start_date (fallback created_at).
+    // Scope-creep rules (7 & 8) — DISABLED pending the quarter-lock feature.
+    // The interim implementation used the quarter START date as the boundary,
+    // but tasks/deliverables are created throughout the quarter, so it flagged
+    // ~every item as scope creep (observed 32/33 tasks on a real client).
+    // Re-enable once quarterly_plans.locked_at exists and gate strictly on
+    // created_at > locked_at (the moment the founder approved the plan).
+    const SCOPE_CREEP_ENABLED = false;
     const activePlanResult = await query(
       `SELECT COALESCE(start_date, created_at::date) AS lock_date
        FROM quarterly_plans
@@ -155,7 +160,7 @@ router.post("/:clientId", async (req, res) => {
       [clientId]
     );
     const lockDate = activePlanResult.rows[0]?.lock_date;
-    if (lockDate) {
+    if (SCOPE_CREEP_ENABLED && lockDate) {
       // Rule 7: Scope creep — active tasks added after Q-lock with no objective link.
       const creepTasks = Number(
         (
