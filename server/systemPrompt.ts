@@ -38,10 +38,59 @@ When a client's current quarter is known, tailor your analysis and recommendatio
 </tfo_methodology>`;
 }
 
+/**
+ * Builds the firm-level learnings block from APPROVED UC-13 Firm Insights —
+ * cross-engagement patterns the TFO team has reviewed and confirmed. This is
+ * the top-down half of the UC-13 feedback loop: firm-wide learnings flow back
+ * into the copilot's context so its advice is informed by what the firm has
+ * confirmed across its whole portfolio. Firm-wide (not advisor-scoped): every
+ * advisor sees the same approved board. Returns "" when nothing is approved.
+ */
+const FIRM_LEARNING_LABELS: Record<string, string> = {
+  working: "What's Working",
+  strength: "Methodology Strengths",
+  blocker: "What Blocks Progress",
+  weakness: "Methodology Weaknesses",
+};
+
+async function buildFirmLearningsBlock(): Promise<string> {
+  try {
+    const result = await query(
+      `SELECT category, title, narrative
+       FROM firm_insights
+       WHERE status = 'approved'
+       ORDER BY created_at DESC
+       LIMIT 20`
+    );
+    const rows = result.rows as { category: string; title: string; narrative: string }[];
+    if (rows.length === 0) return "";
+
+    const sections = ["working", "strength", "blocker", "weakness"]
+      .map((cat) => {
+        const items = rows.filter((r) => r.category === cat);
+        if (items.length === 0) return "";
+        const lines = items.map((r) => `- ${r.title} — ${r.narrative}`).join("\n");
+        return `**${FIRM_LEARNING_LABELS[cat] ?? cat}**\n${lines}`;
+      })
+      .filter(Boolean)
+      .join("\n\n");
+
+    return `<firm_learnings>
+These are cross-engagement patterns the firm has reviewed and CONFIRMED across its portfolio (UC-13 Firm Insights). Treat them as firm-confirmed context that may inform your guidance — not as guarantees about any single client.
+
+${sections}
+</firm_learnings>`;
+  } catch {
+    // Never let a learnings-fetch failure break the copilot — degrade silently.
+    return "";
+  }
+}
+
 export async function buildSystemPrompt(advisorId: string): Promise<string> {
-  const [context, advisorTimezone] = await Promise.all([
+  const [context, advisorTimezone, firmLearnings] = await Promise.all([
     buildPlatformContext(advisorId),
     fetchAdvisorTimezone(advisorId),
+    buildFirmLearningsBlock(),
   ]);
 
   const tz = advisorTimezone ?? "UTC";
@@ -147,7 +196,7 @@ Enterprise Value = Earnings × Multiple. Most founders chase earnings. The Found
 
 ## CURRENT PLATFORM DATA
 ${context}
-
+${firmLearnings ? `\n## FIRM-LEVEL LEARNINGS\n${firmLearnings}\n` : ""}
 ${buildMethodologyBlock()}
 ${tzLine}
 
@@ -160,6 +209,7 @@ ${tzLine}
 - When suggesting next actions, tie them to the current quarter phase and the quarterly review date.
 - Format responses with clear headers, bullet points, and structured sections.
 - If asked about something not in the platform data, say so — never fabricate data.
+- Firm-level learnings (in <firm_learnings>) are patterns the firm has confirmed across multiple engagements. Use them as cross-engagement guidance and cite them when relevant, but never let them override a specific client's actual data, and present them as observed patterns rather than guarantees.
 - Be concise but thorough. Advisors are busy professionals.
 - Use the Six Keys framework as a lens for analysis when appropriate.
 - When generating memos or reports, use formal advisory language with section headers.
