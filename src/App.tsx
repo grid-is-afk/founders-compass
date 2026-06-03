@@ -41,6 +41,7 @@ import CopilotPage from "./pages/advisor/CopilotPage";
 import CapitalStrategyRoadmap from "./pages/advisor/CapitalStrategyRoadmap";
 import UserManagement from "./pages/advisor/admin/UserManagement";
 import FirmInsights from "./pages/advisor/FirmInsights";
+import CommunicationsDigest from "./pages/advisor/CommunicationsDigest";
 import ArchivedClients from "./pages/advisor/ArchivedClients";
 import {
   AdvisorDataRoom,
@@ -87,6 +88,7 @@ const App = () => (
             >
               <Route index element={<AdvisorDashboard />} />
               <Route path="firm-insights" element={<FirmInsights />} />
+              <Route path="communications-digest" element={<CommunicationsDigest />} />
               <Route path="clients" element={<AdvisorClients />} />
 
               {/* Q1 Client Workspace */}

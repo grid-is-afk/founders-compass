@@ -824,6 +824,56 @@ CREATE TABLE IF NOT EXISTS firm_insights (
 CREATE INDEX IF NOT EXISTS idx_firm_insights_status ON firm_insights(status);
 
 -- ============================================================
+-- UC-04: Cross-channel communication synthesis
+--
+-- Two tables behind a clean "adapter seam":
+--   • communication_events — ONE normalized row per communication, whatever the
+--     channel. Each channel adapter (meetings now; gmail → zoom → whatsapp once
+--     Aakash provisions creds) only translates its source INTO this shape; the
+--     synthesis engine reads only this table and never knows a channel exists.
+--     UNIQUE(client_id, channel, source_ref) makes re-syncing idempotent — an
+--     adapter can re-run and upsert without creating duplicates.
+--   • communication_digests — one stored topic-organized digest per generate
+--     run (mirrors firm_insights): the AI regroups events BY TOPIC, not channel,
+--     over a date window. Weekly = the same call with a 7-day window.
+-- Additive + idempotent — applied by the boot self-migration (index.ts).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS communication_events (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  channel       TEXT NOT NULL CHECK (channel IN ('meeting', 'gmail', 'zoom', 'whatsapp')),
+  direction     TEXT CHECK (direction IN ('inbound', 'outbound', 'internal')),
+  occurred_at   TIMESTAMPTZ NOT NULL,
+  sender        TEXT,
+  participants  TEXT[] NOT NULL DEFAULT '{}',
+  subject       TEXT,
+  body_text     TEXT NOT NULL,
+  source_ref    TEXT NOT NULL,
+  metadata      JSONB NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_comm_events_source
+  ON communication_events(client_id, channel, source_ref);
+CREATE INDEX IF NOT EXISTS idx_comm_events_client_time
+  ON communication_events(client_id, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS communication_digests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  period_start    DATE NOT NULL,
+  period_end      DATE NOT NULL,
+  topics          JSONB NOT NULL DEFAULT '[]',
+  source_channels TEXT[] NOT NULL DEFAULT '{}',
+  event_count     INT NOT NULL DEFAULT 0,
+  generated_by    UUID REFERENCES users(id) ON DELETE SET NULL,
+  generated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comm_digests_client
+  ON communication_digests(client_id, period_end DESC);
+
+-- ============================================================
 -- UC-12: Commitment tracking — bilateral ownership + provenance
 -- A commitment is just a task with an owner that may be the CLIENT (a
 -- stakeholder) rather than a TFO advisor. We extend `tasks` rather than create a

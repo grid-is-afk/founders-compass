@@ -11,6 +11,7 @@ import {
   Map,
   Archive,
   ShieldCheck,
+  MessagesSquare,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -45,6 +46,7 @@ const navGroups = [
     label: "Tools",
     items: [
       { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
+      { to: "/advisor/communications-digest", icon: MessagesSquare, label: "Communications Digest" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
       { to: "/advisor/capital-strategy-roadmap", icon: Map, label: "Capital Strategy Architecture (Roadmap)" },
     ],
