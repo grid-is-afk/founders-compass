@@ -1,6 +1,7 @@
 import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
+  TrendingUp,
   Users,
   UserPlus,
   Share2,
@@ -23,6 +24,7 @@ const navGroups = [
     label: "Overview",
     items: [
       { to: "/advisor", icon: LayoutDashboard, label: "Dashboard" },
+      { to: "/advisor/firm-insights", icon: TrendingUp, label: "Firm Insights" },
     ],
   },
   {
