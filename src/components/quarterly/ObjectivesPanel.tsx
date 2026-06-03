@@ -14,6 +14,8 @@ import {
   Unlink,
   AlertTriangle,
   RotateCcw,
+  Lock,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,12 +24,20 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useClientTasks, useUpdateTask } from "@/hooks/useTasks";
+import { useClientQuarterlyPlans } from "@/hooks/useQuarterlyPlans";
 import {
   useClientObjectives,
   useCreateObjective,
@@ -36,6 +46,11 @@ import {
   type QuarterlyObjective,
   type ObjectiveStatus,
 } from "@/hooks/useQuarterlyObjectives";
+
+// Short "Mon D" date for lock/badge labels.
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 // ---------------------------------------------------------------------------
 // Status presentation — built-in Badge variants only (no custom palette).
@@ -73,7 +88,15 @@ function taskStatusDot(status: string): string {
 // ---------------------------------------------------------------------------
 // Single objective row — actions adapt to status (To do / Achieved / Dropped)
 // ---------------------------------------------------------------------------
-function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite[] }) {
+function ObjectiveRow({
+  obj,
+  tasks,
+  lockedAt,
+}: {
+  obj: QuarterlyObjective;
+  tasks: TaskLite[];
+  lockedAt: string | null;
+}) {
   const update = useUpdateObjective();
   const remove = useDeleteObjective();
   const updateTask = useUpdateTask();
@@ -82,6 +105,11 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
 
   const meta = STATUS_META[obj.status];
   const isActive = obj.status === "proposed" || obj.status === "confirmed";
+  // Added after the quarter was locked → scope creep (mirrors the risk-scan rule).
+  const isScopeCreep =
+    isActive &&
+    !!lockedAt &&
+    new Date(obj.created_at).getTime() > new Date(lockedAt).getTime();
 
   const linkedTasks = tasks.filter((t) => t.objective_id === obj.id);
   // Only active, unlinked tasks are linkable (hide done/skipped noise).
@@ -184,6 +212,11 @@ function ObjectiveRow({ obj, tasks }: { obj: QuarterlyObjective; tasks: TaskLite
                 {isOrphan && (
                   <span className="inline-flex items-center gap-1 text-[10px] text-amber-600">
                     <AlertTriangle className="h-3 w-3" /> No supporting tasks
+                  </span>
+                )}
+                {isScopeCreep && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-orange-600">
+                    <AlertTriangle className="h-3 w-3" /> Scope creep
                   </span>
                 )}
               </div>
@@ -302,24 +335,41 @@ function AddObjectiveForm({
   clientId,
   quarter,
   year,
+  lockedAt,
 }: {
   clientId: string;
   quarter: number;
   year: number;
+  lockedAt: string | null;
 }) {
   const create = useCreateObjective();
   const [title, setTitle] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  const submit = () => {
+  const doCreate = () => {
     const next = title.trim();
     if (!next) return;
     create.mutate(
       { client_id: clientId, quarter, year, title: next },
       {
-        onSuccess: () => setTitle(""),
+        onSuccess: () => {
+          setTitle("");
+          setConfirmOpen(false);
+        },
         onError: (e) => toast.error((e as Error).message),
       }
     );
+  };
+
+  const submit = () => {
+    if (!title.trim()) return;
+    // Adding to a locked quarter is allowed, but warn that it'll be tagged as
+    // scope creep (the founder already approved this quarter's plan).
+    if (lockedAt) {
+      setConfirmOpen(true);
+      return;
+    }
+    doCreate();
   };
 
   return (
@@ -334,6 +384,40 @@ function AddObjectiveForm({
       <Button className="gap-1" onClick={submit} disabled={create.isPending || !title.trim()}>
         <Plus className="h-4 w-4" /> Add
       </Button>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base font-semibold">
+              Add to a locked quarter?
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Q{quarter} {year} was locked when the founder approved the plan
+              {lockedAt ? ` on ${shortDate(lockedAt)}` : ""}. Adding a new objective now will be
+              <span className="font-medium text-foreground"> tagged as scope creep</span> and surface
+              in Risk Alerts. Continue?
+            </p>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmOpen(false)}
+              disabled={create.isPending}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" className="gap-1.5" onClick={doCreate} disabled={create.isPending}>
+              {create.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Add anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -346,11 +430,13 @@ function ObjectiveGroups({
   tasks,
   clientId,
   showAdd,
+  lockByQuarter,
 }: {
   objectives: QuarterlyObjective[];
   tasks: TaskLite[];
   clientId: string;
   showAdd: boolean;
+  lockByQuarter: Record<string, string | null>;
 }) {
   const groups: { quarter: number; year: number; items: QuarterlyObjective[] }[] = [];
   for (const obj of objectives) {
@@ -364,17 +450,34 @@ function ObjectiveGroups({
 
   return (
     <div className="space-y-6">
-      {groups.map((g) => (
-        <div key={`${g.year}-${g.quarter}`} className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Q{g.quarter} {g.year}
-          </p>
-          {g.items.map((obj) => (
-            <ObjectiveRow key={obj.id} obj={obj} tasks={tasks} />
-          ))}
-          {showAdd && <AddObjectiveForm clientId={clientId} quarter={g.quarter} year={g.year} />}
-        </div>
-      ))}
+      {groups.map((g) => {
+        const lockedAt = lockByQuarter[`${g.quarter}-${g.year}`] ?? null;
+        return (
+          <div key={`${g.year}-${g.quarter}`} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Q{g.quarter} {g.year}
+              </p>
+              {lockedAt && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Lock className="h-3 w-3" /> Locked · {shortDate(lockedAt)}
+                </span>
+              )}
+            </div>
+            {g.items.map((obj) => (
+              <ObjectiveRow key={obj.id} obj={obj} tasks={tasks} lockedAt={lockedAt} />
+            ))}
+            {showAdd && (
+              <AddObjectiveForm
+                clientId={clientId}
+                quarter={g.quarter}
+                year={g.year}
+                lockedAt={lockedAt}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -385,7 +488,12 @@ function ObjectiveGroups({
 export default function ObjectivesPanel({ clientId }: { clientId: string }) {
   const { data: objectives = [], isLoading } = useClientObjectives(clientId);
   const { data: rawTasks = [] } = useClientTasks(clientId);
+  const { data: plans = [] } = useClientQuarterlyPlans(clientId);
   const tasks = rawTasks as TaskLite[];
+
+  // Lock state per quarter: `${quarter}-${year}` → locked_at (or null).
+  const lockByQuarter: Record<string, string | null> = {};
+  for (const p of plans) lockByQuarter[`${p.quarter}-${p.year}`] = p.locked_at;
 
   const todo = objectives.filter((o) => o.status === "proposed" || o.status === "confirmed");
   const achieved = objectives.filter((o) => o.status === "achieved");
@@ -393,6 +501,7 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
 
   const fallbackQuarter = currentQuarter();
   const fallbackYear = new Date().getFullYear();
+  const fallbackLock = lockByQuarter[`${fallbackQuarter}-${fallbackYear}`] ?? null;
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -441,10 +550,21 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
                   quarterly review prep (confirmed once the founder approves the review) — or add one
                   the founder committed to below.
                 </p>
-                <AddObjectiveForm clientId={clientId} quarter={fallbackQuarter} year={fallbackYear} />
+                <AddObjectiveForm
+                  clientId={clientId}
+                  quarter={fallbackQuarter}
+                  year={fallbackYear}
+                  lockedAt={fallbackLock}
+                />
               </div>
             ) : (
-              <ObjectiveGroups objectives={todo} tasks={tasks} clientId={clientId} showAdd />
+              <ObjectiveGroups
+                objectives={todo}
+                tasks={tasks}
+                clientId={clientId}
+                showAdd
+                lockByQuarter={lockByQuarter}
+              />
             )}
           </TabsContent>
 
@@ -452,7 +572,13 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
             {achieved.length === 0 ? (
               <p className="text-sm text-muted-foreground">No achieved objectives yet.</p>
             ) : (
-              <ObjectiveGroups objectives={achieved} tasks={tasks} clientId={clientId} showAdd={false} />
+              <ObjectiveGroups
+                objectives={achieved}
+                tasks={tasks}
+                clientId={clientId}
+                showAdd={false}
+                lockByQuarter={lockByQuarter}
+              />
             )}
           </TabsContent>
 
@@ -460,7 +586,13 @@ export default function ObjectivesPanel({ clientId }: { clientId: string }) {
             {dropped.length === 0 ? (
               <p className="text-sm text-muted-foreground">No dropped objectives.</p>
             ) : (
-              <ObjectiveGroups objectives={dropped} tasks={tasks} clientId={clientId} showAdd={false} />
+              <ObjectiveGroups
+                objectives={dropped}
+                tasks={tasks}
+                clientId={clientId}
+                showAdd={false}
+                lockByQuarter={lockByQuarter}
+              />
             )}
           </TabsContent>
         </Tabs>

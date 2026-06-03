@@ -1,8 +1,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+export interface QuarterlyPlan {
+  id: string;
+  client_id: string;
+  quarter: number;
+  year: number;
+  label: string | null;
+  status: string;
+  review_date: string | null;
+  start_date: string | null;
+  // Set when the founder approves the quarter's plan; the scope-creep baseline.
+  locked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export function useClientQuarterlyPlans(clientId: string) {
-  return useQuery({
+  return useQuery<QuarterlyPlan[]>({
     queryKey: ["quarterly-plans", clientId],
     queryFn: () => api.get(`/quarterly-plans?client_id=${clientId}`),
     enabled: !!clientId,

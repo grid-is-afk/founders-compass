@@ -964,6 +964,49 @@ router.patch("/:id", async (req, res) => {
       }
     }
 
+    // Quarter lock: approving a "Qn Review Prep" locks the target quarter's plan
+    // (the one whose objectives it confirms) as the agreed baseline; reverting it
+    // off client_approved unlocks. locked_at is the scope-creep boundary read by
+    // the risk scanner. Non-fatal — a lock-sync failure never blocks the PATCH.
+    if ("review_status" in fields) {
+      const newStatus = fields.review_status as string;
+      const lockTitleMatch = String(updatedRow.title).match(/Q(\d+)\s+Review Prep/i);
+      if (lockTitleMatch) {
+        try {
+          const reviewQuarter = parseInt(lockTitleMatch[1], 10);
+          const rawNext = reviewQuarter + 1;
+          const targetQuarter = rawNext > 4 ? 1 : rawNext;
+          const clientRow = await query(
+            "SELECT current_year FROM clients WHERE id = $1",
+            [updatedRow.client_id]
+          );
+          const baseYear = clientRow.rows[0]?.current_year ?? new Date().getFullYear();
+          const targetYear = rawNext > 4 ? baseYear + 1 : baseYear;
+
+          if (newStatus === "client_approved" && currentReviewStatus !== "client_approved") {
+            // Upsert the target quarter's plan and stamp the lock. New rows keep
+            // the table default status ('draft'); existing rows are untouched
+            // except for locked_at, so the active-quarter selection is unaffected.
+            await query(
+              `INSERT INTO quarterly_plans (client_id, quarter, year, locked_at)
+               VALUES ($1, $2, $3, NOW())
+               ON CONFLICT (client_id, quarter, year)
+               DO UPDATE SET locked_at = NOW(), updated_at = NOW()`,
+              [updatedRow.client_id, targetQuarter, targetYear]
+            );
+          } else if (newStatus === "pending_review" && currentReviewStatus === "client_approved") {
+            await query(
+              `UPDATE quarterly_plans SET locked_at = NULL, updated_at = NOW()
+               WHERE client_id = $1 AND quarter = $2 AND year = $3`,
+              [updatedRow.client_id, targetQuarter, targetYear]
+            );
+          }
+        } catch (lockErr) {
+          console.error("Quarter-lock sync on review-prep status change failed:", lockErr);
+        }
+      }
+    }
+
     return res.json({ ...updatedRow, dataRoomRenamed });
   } catch (err) {
     console.error("PATCH /deliverables/:id error:", err);

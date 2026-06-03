@@ -144,63 +144,65 @@ router.post("/:clientId", async (req, res) => {
       });
     }
 
-    // Scope-creep rules (7 & 8) — DISABLED pending the quarter-lock feature.
-    // The interim implementation used the quarter START date as the boundary,
-    // but tasks/deliverables are created throughout the quarter, so it flagged
-    // ~every item as scope creep (observed 32/33 tasks on a real client).
-    // Re-enable once quarterly_plans.locked_at exists and gate strictly on
-    // created_at > locked_at (the moment the founder approved the plan).
-    const SCOPE_CREEP_ENABLED = false;
-    const activePlanResult = await query(
-      `SELECT COALESCE(start_date, created_at::date) AS lock_date
-       FROM quarterly_plans
-       WHERE client_id = $1 AND status = 'active'
-       ORDER BY year DESC, quarter DESC
-       LIMIT 1`,
-      [clientId]
-    );
-    const lockDate = activePlanResult.rows[0]?.lock_date;
-    if (SCOPE_CREEP_ENABLED && lockDate) {
-      // Rule 7: Scope creep — active tasks added after Q-lock with no objective link.
+    // Scope creep (UC-11): items added AFTER the founder approved the quarter's
+    // plan — quarterly_plans.locked_at (set when a "Qn Review Prep" deliverable
+    // hits client_approved). Tasks have no quarter column, so they use the active
+    // quarter's lock; objectives are matched to their own quarter's lock.
+    // Unlocked / unapproved quarters fire nothing. Deliverables are intentionally
+    // not a creep vector — they're generated documents, not scope commitments.
+
+    // Rule 7: tasks created after the active quarter was locked, no objective link.
+    const activeLock = (
+      await query(
+        `SELECT locked_at FROM quarterly_plans
+         WHERE client_id = $1 AND status = 'active' AND locked_at IS NOT NULL
+         ORDER BY year DESC, quarter DESC
+         LIMIT 1`,
+        [clientId]
+      )
+    ).rows[0]?.locked_at;
+    if (activeLock) {
       const creepTasks = Number(
         (
           await query(
             `SELECT COUNT(*)::int AS n FROM tasks
              WHERE client_id = $1
                AND objective_id IS NULL
-               AND created_at::date > $2
+               AND created_at > $2
                AND status NOT IN ('complete', 'done', 'skipped')`,
-            [clientId, lockDate]
+            [clientId, activeLock]
           )
         ).rows[0]?.n ?? 0
       );
       if (creepTasks > 0) {
         detections.push({
-          title: `Scope creep — ${creepTasks} task${creepTasks !== 1 ? "s" : ""} added after the quarter started`,
-          detail: `[auto] ${creepTasks} active task${creepTasks !== 1 ? "s were" : " was"} added after the current quarter began, none tied to a confirmed objective. Confirm they belong in this quarter's scope.`,
+          title: `Scope creep — ${creepTasks} task${creepTasks !== 1 ? "s" : ""} added after the plan was locked`,
+          detail: `[auto] ${creepTasks} active task${creepTasks !== 1 ? "s were" : " was"} added after the founder approved this quarter's plan, none tied to a confirmed objective. Confirm they belong in the agreed scope.`,
           severity: "warning",
         });
       }
+    }
 
-      // Rule 8: Scope creep — deliverables added mid-quarter.
-      const creepDeliv = Number(
-        (
-          await query(
-            `SELECT COUNT(*)::int AS n FROM deliverables
-             WHERE client_id = $1
-               AND archived_at IS NULL
-               AND created_at::date > $2`,
-            [clientId, lockDate]
-          )
-        ).rows[0]?.n ?? 0
-      );
-      if (creepDeliv > 0) {
-        detections.push({
-          title: `Scope creep — ${creepDeliv} deliverable${creepDeliv !== 1 ? "s" : ""} added mid-quarter`,
-          detail: `[auto] ${creepDeliv} deliverable${creepDeliv !== 1 ? "s were" : " was"} created after the current quarter began. Confirm they were planned, not unscoped additions.`,
-          severity: "warning",
-        });
-      }
+    // Rule 8: objectives created after THEIR quarter was locked.
+    const creepObjResult = await query(
+      `SELECT qo.id, qo.title
+       FROM quarterly_objectives qo
+       JOIN quarterly_plans qp
+         ON qp.client_id = qo.client_id AND qp.quarter = qo.quarter AND qp.year = qo.year
+       WHERE qo.client_id = $1
+         AND qp.locked_at IS NOT NULL
+         AND qo.created_at > qp.locked_at
+         AND qo.status IN ('proposed', 'confirmed')`,
+      [clientId]
+    );
+    for (const o of creepObjResult.rows) {
+      detections.push({
+        title: `Scope creep — objective added after lock: ${o.title}`,
+        detail: `[auto] This objective was added after the founder approved the quarter's plan. Confirm it's an agreed addition, not unscoped work.`,
+        severity: "warning",
+        source_id: o.id,
+        source_type: "objective",
+      });
     }
 
     // TODO(UC-11): scope-creep "hour overages" vector is deferred — no hours/effort
