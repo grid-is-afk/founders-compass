@@ -769,3 +769,18 @@ ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_at     TIMESTAMPTZ;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_reason TEXT;
 
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS due_date DATE;
+
+-- ============================================================
+-- Fix: risk_alerts.severity vocabulary mismatch.
+-- The original CHECK (line ~215) allowed low/medium/high/critical, but the risk
+-- scanner (server/routes/riskScan.ts) and the Risk Alerts UI standardized on
+-- critical/warning/info. Every 'warning'/'info' detection (e.g. an overdue task
+-- under 21 days) was rejected, aborting the scan mid-insert and leaving alerts
+-- partially written. Widen to the UNION so legacy rows AND current code validate.
+-- ============================================================
+DO $$ BEGIN
+  ALTER TABLE risk_alerts DROP CONSTRAINT IF EXISTS risk_alerts_severity_check;
+  ALTER TABLE risk_alerts ADD CONSTRAINT risk_alerts_severity_check
+    CHECK (severity IN ('low', 'medium', 'high', 'critical', 'warning', 'info'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { query } from "../db.js";
+import pool, { query } from "../db.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
@@ -243,20 +243,30 @@ router.post("/:clientId", async (req, res) => {
     // A real version needs an AI pass scoring recent meeting notes against a baseline;
     // that's its own slice, not a riskScan rule.
 
-    // Clear previous auto-generated alerts, preserve manual ones
-    await query(
-      `DELETE FROM risk_alerts
-       WHERE client_id = $1 AND detail LIKE '[auto]%'`,
-      [clientId]
-    );
-
-    // Insert new detections
-    for (const d of detections) {
-      await query(
-        `INSERT INTO risk_alerts (client_id, title, detail, severity, source_id, source_type)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [clientId, d.title, d.detail, d.severity, d.source_id ?? null, d.source_type ?? null]
+    // Swap the auto-alert set atomically: clear the previous '[auto]' alerts
+    // (manual ones are preserved) and insert the fresh detections in one
+    // transaction, so a single failed insert can never leave the client with
+    // a half-written or empty alert list.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `DELETE FROM risk_alerts WHERE client_id = $1 AND detail LIKE '[auto]%'`,
+        [clientId]
       );
+      for (const d of detections) {
+        await client.query(
+          `INSERT INTO risk_alerts (client_id, title, detail, severity, source_id, source_type)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [clientId, d.title, d.detail, d.severity, d.source_id ?? null, d.source_type ?? null]
+        );
+      }
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK");
+      throw txErr;
+    } finally {
+      client.release();
     }
 
     return res.json({ scanned: true, detections: detections.length });
