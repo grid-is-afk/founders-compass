@@ -5,6 +5,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./systemPrompt.js";
+import { buildLicenseeSystemPrompt } from "./systemPrompt-licensee.js";
 import { tools, executeTool } from "./tools.js";
 import { query } from "./db.js";
 import dotenv from "dotenv";
@@ -59,6 +60,8 @@ import kickoffPlanRoutes from "./routes/kickoffPlan.js";
 import methodologyRecommendationsRoutes from "./routes/methodologyRecommendations.js";
 import userRoutes from "./routes/users.js";
 import deferredChangesRoutes from "./routes/deferredChanges.js";
+import licenseeIntakeRoutes from "./routes/licenseeIntakes.js";
+import referralRoutes from "./routes/referrals.js";
 
 dotenv.config();
 
@@ -111,6 +114,7 @@ app.use("/api/clients", authMiddleware, clientDiagnoseActionsRoutes);
 app.use("/api/clients", authMiddleware, clientSixCsReconcileRoutes);
 app.use("/api/clients", authMiddleware, clientAssessmentSummaryRoutes);
 app.use("/api/clients", authMiddleware, clientIpValueFrameworkRoutes);
+app.use("/api/clients", authMiddleware, licenseeIntakeRoutes);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);
@@ -140,6 +144,8 @@ app.use("/api/clients", authMiddleware, kickoffPlanRoutes);
 app.use("/api/clients", authMiddleware, methodologyRecommendationsRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
 app.use("/api/deferred-changes", authMiddleware, deferredChangesRoutes);
+// Licensee portal: referral partner directory + per-client referral requests
+app.use("/api", authMiddleware, referralRoutes);
 
 // ---------------------------------------------------------------------------
 // GET /api/q1-phase-config — public config for the Gantt chart
@@ -173,25 +179,37 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     }
   }
 
+  // Licensee (Advisor) QB AI is read-only and always scoped to a single client.
+  const isLicensee = req.user!.role === "licensee";
+  if (isLicensee && !clientId) {
+    return res.status(400).json({ error: "Select a client to use the Quarterback AI." });
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
   try {
-    // Build a fresh system prompt with real DB data for this advisor
-    let systemPrompt = await buildSystemPrompt(req.user!.id);
+    // Build a fresh system prompt with real DB data. Licensees get a scoped,
+    // single-client prompt with NO firm/portfolio/methodology knowledge.
+    let systemPrompt = isLicensee
+      ? await buildLicenseeSystemPrompt(clientId as string)
+      : await buildSystemPrompt(req.user!.id);
 
     // When scoped to a specific client, inject deep client context + RAG results
     if (clientId) {
+      const lastUserContent =
+        (messages as Array<{ role: string; content: string }>)
+          .filter((m) => m.role === "user")
+          .at(-1)?.content ?? "";
+
+      // Licensee: client context is already baked into the licensee prompt, and
+      // RAG must exclude TFO methodology chunks. Advisor: full structured context.
       const [structuredCtx, ragChunks] = await Promise.all([
-        buildClientStructuredContext(clientId as string, req.user!.id),
-        retrieveChunks(
-          (messages as Array<{ role: string; content: string }>)
-            .filter((m) => m.role === "user")
-            .at(-1)?.content ?? "",
-          clientId as string,
-          15
-        ),
+        isLicensee
+          ? Promise.resolve("")
+          : buildClientStructuredContext(clientId as string, req.user!.id),
+        retrieveChunks(lastUserContent, clientId as string, 15, !isLicensee),
       ]);
 
       if (structuredCtx) systemPrompt += "\n\n" + structuredCtx;
@@ -292,7 +310,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system: systemPrompt as string,
-        tools: tools as Anthropic.Tool[],
+        // Licensees are READ-ONLY: hand them zero tools so no write path exists.
+        tools: isLicensee ? [] : (tools as Anthropic.Tool[]),
         messages: currentMessages,
       });
 

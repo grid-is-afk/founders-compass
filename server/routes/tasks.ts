@@ -21,14 +21,24 @@ const ALLOWED_COLUMNS = new Set([
   "source_id",
 ]);
 
-// Helper: verify client access — team members can access any client, clients verify via user_id
+// Helper: verify client access — team members can access any client, clients verify
+// via user_id, and licensees are scoped to their own clients (advisor_id match).
 async function verifyClient(clientId: string, userId: string, userRole: string) {
-  if (userRole !== "client") return true;
-  const result = await query(
-    "SELECT id FROM clients WHERE id = $1 AND user_id = $2",
-    [clientId, userId]
-  );
-  return result.rows.length > 0;
+  if (userRole === "client") {
+    const result = await query(
+      "SELECT id FROM clients WHERE id = $1 AND user_id = $2",
+      [clientId, userId]
+    );
+    return result.rows.length > 0;
+  }
+  if (userRole === "licensee") {
+    const result = await query(
+      "SELECT id FROM clients WHERE id = $1 AND advisor_id = $2",
+      [clientId, userId]
+    );
+    return result.rows.length > 0;
+  }
+  return true; // advisor / admin — unchanged
 }
 
 /**
