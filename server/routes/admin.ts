@@ -13,14 +13,14 @@ function requireAdmin(req: any, res: any): boolean {
   return true;
 }
 
-// GET /api/admin/users — list all advisor/admin users
+// GET /api/admin/users — list TFO team (advisor/admin) + licensee (Advisor portal) users
 router.get("/users", async (req, res) => {
   if (!requireAdmin(req, res)) return;
   try {
     const result = await query(
-      `SELECT id, name, email, role, see_all_clients, created_at
+      `SELECT id, name, email, role, see_all_clients, plan_tier, created_at
        FROM users
-       WHERE role IN ('advisor', 'admin')
+       WHERE role IN ('advisor', 'admin', 'licensee')
        ORDER BY created_at DESC NULLS LAST`
     );
     return res.json(result.rows);
@@ -38,18 +38,20 @@ router.post("/users", async (req, res) => {
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: "name, email, password, and role are required" });
   }
-  if (!["advisor", "admin"].includes(role)) {
-    return res.status(400).json({ error: "role must be advisor or admin" });
+  if (!["advisor", "admin", "licensee"].includes(role)) {
+    return res.status(400).json({ error: "role must be advisor, admin, or licensee" });
   }
 
   try {
     const passwordHash = await bcryptjs.hash(password, 12);
+    // Licensees are always scoped to their own clients — never see-all.
+    const seeAllClients = role !== "licensee";
     const result = await query(
-      `INSERT INTO users (email, password_hash, name, role)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (email, password_hash, name, role, see_all_clients)
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email) DO NOTHING
        RETURNING id, name, email, role`,
-      [email.toLowerCase().trim(), passwordHash, name.trim(), role]
+      [email.toLowerCase().trim(), passwordHash, name.trim(), role, seeAllClients]
     );
     if (result.rows.length === 0) {
       return res.status(409).json({ error: "A user with this email already exists" });
@@ -97,7 +99,7 @@ router.delete("/users/:id", async (req, res) => {
 
   try {
     const result = await query(
-      `DELETE FROM users WHERE id = $1 AND role IN ('advisor', 'admin') RETURNING id`,
+      `DELETE FROM users WHERE id = $1 AND role IN ('advisor', 'admin', 'licensee') RETURNING id`,
       [id]
     );
     if (result.rows.length === 0) {
