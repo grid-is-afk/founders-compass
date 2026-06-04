@@ -35,8 +35,9 @@ const Landing = () => {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Client Portal</Link>
+            <Link to="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Advisor Portal</Link>
             <Link to="/login">
-              <Button size="sm">Advisor Login</Button>
+              <Button size="sm">Admin Login</Button>
             </Link>
           </div>
         </div>

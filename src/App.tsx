@@ -50,6 +50,14 @@ import {
   AdvisorInvestorShare,
 } from "./pages/advisor/AdvisorPlaceholders";
 
+import LicenseeLayout from "./components/layout/LicenseeLayout";
+import LicenseeClients from "./pages/licensee/LicenseeClients";
+import LicenseeClientView from "./pages/licensee/LicenseeClientView";
+import LicenseeIntake from "./pages/licensee/LicenseeIntake";
+import LicenseeReferralHub from "./pages/licensee/LicenseeReferralHub";
+import LicenseeQuarterbackInfo from "./pages/licensee/LicenseeQuarterbackInfo";
+import LicenseePlaceholder from "./pages/licensee/LicenseePlaceholder";
+
 import ClientLayout from "./components/layout/ClientLayout";
 import ClientDashboard from "./pages/client/ClientDashboard";
 import {
@@ -133,6 +141,30 @@ const App = () => (
               <Route path="capital-strategy-roadmap" element={<CapitalStrategyRoadmap />} />
               <Route path="capital-strategy-roadmap/:clientId" element={<CapitalStrategyRoadmap />} />
               <Route path="admin/users" element={<UserManagement />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+
+            {/* Protected Licensee (Advisor) Portal */}
+            <Route
+              path="/licensee"
+              element={
+                <ProtectedRoute>
+                  <LicenseeLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<LicenseeClients />} />
+              <Route path="clients" element={<LicenseeClients />} />
+              <Route path="clients/:id" element={<LicenseeClientView />} />
+              <Route path="clients/:id/intake" element={<LicenseeIntake />} />
+              <Route path="referral-hub" element={<LicenseeReferralHub />} />
+              <Route path="prospects" element={<LicenseePlaceholder title="Prospects" />} />
+              <Route path="off-pipeline" element={<LicenseePlaceholder title="Off-Pipeline" />} />
+              <Route path="clients-archived" element={<LicenseePlaceholder title="Archived Clients" />} />
+              <Route path="quarterback" element={<LicenseeQuarterbackInfo />} />
+              <Route path="investor-share" element={<LicenseePlaceholder title="Investor Share" />} />
+              <Route path="capital-strategy" element={<LicenseePlaceholder title="Capital Strategy Architecture" />} />
+              <Route path="user-management" element={<LicenseePlaceholder title="User Management" />} />
               <Route path="settings" element={<Settings />} />
             </Route>
 

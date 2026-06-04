@@ -3,15 +3,44 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { roleHome } from "@/lib/roleLabels";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+// Login mode tabs use Katie's nomenclature. The tabs are a UI affordance only — the
+// actual portal a user lands in is driven by the role on their account, not the tab.
+//   "Admin"   → TFO staff (advisor/admin slugs)
+//   "Advisor" → licensees (licensee slug)
+//   "Client"  → business owners (client slug)
+type LoginMode = "admin" | "advisor" | "client";
+
+const MODE_COPY: Record<LoginMode, { tab: string; heading: string; sub: string; placeholder: string }> = {
+  admin: {
+    tab: "Admin",
+    heading: "Admin Sign In",
+    sub: "Enter your credentials to access the back office.",
+    placeholder: "you@foundersoffice.com",
+  },
+  advisor: {
+    tab: "Advisor",
+    heading: "Advisor Sign In",
+    sub: "Enter your credentials to access your Founders Office portal.",
+    placeholder: "you@yourfirm.com",
+  },
+  client: {
+    tab: "Client",
+    heading: "Client Sign In",
+    sub: "Enter the credentials your advisor shared with you.",
+    placeholder: "your@email.com",
+  },
+};
 
 const Login = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading } = useAuth();
 
-  const [loginMode, setLoginMode] = useState<"advisor" | "client">("advisor");
+  const [loginMode, setLoginMode] = useState<LoginMode>("admin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -23,7 +52,7 @@ const Login = () => {
     const savedUser = localStorage.getItem("tfo-user");
     let role = "advisor";
     try { role = savedUser ? JSON.parse(savedUser).role : "advisor"; } catch { /* corrupted localStorage */ }
-    return <Navigate to={role === "client" ? "/client" : "/advisor"} replace />;
+    return <Navigate to={roleHome(role)} replace />;
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -33,17 +62,19 @@ const Login = () => {
 
     try {
       await login(email.trim().toLowerCase(), password);
-      // Redirect based on role
+      // Redirect based on the authenticated user's role (not the selected tab)
       const savedUser = localStorage.getItem("tfo-user");
       let role = "advisor";
       try { role = savedUser ? JSON.parse(savedUser).role : "advisor"; } catch { /* corrupted localStorage */ }
-      navigate(role === "client" ? "/client" : "/advisor", { replace: true });
+      navigate(roleHome(role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setSubmitting(false);
     }
   };
+
+  const copy = MODE_COPY[loginMode];
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -116,37 +147,27 @@ const Login = () => {
 
           {/* Login mode tabs */}
           <div className="flex rounded-lg border border-border bg-muted/30 p-1 mb-8">
-            <button
-              type="button"
-              onClick={() => { setLoginMode("advisor"); setError(null); }}
-              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                loginMode === "advisor"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Advisor
-            </button>
-            <button
-              type="button"
-              onClick={() => { setLoginMode("client"); setError(null); }}
-              className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                loginMode === "client"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Client
-            </button>
+            {(Object.keys(MODE_COPY) as LoginMode[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => { setLoginMode(mode); setError(null); }}
+                className={`flex-1 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  loginMode === mode
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {MODE_COPY[mode].tab}
+              </button>
+            ))}
           </div>
 
           <h1 className="text-2xl font-display font-semibold text-foreground mb-1">
-            {loginMode === "advisor" ? "Advisor Sign In" : "Client Sign In"}
+            {copy.heading}
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
-            {loginMode === "advisor"
-              ? "Enter your credentials to access the back office."
-              : "Enter the credentials your advisor shared with you."}
+            {copy.sub}
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -162,7 +183,7 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9"
-                  placeholder={loginMode === "advisor" ? "you@foundersoffice.com" : "your@email.com"}
+                  placeholder={copy.placeholder}
                   disabled={submitting}
                 />
               </div>

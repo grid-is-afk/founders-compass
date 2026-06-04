@@ -20,11 +20,13 @@ export async function verifyClientAccess(
   }
 
   if (userRole !== "client") {
-    const userRes = await query(
-      `SELECT see_all_clients FROM users WHERE id = $1`,
-      [userId]
-    );
-    const seeAll = userRes.rows[0]?.see_all_clients ?? true;
+    // Licensees are ALWAYS scoped to their own clients — never honor see_all_clients for them.
+    const seeAll =
+      userRole === "licensee"
+        ? false
+        : (
+            await query(`SELECT see_all_clients FROM users WHERE id = $1`, [userId])
+          ).rows[0]?.see_all_clients ?? true;
     if (seeAll) {
       const r = await query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
       return r.rows.length > 0;

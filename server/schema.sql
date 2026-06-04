@@ -8,10 +8,19 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   name          TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('advisor', 'admin', 'client')),
+  role          TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('advisor', 'admin', 'client', 'licensee')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration: widen the role CHECK to include 'licensee' (CEPA/advisor portal user).
+-- Existing installs were created with the 3-role constraint, so re-create it idempotently.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('advisor', 'admin', 'client', 'licensee'));
+
+-- Migration: licensee subscription tier (billing deferred — set manually for the beta cohort).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_tier TEXT CHECK (plan_tier IN ('starter', 'growth', 'scale'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS firm_name TEXT;
 
 -- ============================================================
 -- Clients
@@ -898,3 +907,89 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_kind TEXT
   CHECK (source_kind IN ('meeting', 'email', 'call', 'note', 'manual'));
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_id UUID;
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_stakeholder ON tasks(owner_stakeholder_id);
+
+-- ============================================================
+-- Licensee Portal (Advisor Portal) — V1 thin slice
+--
+-- A "licensee" (role on users) is a CEPA who manages their own business-owner
+-- clients via a simplified portal. Their clients are ordinary `clients` rows
+-- (advisor_id = the licensee's user id), so tasks/documents/etc. all apply.
+--
+--   • licensee_intakes          — one 4-pillar CEPA intake per client (v1; future
+--                                 re-assessments bump `version`). Stores the
+--                                 engagement snapshot + the computed pillar_scores
+--                                 JSON ({ entity:{pct,band}, ip:{...}, ... }).
+--   • licensee_intake_responses — one row per answered question, with the chosen
+--                                 option's risk_tag. Gap/Partial rows drive the
+--                                 readiness % and TFO scoping priorities.
+--   • referral_partners         — directory of vetted specialists (seeded by TFO).
+--   • referral_requests         — a licensee asking TFO to connect a client to a
+--                                 specialist; tracked Requested → In Progress →
+--                                 Connected with an outcome.
+-- Additive, idempotent — applied by the boot self-migration (index.ts).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS licensee_intakes (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id      UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  version        INT NOT NULL DEFAULT 1,
+  status         TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'complete')),
+  -- Engagement snapshot (collected from the CEPA)
+  cepa_name      TEXT,
+  firm_name      TEXT,
+  completed_date DATE,
+  annual_revenue TEXT,
+  num_owners     INT,
+  owner_ages     TEXT,
+  industry       TEXT,
+  exit_horizon   TEXT,
+  vam_phase      TEXT,
+  -- Computed readiness per pillar: { entity:{pct,band}, ip:..., capital:..., exit:... }
+  pillar_scores  JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at   TIMESTAMPTZ,
+  UNIQUE (client_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_licensee_intakes_client ON licensee_intakes(client_id);
+
+CREATE TABLE IF NOT EXISTS licensee_intake_responses (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  intake_id    UUID NOT NULL REFERENCES licensee_intakes(id) ON DELETE CASCADE,
+  pillar       TEXT NOT NULL CHECK (pillar IN ('entity', 'ip', 'capital', 'exit')),
+  question_key TEXT NOT NULL,
+  answer_value TEXT,
+  risk_tag     TEXT CHECK (risk_tag IN ('on_track', 'partial', 'gap', 'na')),
+  notes        TEXT,
+  UNIQUE (intake_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_licensee_responses_intake ON licensee_intake_responses(intake_id);
+
+CREATE TABLE IF NOT EXISTS referral_partners (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          TEXT NOT NULL,
+  occupation    TEXT,
+  specialty     TEXT,
+  testimonials  TEXT,
+  rating        NUMERIC(2,1) CHECK (rating >= 0 AND rating <= 5),
+  contact_email TEXT,
+  headshot_url  TEXT,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_referral_partners_active ON referral_partners(active);
+
+CREATE TABLE IF NOT EXISTS referral_requests (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  licensee_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pillar       TEXT CHECK (pillar IN ('entity', 'ip', 'capital', 'exit')),
+  partner_id   UUID REFERENCES referral_partners(id) ON DELETE SET NULL,
+  note         TEXT,
+  status       TEXT NOT NULL DEFAULT 'requested'
+                 CHECK (status IN ('requested', 'in_progress', 'connected')),
+  outcome      TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_referral_requests_client ON referral_requests(client_id);
+CREATE INDEX IF NOT EXISTS idx_referral_requests_licensee ON referral_requests(licensee_id);
