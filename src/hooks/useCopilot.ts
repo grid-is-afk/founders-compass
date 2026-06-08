@@ -1,11 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { streamChat, type ChatMessage, type ChatAction, type ChatSource } from "@/lib/copilotApi";
+import { streamChat, buildOutgoingWindow, type ChatMessage, type ChatAction, type ChatSource } from "@/lib/copilotApi";
 
 let messageCounter = 0;
 
-const STORAGE_KEY = "qb-chat-history";
+// Chat history is scoped per advisor AND per client so one client's
+// conversation (and its onboarding briefs) can never bleed into another
+// client's workspace, and one advisor's chats are never visible to another
+// advisor on a shared browser. The "global" segment holds the advisor-home
+// chat (no client selected).
+function historyKey(userId?: string, clientId?: string): string {
+  return `qb-chat-history:${userId ?? "anon"}:${clientId ?? "global"}`;
+}
 
 const actionToastLabels: Record<string, string> = {
   task_created: "Task created",
@@ -16,9 +23,9 @@ const actionToastLabels: Record<string, string> = {
   meeting_scheduled: "Meeting scheduled",
 };
 
-function loadMessages(): ChatMessage[] {
+function loadMessages(key: string): ChatMessage[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = localStorage.getItem(key);
     if (!saved) return [];
     const parsed = JSON.parse(saved) as ChatMessage[];
     // Advance counter past saved message ids so new ids don't collide
@@ -34,17 +41,62 @@ function loadMessages(): ChatMessage[] {
   }
 }
 
-export function useCopilot(clientContext?: string, clientId?: string) {
-  const [messages, setMessages] = useState<ChatMessage[]>(loadMessages);
+export function useCopilot(
+  clientContext?: string,
+  clientId?: string,
+  userId?: string,
+) {
+  // The storage key the currently-loaded `messages` belong to. Kept in a ref
+  // so the persist effect always writes back to the right key even mid-switch,
+  // never leaking the previous client's messages into the new client's bucket.
+  const keyRef = useRef(historyKey(userId, clientId));
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    loadMessages(keyRef.current),
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Fires the storage-full warning at most once per mounted session.
+  const quotaWarnedRef = useRef(false);
   const qc = useQueryClient();
 
-  // Persist messages to localStorage whenever they change
+  // When the advisor switches clients (or the logged-in advisor changes),
+  // abort any in-flight stream and swap in that scope's saved history. This is
+  // the reset that stops Client A's briefing from rendering under Client B.
   useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    const nextKey = historyKey(userId, clientId);
+    if (nextKey === keyRef.current) return;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setIsStreaming(false);
+    keyRef.current = nextKey;
+    setMessages(loadMessages(nextKey));
+  }, [clientId, userId]);
+
+  // Persist messages to localStorage whenever they change, always to the key
+  // the loaded messages belong to (keyRef), never a stale closure value.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    try {
+      localStorage.setItem(keyRef.current, JSON.stringify(messages));
+    } catch (err) {
+      // localStorage is ~5MB per origin — a long session full of large reports
+      // can exceed it. Keep the in-memory conversation working regardless, and
+      // warn the advisor once so they know to start a fresh chat to re-enable
+      // saved history. (Sending is unaffected — outgoing payloads are windowed.)
+      const isQuota =
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+      if (isQuota && !quotaWarnedRef.current) {
+        quotaWarnedRef.current = true;
+        toast("Chat history is full", {
+          description:
+            "This conversation is too large to keep saving. Start a new chat to restore saved history — your generated reports are safe in the Data Room.",
+        });
+      } else if (!isQuota) {
+        console.error("Failed to persist chat history:", err);
+      }
     }
   }, [messages]);
 
@@ -83,16 +135,23 @@ export function useCopilot(clientContext?: string, clientId?: string) {
           content: m.content,
         }));
 
-        // Prepend client context to the first user message
+        // Window the OUTGOING copy to a byte budget so a long conversation full
+        // of large generated reports can never exceed the server's request-body
+        // limit. The full history stays in state/localStorage and on screen —
+        // only what we send over the wire is trimmed. The window is guaranteed
+        // to start with a user message (required by the chat API).
+        const windowed = buildOutgoingWindow(historyMessages);
+
+        // Prepend client context to the first (user) message of the window
         const allMessages = clientContext
           ? [
               {
                 role: "user" as const,
-                content: `[Context: The advisor is currently viewing ${clientContext}]\n\n${historyMessages[0]?.content ?? ""}`,
+                content: `[Context: The advisor is currently viewing ${clientContext}]\n\n${windowed[0]?.content ?? ""}`,
               },
-              ...historyMessages.slice(1),
+              ...windowed.slice(1),
             ]
-          : historyMessages;
+          : windowed;
 
         for await (const event of streamChat(allMessages, abortController.signal, clientId)) {
           if (event.kind === "text") {
@@ -189,7 +248,7 @@ export function useCopilot(clientContext?: string, clientId?: string) {
     cancelStream();
     setMessages([]);
     setError(null);
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(keyRef.current);
   }, [cancelStream]);
 
   return { messages, isStreaming, error, sendMessage, cancelStream, clearConversation };

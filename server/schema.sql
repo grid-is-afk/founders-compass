@@ -8,10 +8,19 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   name          TEXT NOT NULL,
-  role          TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('advisor', 'admin', 'client')),
+  role          TEXT NOT NULL DEFAULT 'advisor' CHECK (role IN ('advisor', 'admin', 'client', 'licensee')),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Migration: widen the role CHECK to include 'licensee' (CEPA/advisor portal user).
+-- Existing installs were created with the 3-role constraint, so re-create it idempotently.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('advisor', 'admin', 'client', 'licensee'));
+
+-- Migration: licensee subscription tier (billing deferred — set manually for the beta cohort).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_tier TEXT CHECK (plan_tier IN ('starter', 'growth', 'scale'));
+ALTER TABLE users ADD COLUMN IF NOT EXISTS firm_name TEXT;
 
 -- ============================================================
 -- Clients
@@ -708,3 +717,279 @@ ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ;
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_at  TIMESTAMPTZ;
 ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS approved_by  UUID
   REFERENCES users(id) ON DELETE SET NULL;
+
+-- ============================================================
+-- UC-07: Quarterly objectives (structured persistence)
+-- The Q-objectives a founder commits to at the quarterly review.
+-- Captured BOTH ways: AI-extracted from the review-prep doc
+-- (status 'proposed', source 'extracted') and advisor-entered/confirmed
+-- (source 'advisor'). Unblocks UC-08 (workplan maintenance) and the
+-- UC-11 orphan-objective rule.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS quarterly_objectives (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  -- Next quarter's plan often doesn't exist yet, so quarter/year are stored
+  -- directly; plan_id is backfilled when the plan is created.
+  plan_id     UUID REFERENCES quarterly_plans(id) ON DELETE SET NULL,
+  quarter     INT NOT NULL,
+  year        INT NOT NULL,
+  title       TEXT NOT NULL,
+  description TEXT,
+  status      TEXT NOT NULL DEFAULT 'proposed'
+                CHECK (status IN ('proposed', 'confirmed', 'achieved', 'dropped')),
+  source      TEXT NOT NULL DEFAULT 'advisor'
+                CHECK (source IN ('extracted', 'advisor')),
+  sort_order  INT NOT NULL DEFAULT 0,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quarterly_objectives_client
+  ON quarterly_objectives(client_id, year, quarter);
+
+-- Link supporting tasks to an objective so UC-11 can detect objectives
+-- that have no supporting tasks (orphan-objective rule).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS objective_id UUID
+  REFERENCES quarterly_objectives(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_objective ON tasks(objective_id);
+
+-- Third review-status stage: 'client_approved' (the founder has agreed). This
+-- is the transition that promotes a review-prep's objectives to 'confirmed'.
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS client_approved_at TIMESTAMPTZ;
+
+-- An older migration left a CHECK constraint allowing only pending_review/approved,
+-- which rejected the new 'client_approved' stage. Widen it to all three stages.
+DO $$ BEGIN
+  ALTER TABLE deliverables DROP CONSTRAINT IF EXISTS deliverables_review_status_check;
+  ALTER TABLE deliverables ADD CONSTRAINT deliverables_review_status_check
+    CHECK (review_status IN ('pending_review', 'approved', 'client_approved'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- ============================================================
+-- UC-11: Drift detection — advisor flag + deliverable promise date
+-- Powers two new risk rules in server/routes/riskScan.ts:
+--   • advisor-flagged engagement  (clients.flagged_at / flagged_reason)
+--   • missed deliverable promise  (deliverables.due_date)
+-- Additive, idempotent — picked up by the boot self-migration (index.ts).
+-- ============================================================
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_at     TIMESTAMPTZ;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS flagged_reason TEXT;
+
+ALTER TABLE deliverables ADD COLUMN IF NOT EXISTS due_date DATE;
+
+-- ============================================================
+-- Fix: risk_alerts.severity vocabulary mismatch.
+-- The original CHECK (line ~215) allowed low/medium/high/critical, but the risk
+-- scanner (server/routes/riskScan.ts) and the Risk Alerts UI standardized on
+-- critical/warning/info. Every 'warning'/'info' detection (e.g. an overdue task
+-- under 21 days) was rejected, aborting the scan mid-insert and leaving alerts
+-- partially written. Widen to the UNION so legacy rows AND current code validate.
+-- ============================================================
+DO $$ BEGIN
+  ALTER TABLE risk_alerts DROP CONSTRAINT IF EXISTS risk_alerts_severity_check;
+  ALTER TABLE risk_alerts ADD CONSTRAINT risk_alerts_severity_check
+    CHECK (severity IN ('low', 'medium', 'high', 'critical', 'warning', 'info'));
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- ============================================================
+-- Quarter lock: the moment the founder approved the quarter's plan (set when a
+-- "Qn Review Prep" deliverable hits client_approved — see server/routes/
+-- deliverables.ts). Becomes the scope-creep baseline: tasks/objectives created
+-- after locked_at are flagged by the risk scanner. Additive, idempotent.
+-- ============================================================
+ALTER TABLE quarterly_plans ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+
+-- ============================================================
+-- UC-13: Cross-engagement pattern recognition ("Firm Insights")
+-- Firm-level patterns surfaced across ALL engagements: what's working, what
+-- consistently blocks progress, and where the methodology is strongest/weakest.
+-- Numbers are computed deterministically in SQL (server/routes/firmInsights.ts);
+-- the narrative is written by Claude from those pre-computed aggregates only.
+-- TFO-only: gated to advisor/admin (never the client role) at the route layer.
+--   • category  — which of the four spec buckets this insight belongs to
+--   • metrics   — the computed aggregates the narrative is grounded in (audit)
+--   • engagements_referenced — client ids cited as internal evidence (Katie:
+--     drafts may reference specific engagement ids; the UI shows their names)
+--   • status    — draft → approved | dismissed. A re-scan replaces only drafts;
+--     approved/dismissed rows survive so human decisions are never lost.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS firm_insights (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  category               TEXT NOT NULL CHECK (category IN ('working', 'blocker', 'strength', 'weakness')),
+  title                  TEXT NOT NULL,
+  narrative              TEXT NOT NULL,
+  metrics                JSONB,
+  engagements_referenced UUID[] NOT NULL DEFAULT '{}',
+  status                 TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'approved', 'dismissed')),
+  generated_by           UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+  approved_at            TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_firm_insights_status ON firm_insights(status);
+
+-- ============================================================
+-- UC-04: Cross-channel communication synthesis
+--
+-- Two tables behind a clean "adapter seam":
+--   • communication_events — ONE normalized row per communication, whatever the
+--     channel. Each channel adapter (meetings now; gmail → zoom → whatsapp once
+--     Aakash provisions creds) only translates its source INTO this shape; the
+--     synthesis engine reads only this table and never knows a channel exists.
+--     UNIQUE(client_id, channel, source_ref) makes re-syncing idempotent — an
+--     adapter can re-run and upsert without creating duplicates.
+--   • communication_digests — one stored topic-organized digest per generate
+--     run (mirrors firm_insights): the AI regroups events BY TOPIC, not channel,
+--     over a date window. Weekly = the same call with a 7-day window.
+-- Additive + idempotent — applied by the boot self-migration (index.ts).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS communication_events (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  channel       TEXT NOT NULL CHECK (channel IN ('meeting', 'gmail', 'zoom', 'whatsapp')),
+  direction     TEXT CHECK (direction IN ('inbound', 'outbound', 'internal')),
+  occurred_at   TIMESTAMPTZ NOT NULL,
+  sender        TEXT,
+  participants  TEXT[] NOT NULL DEFAULT '{}',
+  subject       TEXT,
+  body_text     TEXT NOT NULL,
+  source_ref    TEXT NOT NULL,
+  metadata      JSONB NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_comm_events_source
+  ON communication_events(client_id, channel, source_ref);
+CREATE INDEX IF NOT EXISTS idx_comm_events_client_time
+  ON communication_events(client_id, occurred_at DESC);
+
+CREATE TABLE IF NOT EXISTS communication_digests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  period_start    DATE NOT NULL,
+  period_end      DATE NOT NULL,
+  topics          JSONB NOT NULL DEFAULT '[]',
+  source_channels TEXT[] NOT NULL DEFAULT '{}',
+  event_count     INT NOT NULL DEFAULT 0,
+  generated_by    UUID REFERENCES users(id) ON DELETE SET NULL,
+  generated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comm_digests_client
+  ON communication_digests(client_id, period_end DESC);
+
+-- ============================================================
+-- UC-12: Commitment tracking — bilateral ownership + provenance
+-- A commitment is just a task with an owner that may be the CLIENT (a
+-- stakeholder) rather than a TFO advisor. We extend `tasks` rather than create a
+-- parallel table so the existing capture/agenda/workplan machinery applies
+-- unchanged (Katie: "UC-12 is just a task").
+--   • owner_type           — 'tfo' (a team member owns it) | 'client' (a
+--                            stakeholder owns it). Existing rows default to 'tfo'.
+--   • owner_stakeholder_id  — set when owner_type='client'; the client person on
+--                            the hook. App invariant: tfo→assignee_id may be set,
+--                            owner_stakeholder_id NULL; client→owner_stakeholder_id
+--                            set, assignee_id NULL (enforced in routes/tasks.ts).
+--   • source_kind/source_id — where the commitment came from (meeting capture
+--                            stamps 'meeting' + the meeting id). v1 sources:
+--                            meeting | email | call | note | manual.
+-- Additive, idempotent — picked up by the boot self-migration (index.ts).
+-- ============================================================
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_type TEXT NOT NULL DEFAULT 'tfo'
+  CHECK (owner_type IN ('tfo', 'client'));
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS owner_stakeholder_id UUID
+  REFERENCES stakeholders(id) ON DELETE SET NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_kind TEXT
+  CHECK (source_kind IN ('meeting', 'email', 'call', 'note', 'manual'));
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_id UUID;
+CREATE INDEX IF NOT EXISTS idx_tasks_owner_stakeholder ON tasks(owner_stakeholder_id);
+
+-- ============================================================
+-- Licensee Portal (Advisor Portal) — V1 thin slice
+--
+-- A "licensee" (role on users) is a CEPA who manages their own business-owner
+-- clients via a simplified portal. Their clients are ordinary `clients` rows
+-- (advisor_id = the licensee's user id), so tasks/documents/etc. all apply.
+--
+--   • licensee_intakes          — one 4-pillar CEPA intake per client (v1; future
+--                                 re-assessments bump `version`). Stores the
+--                                 engagement snapshot + the computed pillar_scores
+--                                 JSON ({ entity:{pct,band}, ip:{...}, ... }).
+--   • licensee_intake_responses — one row per answered question, with the chosen
+--                                 option's risk_tag. Gap/Partial rows drive the
+--                                 readiness % and TFO scoping priorities.
+--   • referral_partners         — directory of vetted specialists (seeded by TFO).
+--   • referral_requests         — a licensee asking TFO to connect a client to a
+--                                 specialist; tracked Requested → In Progress →
+--                                 Connected with an outcome.
+-- Additive, idempotent — applied by the boot self-migration (index.ts).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS licensee_intakes (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id      UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  version        INT NOT NULL DEFAULT 1,
+  status         TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress', 'complete')),
+  -- Engagement snapshot (collected from the CEPA)
+  cepa_name      TEXT,
+  firm_name      TEXT,
+  completed_date DATE,
+  annual_revenue TEXT,
+  num_owners     INT,
+  owner_ages     TEXT,
+  industry       TEXT,
+  exit_horizon   TEXT,
+  vam_phase      TEXT,
+  -- Computed readiness per pillar: { entity:{pct,band}, ip:..., capital:..., exit:... }
+  pillar_scores  JSONB,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at   TIMESTAMPTZ,
+  UNIQUE (client_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_licensee_intakes_client ON licensee_intakes(client_id);
+
+CREATE TABLE IF NOT EXISTS licensee_intake_responses (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  intake_id    UUID NOT NULL REFERENCES licensee_intakes(id) ON DELETE CASCADE,
+  pillar       TEXT NOT NULL CHECK (pillar IN ('entity', 'ip', 'capital', 'exit')),
+  question_key TEXT NOT NULL,
+  answer_value TEXT,
+  risk_tag     TEXT CHECK (risk_tag IN ('on_track', 'partial', 'gap', 'na')),
+  notes        TEXT,
+  UNIQUE (intake_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_licensee_responses_intake ON licensee_intake_responses(intake_id);
+
+CREATE TABLE IF NOT EXISTS referral_partners (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name          TEXT NOT NULL,
+  occupation    TEXT,
+  specialty     TEXT,
+  testimonials  TEXT,
+  rating        NUMERIC(2,1) CHECK (rating >= 0 AND rating <= 5),
+  contact_email TEXT,
+  headshot_url  TEXT,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_referral_partners_active ON referral_partners(active);
+
+CREATE TABLE IF NOT EXISTS referral_requests (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  licensee_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  pillar       TEXT CHECK (pillar IN ('entity', 'ip', 'capital', 'exit')),
+  partner_id   UUID REFERENCES referral_partners(id) ON DELETE SET NULL,
+  note         TEXT,
+  status       TEXT NOT NULL DEFAULT 'requested'
+                 CHECK (status IN ('requested', 'in_progress', 'connected')),
+  outcome      TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_referral_requests_client ON referral_requests(client_id);
+CREATE INDEX IF NOT EXISTS idx_referral_requests_licensee ON referral_requests(licensee_id);

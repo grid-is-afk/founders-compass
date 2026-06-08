@@ -51,7 +51,10 @@ function extractDocNameKeywords(userQuery: string): string[] {
 export async function retrieveChunks(
   userQuery: string,
   clientId: string,
-  topK = 15
+  topK = 15,
+  // Pass 3 pulls TFO's firm-wide methodology knowledge base (proprietary IP).
+  // Licensees must NOT receive it — call with includeMethodology=false.
+  includeMethodology = true
 ): Promise<RetrievedChunk[]> {
   if (!userQuery.trim()) return [];
 
@@ -108,18 +111,21 @@ export async function retrieveChunks(
   // Top 5 methodology chunks per query — background framework knowledge.
   // Dimension-gated same as Pass 1 to avoid vector dimension mismatches.
   const METHODOLOGY_TOP_K = 5;
-  const methodologyResult = await query(
-    `SELECT ''::text AS document_id,
-            chunk_text,
-            metadata || '{"source":"methodology"}'::jsonb AS metadata,
-            1 - (embedding <=> $1::vector) AS similarity
-     FROM methodology_chunks
-     WHERE vector_dims(embedding) = $3
-     ORDER BY embedding <=> $1::vector
-     LIMIT $2`,
-    [vectorLiteral, METHODOLOGY_TOP_K, queryDim]
-  );
-  const methodologyChunks = methodologyResult.rows as RetrievedChunk[];
+  const methodologyChunks: RetrievedChunk[] = includeMethodology
+    ? ((
+        await query(
+          `SELECT ''::text AS document_id,
+                  chunk_text,
+                  metadata || '{"source":"methodology"}'::jsonb AS metadata,
+                  1 - (embedding <=> $1::vector) AS similarity
+           FROM methodology_chunks
+           WHERE vector_dims(embedding) = $3
+           ORDER BY embedding <=> $1::vector
+           LIMIT $2`,
+          [vectorLiteral, METHODOLOGY_TOP_K, queryDim]
+        )
+      ).rows as RetrievedChunk[])
+    : [];
 
   // --- Merge: vector results first, then name-matched chunks, then methodology ---
   const seen = new Set(vectorChunks.map((c) => c.chunk_text));

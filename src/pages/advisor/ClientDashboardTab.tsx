@@ -8,6 +8,7 @@ import { CapitalOptionalityPanel } from "@/components/clients/dashboard/CapitalO
 import { AssessmentHistoryWidget } from "@/components/clients/AssessmentHistoryWidget";
 import { QuarterbackActionsPanel } from "@/components/clients/dashboard/QuarterbackActionsPanel";
 import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
+import ObjectivesPanel from "@/components/quarterly/ObjectivesPanel";
 import { useClientContext } from "@/hooks/useClientContext";
 
 // ---------------------------------------------------------------------------
@@ -61,6 +62,8 @@ export default function ClientDashboardTab() {
           </div>
           <QuarterProgressWidget client={client} />
         </div>
+
+        <ObjectivesPanel clientId={client.id} />
 
         <IntelligencePanel clientId={client.id} />
 

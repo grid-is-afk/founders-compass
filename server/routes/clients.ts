@@ -23,6 +23,8 @@ const ALLOWED_COLUMNS = new Set([
   "q4_phase",
   "source_prospect_id",
   "onboarded_at",
+  "flagged_at",
+  "flagged_reason",
 ]);
 
 /**
@@ -68,6 +70,8 @@ async function syncQ1PlanStartDate(clientId: string, onboardedAt: string | null)
 /** Returns true if this user can access all clients (admin always can; advisors check DB flag). */
 async function canSeeAll(userId: string, role: string): Promise<boolean> {
   if (role === "admin") return true;
+  // Licensees are ALWAYS scoped to their own clients — never honor see_all_clients for them.
+  if (role === "licensee") return false;
   const r = await query("SELECT see_all_clients FROM users WHERE id = $1", [userId]);
   return r.rows[0]?.see_all_clients ?? true;
 }
@@ -143,6 +147,33 @@ router.post("/", async (req, res) => {
 
   if (!name) {
     return res.status(400).json({ error: "Client name is required" });
+  }
+
+  // Licensee (Advisor) portal: clients have NO founder login in V1. The licensee
+  // completes the intake on the client's behalf, so we skip founder-user creation
+  // and contact_email is optional.
+  if (req.user!.role === "licensee") {
+    try {
+      const clientResult = await query(
+        `INSERT INTO clients
+           (advisor_id, name, contact_name, contact_email, revenue, stage, entity_type, portal_invite_sent)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, false)
+         RETURNING *`,
+        [
+          req.user!.id,
+          name,
+          contact_name ?? null,
+          contact_email ? contact_email.toLowerCase() : null,
+          revenue ?? null,
+          stage ?? "Intake Pending",
+          entity_type ?? null,
+        ]
+      );
+      return res.status(201).json(clientResult.rows[0]);
+    } catch (err) {
+      console.error("POST /clients (licensee) error:", err);
+      return res.status(500).json({ error: "Internal server error" });
+    }
   }
 
   if (!contact_email) {

@@ -26,20 +26,40 @@ function nodeText(node: React.ReactNode): string {
   return "";
 }
 
-function findBriefingMessage(messages: ChatMessage[]): ChatMessage | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m.role === "assistant" && m.content && BRIEFING_HEADER_RE.test(m.content)) {
-      return m;
-    }
-  }
-  return null;
-}
-
 function extractClientName(content: string | null | undefined): string | null {
   if (!content) return null;
   const match = content.match(BRIEFING_TITLE_RE);
   return match ? match[1].trim() : null;
+}
+
+// Two briefing titles refer to the same client if either name contains the
+// other (case-insensitive) — the briefing title often carries extra context
+// (e.g. "Pardis Mahdavi / MyUni") while the workspace name is just "Pardis".
+function namesMatch(a: string, b: string): boolean {
+  const x = a.toLowerCase().trim();
+  const y = b.toLowerCase().trim();
+  return x.includes(y) || y.includes(x);
+}
+
+// Find the most recent onboarding brief. Chat history is already scoped per
+// client (see useCopilot), so this only sees the current client's messages.
+// `expectedName` is a second guard: if a briefing's title names a *different*
+// client, skip it rather than render one client's brief in another's overlay.
+function findBriefingMessage(
+  messages: ChatMessage[],
+  expectedName?: string | null,
+): ChatMessage | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "assistant" && m.content && BRIEFING_HEADER_RE.test(m.content)) {
+      const briefName = extractClientName(m.content);
+      if (expectedName && briefName && !namesMatch(briefName, expectedName)) {
+        continue;
+      }
+      return m;
+    }
+  }
+  return null;
 }
 
 export default function CopilotDeepDive() {
@@ -72,7 +92,10 @@ export default function CopilotDeepDive() {
     return () => window.removeEventListener("keydown", onKey);
   }, [isDeepDive, closeDeepDive]);
 
-  const briefingMsg = useMemo(() => findBriefingMessage(messages), [messages]);
+  const briefingMsg = useMemo(
+    () => findBriefingMessage(messages, deepDiveClientName),
+    [messages, deepDiveClientName],
+  );
   // Prefer the workspace-provided name (always correct, available immediately
   // on button click) over parsing the markdown title (which can fail if Claude
   // phrases the heading slightly differently or hasn't streamed it yet).

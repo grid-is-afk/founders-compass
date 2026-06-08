@@ -194,17 +194,59 @@ export const tools = [
   },
 ];
 
-// Helper: look up a client by name for this advisor, returns null if not found
+// Helper: look up a client by name for this advisor, returns null if not found.
+// Prefers an EXACT (case-insensitive) name match. Only falls back to a partial
+// match when there's no exact hit — and refuses (returns null) if the partial
+// match is ambiguous (more than one client), so we never silently pick the
+// wrong client and leak their data into another client's deliverable.
 async function findClientByName(
   clientName: string,
   advisorId: string
 ): Promise<string | null> {
   if (!clientName) return null;
-  const result = await query(
-    "SELECT id FROM clients WHERE advisor_id = $1 AND name ILIKE $2 LIMIT 1",
+
+  // 1. Exact, case-insensitive match wins.
+  const exact = await query(
+    "SELECT id FROM clients WHERE advisor_id = $1 AND name ILIKE $2",
+    [advisorId, clientName]
+  );
+  if (exact.rows.length === 1) return exact.rows[0].id;
+  if (exact.rows.length > 1) return null; // ambiguous even on exact name
+
+  // 2. Fall back to a partial match, but only if it's unambiguous.
+  const partial = await query(
+    "SELECT id FROM clients WHERE advisor_id = $1 AND name ILIKE $2",
     [advisorId, `%${clientName}%`]
   );
-  return result.rows[0]?.id ?? null;
+  if (partial.rows.length === 1) return partial.rows[0].id;
+  return null; // zero or multiple matches → refuse rather than guess
+}
+
+// Resolve which client a tool should act on. When the request is scoped to a
+// client workspace (activeClientId present and already auth-verified by the
+// /api/chat handler), ALWAYS use that verified id — the model-supplied name is
+// only a display label and must never redirect the action to a different
+// client. Only fall back to a name lookup for unscoped (advisor-home) chats.
+// Returns the canonical { id, name } so callers label artifacts with the real
+// client name, never the (possibly wrong) model-supplied one.
+async function resolveClient(
+  activeClientId: string | undefined,
+  clientName: unknown,
+  advisorId: string
+): Promise<{ id: string; name: string } | null> {
+  let id: string | null = activeClientId ?? null;
+  if (!id && typeof clientName === "string" && clientName) {
+    id = await findClientByName(clientName, advisorId);
+  }
+  if (!id) return null;
+  // Confirm the resolved client belongs to this advisor and fetch its real
+  // name (defensive — activeClientId is already auth-verified upstream).
+  const result = await query(
+    "SELECT id, name FROM clients WHERE id = $1 AND advisor_id = $2",
+    [id, advisorId]
+  );
+  if (result.rows.length === 0) return null;
+  return { id: result.rows[0].id, name: result.rows[0].name };
 }
 
 export async function executeTool(
@@ -215,20 +257,18 @@ export async function executeTool(
 ): Promise<{ success: boolean; result: string; action?: Record<string, unknown> }> {
   switch (name) {
     case "create_task": {
-      // Resolve client — prefer explicit clientName in input, fall back to activeClientId
-      let clientId = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
+      // In a client workspace the verified active client always wins; the name
+      // is a label only. Name lookup is used solely for unscoped chats.
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
 
-      if (!clientId) {
+      if (!client) {
         return {
           success: false,
           result: `Task not created: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
           action: { type: "task_failed", reason: "client_not_found" },
         };
       }
+      const clientId = client.id;
 
       try {
         await query(
@@ -244,8 +284,8 @@ export async function executeTool(
         );
         return {
           success: true,
-          result: `Task "${input.title}" created for ${input.clientName ?? "the client"}, assigned to ${input.assignee}, priority: ${input.priority}, due: ${input.dueDate ?? "TBD"}`,
-          action: { type: "task_created", ...input, clientId },
+          result: `Task "${input.title}" created for ${client.name}, assigned to ${input.assignee}, priority: ${input.priority}, due: ${input.dueDate ?? "TBD"}`,
+          action: { type: "task_created", ...input, clientName: client.name, clientId },
         };
       } catch (err) {
         console.error("create_task DB error:", err);
@@ -278,12 +318,11 @@ export async function executeTool(
     }
 
     case "generate_report": {
-      // Deliverable records track generated reports
-      let clientId = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
+      // Deliverable records track generated reports. Verified active client
+      // wins so a report is never saved into the wrong client's Data Room.
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
+      const clientId = client?.id ?? null;
+      const clientLabel = client?.name ?? (input.clientName as string | undefined) ?? "the client";
 
       const titleMap: Record<string, string> = {
         capital_readiness_memo: "Capital Readiness Memo",
@@ -414,33 +453,30 @@ export async function executeTool(
         }
         return {
           success: true,
-          result: `Report "${reportTitle}" created for ${input.clientName as string}. Now write the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report. Structure it clearly with headers, bullet points where appropriate, and a concise executive summary at the top.`,
-          action: { type: "report_generated", ...input, clientId, reportTitle },
+          result: `Report "${reportTitle}" created for ${clientLabel}. Now write the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report. Structure it clearly with headers, bullet points where appropriate, and a concise executive summary at the top.`,
+          action: { type: "report_generated", ...input, clientName: clientLabel, clientId, reportTitle },
         };
       } catch (err) {
         console.error("generate_report DB error:", err);
         return {
           success: true,
-          result: `Now write the full "${reportTitle}" report in professional markdown for ${input.clientName as string}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top.`,
-          action: { type: "report_generated", ...input, reportTitle },
+          result: `Now write the full "${reportTitle}" report in professional markdown for ${clientLabel}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top.`,
+          action: { type: "report_generated", ...input, clientName: clientLabel, reportTitle },
         };
       }
     }
 
     case "update_instrument_status": {
       try {
-        let clientId: string | null = activeClientId ?? null;
-        if (input.clientName) {
-          const found = await findClientByName(input.clientName as string, advisorId);
-          if (found) clientId = found;
-        }
+        const client = await resolveClient(activeClientId, input.clientName, advisorId);
 
-        if (!clientId) {
+        if (!client) {
           return {
             success: false,
             result: `Could not resolve client "${input.clientName ?? "(none)"}". Instrument status not updated.`,
           };
         }
+        const clientId = client.id;
 
         const result = await query(
           `UPDATE instruments SET status = $1
@@ -452,15 +488,15 @@ export async function executeTool(
         if (result.rows.length === 0) {
           return {
             success: false,
-            result: `Instrument "${input.instrumentName}" not found for ${input.clientName}.`,
+            result: `Instrument "${input.instrumentName}" not found for ${client.name}.`,
             action: { type: "instrument_not_found" },
           };
         }
 
         return {
           success: true,
-          result: `Instrument "${result.rows[0].name}" for ${input.clientName} updated to "${input.newStatus}"`,
-          action: { type: "instrument_updated", instrumentId: result.rows[0].id, ...input },
+          result: `Instrument "${result.rows[0].name}" for ${client.name} updated to "${input.newStatus}"`,
+          action: { type: "instrument_updated", instrumentId: result.rows[0].id, ...input, clientName: client.name },
         };
       } catch (err) {
         console.error("update_instrument_status DB error:", err);
@@ -469,18 +505,15 @@ export async function executeTool(
     }
 
     case "flag_risk": {
-      let clientId: string | null = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
 
-      if (!clientId) {
+      if (!client) {
         return {
           success: false,
           result: `Could not resolve client "${input.clientName ?? "(none)"}". Risk alert not saved.`,
         };
       }
+      const clientId = client.id;
 
       try {
         const result = await query(
@@ -490,8 +523,8 @@ export async function executeTool(
         );
         return {
           success: true,
-          result: `Risk alert "${input.title}" flagged as ${input.severity} for ${input.clientName}: ${input.detail ?? ""}`,
-          action: { type: "risk_flagged", alertId: result.rows[0].id, ...input, clientId },
+          result: `Risk alert "${input.title}" flagged as ${input.severity} for ${client.name}: ${input.detail ?? ""}`,
+          action: { type: "risk_flagged", alertId: result.rows[0].id, ...input, clientName: client.name, clientId },
         };
       } catch (err) {
         console.error("flag_risk DB error:", err);
@@ -500,18 +533,15 @@ export async function executeTool(
     }
 
     case "schedule_meeting": {
-      let clientId: string | null = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
 
-      if (!clientId) {
+      if (!client) {
         return {
           success: false,
           result: `Could not resolve client "${input.clientName ?? "(none)"}". Meeting not scheduled.`,
         };
       }
+      const clientId = client.id;
 
       try {
         const result = await query(
@@ -521,8 +551,8 @@ export async function executeTool(
         );
         return {
           success: true,
-          result: `${input.meetingType} meeting scheduled with ${input.clientName} for ${input.date}. ${input.notes ?? ""}`,
-          action: { type: "meeting_scheduled", meetingId: result.rows[0].id, ...input, clientId },
+          result: `${input.meetingType} meeting scheduled with ${client.name} for ${input.date}. ${input.notes ?? ""}`,
+          action: { type: "meeting_scheduled", meetingId: result.rows[0].id, ...input, clientName: client.name, clientId },
         };
       } catch (err) {
         console.error("schedule_meeting DB error:", err);
@@ -531,18 +561,15 @@ export async function executeTool(
     }
 
     case "get_meeting_agenda": {
-      let clientId = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
-      if (!clientId) {
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
+      if (!client) {
         return {
           success: false,
           result: `Could not resolve client "${input.clientName ?? "(none)"}". No agenda lookup possible.`,
           action: { type: "agenda_lookup_failed", reason: "client_not_found" },
         };
       }
+      const clientId = client.id;
 
       try {
         let meetingRow:
@@ -589,7 +616,7 @@ export async function executeTool(
         if (!meetingRow) {
           return {
             success: true,
-            result: `No matching meeting found for ${input.clientName as string}.`,
+            result: `No matching meeting found for ${client.name}.`,
             action: { type: "agenda_not_found", reason: "meeting_not_found" },
           };
         }
@@ -599,7 +626,7 @@ export async function executeTool(
         if (!meetingRow.agenda || meetingRow.agenda_status === "none" || !meetingRow.agenda_status) {
           return {
             success: true,
-            result: `Meeting found: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}. STATUS: NO AGENDA HAS BEEN LOGGED for this meeting. You may suggest topics for the advisor to consider — but you MUST explicitly label them as "suggested" or "proposed", and never present them as if they were the actual agenda.`,
+            result: `Meeting found: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${client.name}. STATUS: NO AGENDA HAS BEEN LOGGED for this meeting. You may suggest topics for the advisor to consider — but you MUST explicitly label them as "suggested" or "proposed", and never present them as if they were the actual agenda.`,
             action: {
               type: "agenda_retrieved",
               meetingId: meetingRow.id,
@@ -631,7 +658,7 @@ export async function executeTool(
 
         return {
           success: true,
-          result: `Meeting: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${input.clientName as string}.\nAgenda status: ${statusLabel}\n\nAgenda items:\n${agendaMd}\n\nPresent this agenda to the advisor as-is. Do not invent additional items or replace it with task-derived suggestions.`,
+          result: `Meeting: ${meetingRow.type ?? "Meeting"} on ${dateIso} for ${client.name}.\nAgenda status: ${statusLabel}\n\nAgenda items:\n${agendaMd}\n\nPresent this agenda to the advisor as-is. Do not invent additional items or replace it with task-derived suggestions.`,
           action: {
             type: "agenda_retrieved",
             meetingId: meetingRow.id,
@@ -645,42 +672,43 @@ export async function executeTool(
     }
 
     case "generate_engagement_briefing": {
-      let clientId = activeClientId ?? null;
-      if (input.clientName) {
-        const found = await findClientByName(input.clientName as string, advisorId);
-        if (found) clientId = found;
-      }
+      // Verified active client wins so a briefing is never built for / saved
+      // under a different client than the open workspace. The canonical name
+      // (not the model-supplied label) titles the deliverable and drives the
+      // briefing, so a mislabelled request can't surface another client's data.
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
 
-      if (!clientId) {
+      if (!client) {
         return {
           success: false,
           result: `Briefing not generated: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
           action: { type: "briefing_failed", reason: "client_not_found" },
         };
       }
+      const clientId = client.id;
 
       try {
         await query(
           `INSERT INTO deliverables (client_id, title, status, engine)
            VALUES ($1, $2, 'ready', 'Copilot')
            ON CONFLICT DO NOTHING`,
-          [clientId, `Engagement Briefing — ${input.clientName as string}`]
+          [clientId, `Engagement Briefing — ${client.name}`]
         );
         return {
           success: true,
-          result: `Engagement briefing created for ${input.clientName as string}. Now write the full briefing in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer. Use all context available.`,
+          result: `Engagement briefing created for ${client.name}. Now write the full briefing in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer. Use all context available. The briefing is for ${client.name} — use only this client's data.`,
           action: {
             type: "briefing_generated",
             clientId,
-            clientName: input.clientName,
+            clientName: client.name,
           },
         };
       } catch (err) {
         console.error("generate_engagement_briefing DB error:", err);
         return {
           success: true,
-          result: `Now write the full engagement briefing for ${input.clientName as string} in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer.`,
-          action: { type: "briefing_generated", clientName: input.clientName },
+          result: `Now write the full engagement briefing for ${client.name} in markdown following the onboarding_brief template: title, snapshot cue, then sections for Client Overview, Long-Term Objective, Current Phase, Six Keys Snapshot, Stakeholder Map, Recent Meetings, Open Tasks, Open Commitments, Risk Alerts, What's Coming Next, and the 'Want to go deeper?' QB AI footer. The briefing is for ${client.name} — use only this client's data.`,
+          action: { type: "briefing_generated", clientId, clientName: client.name },
         };
       }
     }

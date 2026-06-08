@@ -27,9 +27,20 @@ export interface DocumentOption {
 
 const SKIP_REASONS = ["Not required", "Other (please specify)"] as const;
 
+/** Format a YYYY-MM-DD due date as a short "Mar 5" chip. Parsed as local midnight to avoid tz drift. */
+function formatDueDate(dueDate: string): string {
+  const d = new Date(`${dueDate}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return dueDate;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 interface ChecklistItemProps {
   label: string;
   category?: string;
+  /** Optional due date (YYYY-MM-DD) — rendered as a small chip beside the label. */
+  dueDate?: string | null;
+  /** Optional description / rationale — rendered as a muted block under the row. */
+  description?: string | null;
   isDone: boolean;
   isSkipped?: boolean;
   skipReason?: string | null;
@@ -55,6 +66,8 @@ interface ChecklistItemProps {
 export function ChecklistItem({
   label,
   category,
+  dueDate,
+  description,
   isDone,
   isSkipped = false,
   skipReason,
@@ -182,6 +195,13 @@ export function ChecklistItem({
             ) : null}
           </div>
 
+          {/* Due date chip */}
+          {dueDate && !isSkipped && (
+            <span className="text-[10px] text-muted-foreground/60 tabular-nums flex-shrink-0 whitespace-nowrap">
+              {formatDueDate(dueDate)}
+            </span>
+          )}
+
           {/* Subtask count */}
           {hasSubtasks && !isSkipped && (
             <span className="text-[10px] text-muted-foreground/50 tabular-nums flex-shrink-0">
@@ -296,6 +316,18 @@ export function ChecklistItem({
           )}
         </div>
       </div>
+
+      {/* Description / rationale — muted block under the row (non-interactive) */}
+      {description && (
+        <p
+          className={cn(
+            "pl-10 pr-4 pb-3 -mt-1 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground",
+            isSkipped && "opacity-60"
+          )}
+        >
+          {description}
+        </p>
+      )}
 
       {/* Skip form — inline, below the row */}
       {showSkipForm && (

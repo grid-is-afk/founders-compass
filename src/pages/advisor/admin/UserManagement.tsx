@@ -12,12 +12,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+type UserRole = "advisor" | "admin" | "licensee";
+
 interface TeamUser {
   id: string;
   name: string;
   email: string;
-  role: "advisor" | "admin";
+  role: UserRole;
   see_all_clients: boolean;
+  plan_tier: string | null;
   created_at: string | null;
 }
 
@@ -25,8 +28,14 @@ interface NewUserForm {
   name: string;
   email: string;
   password: string;
-  role: "advisor" | "admin";
+  role: UserRole;
 }
+
+const ROLE_META: Record<UserRole, { label: string; cls: string }> = {
+  admin: { label: "Admin", cls: "bg-primary/10 text-primary border-primary/20" },
+  advisor: { label: "Advisor (TFO)", cls: "bg-muted text-muted-foreground border-border" },
+  licensee: { label: "Licensee", cls: "bg-accent/15 text-accent-foreground border-accent/30" },
+};
 
 interface CreatedCredentials {
   name: string;
@@ -149,7 +158,7 @@ export default function UserManagement() {
           <div>
             <h1 className="text-2xl font-display font-semibold text-foreground">User Management</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Manage TFO advisor and admin accounts
+              Manage TFO team (Admin/Advisor) and Licensee portal accounts
             </p>
           </div>
         </div>
@@ -189,37 +198,46 @@ export default function UserManagement() {
                     <span
                       className={cn(
                         "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border",
-                        u.role === "admin"
-                          ? "bg-primary/10 text-primary border-primary/20"
-                          : "bg-muted text-muted-foreground border-border"
+                        (ROLE_META[u.role] ?? ROLE_META.advisor).cls
                       )}
                     >
-                      {u.role}
+                      {(ROLE_META[u.role] ?? { label: u.role }).label}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    {u.role === "licensee" ? (
+                      // Licensees are always scoped to their own clients — the see-all
+                      // toggle does not apply to them.
                       <span
-                        className={cn(
-                          "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border",
-                          u.see_all_clients
-                            ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
-                            : "bg-muted text-muted-foreground border-border"
-                        )}
+                        className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-muted text-muted-foreground border-border"
+                        title="Licensees only ever see their own clients"
                       >
-                        {u.see_all_clients ? "All Clients" : "Own Only"}
+                        Own Only · scoped
                       </span>
-                      <button
-                        onClick={() => handleToggleVisibility(u)}
-                        disabled={togglingId === u.id}
-                        title={u.see_all_clients ? "Switch to own clients only" : "Switch to all clients"}
-                        className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
-                      >
-                        {u.see_all_clients
-                          ? <Eye className="w-3.5 h-3.5" />
-                          : <EyeOff className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border",
+                            u.see_all_clients
+                              ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/20"
+                              : "bg-muted text-muted-foreground border-border"
+                          )}
+                        >
+                          {u.see_all_clients ? "All Clients" : "Own Only"}
+                        </span>
+                        <button
+                          onClick={() => handleToggleVisibility(u)}
+                          disabled={togglingId === u.id}
+                          title={u.see_all_clients ? "Switch to own clients only" : "Switch to all clients"}
+                          className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                        >
+                          {u.see_all_clients
+                            ? <Eye className="w-3.5 h-3.5" />
+                            : <EyeOff className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{formatDate(u.created_at)}</td>
                   <td className="px-4 py-3 text-right">
@@ -305,12 +323,18 @@ export default function UserManagement() {
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Role</label>
                   <select
                     value={form.role}
-                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as "advisor" | "admin" }))}
+                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
                     className="w-full px-3 py-2 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring"
                   >
-                    <option value="advisor">Advisor</option>
-                    <option value="admin">Admin</option>
+                    <option value="admin">Admin (TFO staff)</option>
+                    <option value="advisor">Advisor (TFO staff)</option>
+                    <option value="licensee">Licensee (Advisor Portal)</option>
                   </select>
+                  {form.role === "licensee" && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Creates an Advisor Portal account scoped to its own clients. Lands on /licensee.
+                    </p>
+                  )}
                 </div>
 
                 {formError && (

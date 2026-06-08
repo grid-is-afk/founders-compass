@@ -55,6 +55,12 @@ export interface ProposedChange {
   existing_task_id?: string;
   existing_task_snapshot?: ExistingTaskSnapshot;
   confidence: "high" | "medium" | "low";
+  /** UC-03: date-driven priority (≤7 days out = high), advisor-overridable. */
+  priority?: "low" | "medium" | "high";
+  /** UC-12: commitment ownership — 'tfo' (assignee) or 'client' (stakeholder). */
+  owner_type?: "tfo" | "client";
+  owner_stakeholder_id?: string | null;
+  owner_stakeholder_name?: string | null;
 }
 
 export interface ProposedSignal {

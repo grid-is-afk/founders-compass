@@ -5,7 +5,7 @@ import crypto from "crypto";
 import pool, { query } from "../db.js";
 import { supabase, STORAGE_BUCKET } from "../lib/supabase.js";
 import { ingestDocument } from "../lib/ingestion.js";
-import { generateAgenda, captureMeeting, ProposedSignal } from "../lib/meetingIntelligence.js";
+import { generateAgenda, captureMeeting, derivePriorityFromDueDate, ProposedSignal, TaskPriority } from "../lib/meetingIntelligence.js";
 import { verifyClientAccess } from "../lib/verifyClient.js";
 import { buildAgendaDocx, buildAgendaFilename } from "../lib/agendaDocx.js";
 import { parseAgendaSections } from "../lib/agendaParser.js";
@@ -381,8 +381,18 @@ router.post("/:id/capture/apply", async (req, res) => {
 
     for (const change of approved_changes) {
       if (change.type === "new_task") {
+        // UC-12: resolve commitment ownership. A client-owned commitment is on a
+        // stakeholder (validated against this client's stakeholders), never a TFO
+        // assignee; a TFO-owned one resolves the suggested assignee to a user id.
+        const isClientOwned =
+          change.owner_type === "client" &&
+          typeof change.owner_stakeholder_id === "string" &&
+          validStakeholderIds.has(change.owner_stakeholder_id);
+        const ownerType: "tfo" | "client" = isClientOwned ? "client" : "tfo";
+        const ownerStakeholderId: string | null = isClientOwned ? change.owner_stakeholder_id! : null;
+
         let assigneeId: string | null = null;
-        if (change.suggested_assignee) {
+        if (!isClientOwned && change.suggested_assignee) {
           const userRes = await dbClient.query(
             `SELECT id FROM users WHERE name = $1 LIMIT 1`,
             [change.suggested_assignee]
@@ -396,11 +406,32 @@ router.post("/:id/capture/apply", async (req, res) => {
         noteParts.push(attribution);
         const taskNotes = noteParts.filter(Boolean).join("\n");
 
+        // UC-03: persist the advisor's priority. Never trust the wire blindly —
+        // accept only low/medium/high, otherwise fall back to the date-driven
+        // default, then medium.
+        const allowedPriorities: TaskPriority[] = ["low", "medium", "high"];
+        const priority: TaskPriority = allowedPriorities.includes(change.priority as TaskPriority)
+          ? (change.priority as TaskPriority)
+          : derivePriorityFromDueDate(change.suggested_due_date);
+
         const taskRes = await dbClient.query(
-          `INSERT INTO tasks (client_id, title, status, priority, due_date, phase, notes, assignee_id)
-           VALUES ($1, $2, 'todo', 'medium', $3, $4, $5, $6)
+          `INSERT INTO tasks
+             (client_id, title, status, priority, due_date, phase, notes, assignee_id,
+              owner_type, owner_stakeholder_id, source_kind, source_id)
+           VALUES ($1, $2, 'todo', $3, $4, $5, $6, $7, $8, $9, 'meeting', $10)
            RETURNING *`,
-          [clientId, change.title, change.suggested_due_date ?? null, change.suggested_phase ?? null, taskNotes, assigneeId]
+          [
+            clientId,
+            change.title,
+            priority,
+            change.suggested_due_date ?? null,
+            change.suggested_phase ?? null,
+            taskNotes,
+            assigneeId,
+            ownerType,
+            ownerStakeholderId,
+            req.params.id,
+          ]
         );
         createdTasks.push(taskRes.rows[0]);
 
@@ -409,6 +440,9 @@ router.post("/:id/capture/apply", async (req, res) => {
           [clientId, req.user!.id, `QB capture: created task "${change.title}" from meeting notes`]
         );
       } else if (change.type === "task_update" && change.existing_task_id) {
+        // Note: UC-03 priority is intentionally applied only on new_task. A
+        // task_update appends a note and does not re-prioritize the existing
+        // task; change.priority is present on the payload but unused here.
         await dbClient.query(
           `UPDATE tasks SET notes = COALESCE(notes, '') || $1::text, updated_at = NOW()
            WHERE id = $2 AND client_id = $3`,

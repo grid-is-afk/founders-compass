@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import {
   Sparkles, Upload, FileText, ChevronDown, CheckCircle2, XCircle,
   AlertCircle, Loader2, CheckCheck, Clock, Pencil, MinusCircle,
-  RotateCcw, CheckSquare, Trash2, Mic, TrendingUp, TrendingDown,
+  RotateCcw, CheckSquare, Trash2, Mic, TrendingUp, TrendingDown, Flag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   useCaptureMeeting, useApplyCapture, useCheckTranscriptDuplicate,
   useUploadTranscript, useDeferredCarryforward, useResolveDeferred, useDiscardDeferred,
@@ -19,7 +19,7 @@ import {
   type Meeting, type ProposedChange, type ProposedSignal, type CaptureResult, type DeferredCarryforwardItem,
 } from "@/hooks/useMeetingsApi";
 import { useClientDocuments } from "@/hooks/useDocuments";
-import { SENTIMENT_CONFIG } from "@/hooks/useStakeholders";
+import { SENTIMENT_CONFIG, useStakeholders } from "@/hooks/useStakeholders";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -56,6 +56,51 @@ const PHASE_OPTIONS: { value: string; label: string }[] = [
   { value: "elevate", label: "Chapter 4: Elevate" },
 ];
 
+// UC-03: advisor-facing task priority. Date-driven default (≤7 days = high),
+// overridable inline. Kept distinct from the confidence palette below.
+type Priority = "low" | "medium" | "high";
+
+const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Med" },
+  { value: "high", label: "High" },
+];
+
+const PRIORITY_ACTIVE_COLORS: Record<Priority, string> = {
+  low: "border-slate-400/50 bg-slate-100 text-slate-700",
+  medium: "border-amber-500/50 bg-amber-50 text-amber-700",
+  high: "border-red-500/50 bg-red-50 text-red-700",
+};
+
+// Client mirror of the server's derivePriorityFromDueDate: an item due within
+// 7 days (or overdue) defaults to high, everything else to medium. Used as the
+// display fallback for reprocessed/legacy items that arrive without a priority.
+function derivePriorityFromDueDate(dueDate: string | null | undefined): Priority {
+  if (!dueDate) return "medium";
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return "medium";
+  const now = new Date();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startOfDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const daysUntilDue = Math.round((startOfDue - startOfToday) / msPerDay);
+  return daysUntilDue <= 7 ? "high" : "medium";
+}
+
+// UC-03 (client mirror): a deferred item auto-attaches to the next agenda
+// unless its due date is more than 30 days out. Used for the carry-forward hint.
+function isDeferredEligibleForAutoAttach(dueDate: string | null | undefined): boolean {
+  if (!dueDate) return true;
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return true;
+  const now = new Date();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startOfDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const daysUntilDue = Math.round((startOfDue - startOfToday) / msPerDay);
+  return daysUntilDue <= 30;
+}
+
 export default function CapturePanel({ meeting, clientId }: Props) {
   const capture = useCaptureMeeting();
   const applyCapture = useApplyCapture();
@@ -76,6 +121,10 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   const [itemStates, setItemStates] = useState<Record<number, ItemState>>({});
   const [editedChanges, setEditedChanges] = useState<Record<number, ProposedChange>>({});
 
+  // UC-03: advisor priority overrides, kept separate from edit state so
+  // adjusting priority never flips an item to "edited" or changes approval.
+  const [priorityOverrides, setPriorityOverrides] = useState<Record<number, Priority>>({});
+
   // Parallel state map for proposed signals
   const [signalStates, setSignalStates] = useState<Record<number, ItemState>>({});;
 
@@ -90,11 +139,20 @@ export default function CapturePanel({ meeting, clientId }: Props) {
   const alreadyProcessed = !!meeting.processed_at;
 
   function getEffectiveChange(idx: number): ProposedChange {
-    return editedChanges[idx] ?? captureResult!.proposed_changes[idx];
+    const base = editedChanges[idx] ?? captureResult!.proposed_changes[idx];
+    // Priority only applies to task-creating items; leave others untouched.
+    if (base.type !== "new_task" && base.type !== "task_update") return base;
+    const priority =
+      priorityOverrides[idx] ?? base.priority ?? derivePriorityFromDueDate(base.suggested_due_date);
+    return { ...base, priority };
   }
 
   function setItemState(idx: number, state: ItemState) {
     setItemStates((prev) => ({ ...prev, [idx]: prev[idx] === state ? "pending" : state }));
+  }
+
+  function setPriorityOverride(idx: number, priority: Priority) {
+    setPriorityOverrides((prev) => ({ ...prev, [idx]: priority }));
   }
 
   function saveEdit(idx: number, updated: ProposedChange) {
@@ -132,9 +190,12 @@ export default function CapturePanel({ meeting, clientId }: Props) {
       documentId: selectedDocId || undefined,
     });
 
-    // Merge any re-processed deferred items as pending proposals at the top
+    // Merge any re-processed deferred items as pending proposals at the top.
+    // Re-derive priority from the (possibly now-imminent) due date rather than
+    // carrying the stale capture-time value stored in the deferred payload.
     const reprocessedChanges: ProposedChange[] = reprocessedFromDeferred.map((item) => ({
       ...item.change_payload,
+      priority: derivePriorityFromDueDate(item.change_payload.suggested_due_date),
       detail: item.change_payload.detail
         ? `[Carried over from prior meeting] ${item.change_payload.detail}`
         : "[Carried over from prior meeting]",
@@ -149,6 +210,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     merged.proposed_changes.forEach((_, i) => (initial[i] = "pending"));
     setItemStates(initial);
     setEditedChanges({});
+    setPriorityOverrides({});
 
     // Initialize signal states — normalize proposed_signals to always be an array
     const initialSignalStates: Record<number, ItemState> = {};
@@ -206,6 +268,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
     setCaptureResult(null);
     setItemStates({});
     setEditedChanges({});
+    setPriorityOverrides({});
     setSignalStates({});
     setNotes("");
     setSelectedDocId("");
@@ -359,10 +422,12 @@ export default function CapturePanel({ meeting, clientId }: Props) {
               key={idx}
               change={getEffectiveChange(idx)}
               state={itemStates[idx] ?? "pending"}
+              clientId={clientId}
               onApprove={() => setItemState(idx, "approved")}
               onReject={() => setItemState(idx, "rejected")}
               onDefer={() => setItemState(idx, "deferred")}
               onSaveEdit={(updated) => saveEdit(idx, updated)}
+              onSetPriority={(p) => setPriorityOverride(idx, p)}
             />
           ))}
         </div>
@@ -401,7 +466,7 @@ export default function CapturePanel({ meeting, clientId }: Props) {
 
         {/* Actions */}
         <div className="flex items-center justify-between pt-2 border-t border-border">
-          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setSignalStates({}); setReprocessedFromDeferred([]); }}>
+          <Button variant="outline" size="sm" className="text-xs" onClick={() => { setCaptureResult(null); setItemStates({}); setEditedChanges({}); setPriorityOverrides({}); setSignalStates({}); setReprocessedFromDeferred([]); }}>
             Back
           </Button>
           <div className="flex items-center gap-2">
@@ -623,13 +688,20 @@ export default function CapturePanel({ meeting, clientId }: Props) {
 interface ChangeRowProps {
   change: ProposedChange;
   state: ItemState;
+  clientId: string;
   onApprove: () => void;
   onReject: () => void;
   onDefer: () => void;
   onSaveEdit: (updated: ProposedChange) => void;
+  onSetPriority: (priority: Priority) => void;
 }
 
-function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSaveEdit }: ChangeRowProps) {
+// UC-12: sentinel values for the combined owner picker. Advisors are keyed by
+// name (matches the apply route's user lookup); stakeholders by "st:<uuid>".
+const OWNER_NONE = "__none__";
+const STAKEHOLDER_PREFIX = "st:";
+
+function ProposedChangeRow({ change, state, clientId, onApprove, onReject, onDefer, onSaveEdit, onSetPriority }: ChangeRowProps) {
   const [sourceOpen, setSourceOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -639,18 +711,55 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
     suggested_assignee: change.suggested_assignee ?? "",
     suggested_due_date: change.suggested_due_date ?? "",
     suggested_phase: change.suggested_phase ?? "",
+    owner_type: change.owner_type ?? "tfo",
+    owner_stakeholder_id: change.owner_stakeholder_id ?? "",
   });
   const { data: advisors = [] } = useAdvisors();
+  const { data: stakeholders = [] } = useStakeholders(clientId);
+
+  // Current owner select value: stakeholder id (client-owned), advisor name
+  // (tfo-owned), or the unassigned sentinel.
+  const ownerSelectValue =
+    editForm.owner_type === "client" && editForm.owner_stakeholder_id
+      ? `${STAKEHOLDER_PREFIX}${editForm.owner_stakeholder_id}`
+      : editForm.suggested_assignee || OWNER_NONE;
+
+  function handleOwnerChange(v: string) {
+    if (v === OWNER_NONE) {
+      setEditForm((f) => ({ ...f, owner_type: "tfo", owner_stakeholder_id: "", suggested_assignee: "" }));
+    } else if (v.startsWith(STAKEHOLDER_PREFIX)) {
+      setEditForm((f) => ({
+        ...f,
+        owner_type: "client",
+        owner_stakeholder_id: v.slice(STAKEHOLDER_PREFIX.length),
+        suggested_assignee: "",
+      }));
+    } else {
+      // advisor name → TFO-owned
+      setEditForm((f) => ({ ...f, owner_type: "tfo", owner_stakeholder_id: "", suggested_assignee: v }));
+    }
+  }
 
   function handleSaveEdit() {
+    const newDueDate = editForm.suggested_due_date || null;
+    const isClientOwned = editForm.owner_type === "client" && !!editForm.owner_stakeholder_id;
     onSaveEdit({
       ...change,
       type: editForm.type,
       title: editForm.title,
       detail: editForm.detail,
-      suggested_assignee: editForm.suggested_assignee || null,
-      suggested_due_date: editForm.suggested_due_date || null,
+      // UC-12: client-owned commitments carry the stakeholder, not a TFO assignee.
+      owner_type: isClientOwned ? "client" : "tfo",
+      owner_stakeholder_id: isClientOwned ? editForm.owner_stakeholder_id : null,
+      owner_stakeholder_name: isClientOwned
+        ? stakeholders.find((s) => s.id === editForm.owner_stakeholder_id)?.name ?? null
+        : null,
+      suggested_assignee: isClientOwned ? null : editForm.suggested_assignee || null,
+      suggested_due_date: newDueDate,
       suggested_phase: editForm.suggested_phase || null,
+      // Re-derive the date-driven baseline from the edited due date. An explicit
+      // advisor override (priorityOverrides) still wins in getEffectiveChange.
+      priority: derivePriorityFromDueDate(newDueDate),
     });
     setEditing(false);
   }
@@ -658,6 +767,11 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
   const isDeferred = state === "deferred";
   const isRejected = state === "rejected";
   const isApproved = state === "approved" || state === "edited";
+
+  // UC-03: effective priority shown on the inline control. getEffectiveChange
+  // already resolves this for new tasks; fall back defensively here too.
+  const currentPriority: Priority = change.priority ?? derivePriorityFromDueDate(change.suggested_due_date);
+  const isDueWithin7Days = derivePriorityFromDueDate(change.suggested_due_date) === "high";
 
   return (
     <div className={cn(
@@ -736,6 +850,39 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
         </button>
       </div>
 
+      {/* UC-03: date-driven priority with inline advisor override (new tasks) */}
+      {change.type === "new_task" && !isRejected && !isDeferred && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <Flag className="w-3 h-3" />
+            Priority
+          </span>
+          <div className="flex items-center gap-1">
+            {PRIORITY_OPTIONS.map((opt) => {
+              const active = currentPriority === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => onSetPriority(opt.value)}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-xs font-medium transition-colors border",
+                    active
+                      ? PRIORITY_ACTIVE_COLORS[opt.value]
+                      : "border-border text-muted-foreground hover:bg-muted/60"
+                  )}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {currentPriority === "high" && isDueWithin7Days && (
+            <span className="text-[10px] text-muted-foreground">Auto-set: due within 7 days</span>
+          )}
+        </div>
+      )}
+
       {/* State badges */}
       {isDeferred && <Badge variant="outline" className="text-[10px] border-amber-400/40 text-amber-600">Deferred — excluded from apply</Badge>}
       {state === "edited" && <Badge variant="outline" className="text-[10px] border-blue-400/40 text-blue-600">Edited</Badge>}
@@ -773,8 +920,14 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
       {/* Meta chips for new tasks */}
       {change.type === "new_task" && (
         <div className="flex flex-wrap gap-1.5 pl-1">
-          {change.suggested_assignee && (
-            <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Assignee: {change.suggested_assignee}</span>
+          {change.owner_type === "client" ? (
+            <span className="text-[10px] rounded px-1.5 py-0.5 border border-amber-500/30 bg-amber-50 text-amber-700">
+              Client owner: {change.owner_stakeholder_name ?? "stakeholder"}
+            </span>
+          ) : (
+            change.suggested_assignee && (
+              <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Assignee: {change.suggested_assignee}</span>
+            )
           )}
           {change.suggested_due_date && (
             <span className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">Due: {change.suggested_due_date}</span>
@@ -841,19 +994,31 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="space-y-1">
-              <Label className="text-[10px]">Assignee</Label>
-              <Select
-                value={editForm.suggested_assignee || "__none__"}
-                onValueChange={(v) => setEditForm((f) => ({ ...f, suggested_assignee: v === "__none__" ? "" : v }))}
-              >
+              <Label className="text-[10px]">Owner</Label>
+              <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
                 <SelectTrigger className="h-7 text-xs">
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {advisors.map((a) => (
-                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
-                  ))}
+                  <SelectItem value={OWNER_NONE}>Unassigned</SelectItem>
+                  {advisors.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px]">TFO Team</SelectLabel>
+                      {advisors.map((a) => (
+                        <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {stakeholders.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel className="text-[10px]">Client</SelectLabel>
+                      {stakeholders.map((s) => (
+                        <SelectItem key={s.id} value={`${STAKEHOLDER_PREFIX}${s.id}`}>
+                          {s.name}{s.role ? ` · ${s.role}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -879,9 +1044,24 @@ function ProposedChangeRow({ change, state, onApprove, onReject, onDefer, onSave
               </Select>
             </div>
           </div>
-          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.suggested_due_date) && (
+          {editForm.type === "new_task" && (
+            <div className="space-y-1">
+              <Label className="text-[10px]">Priority</Label>
+              <Select value={currentPriority} onValueChange={(v) => onSetPriority(v as Priority)}>
+                <SelectTrigger className="h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITY_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {editForm.type !== "new_task" && (editForm.suggested_assignee || editForm.owner_stakeholder_id || editForm.suggested_due_date) && (
             <p className="text-[10px] text-muted-foreground">
-              Tip: Assignee and Due Date are only applied when Type is "New Task".
+              Tip: Owner and Due Date are only applied when Type is "New Task".
             </p>
           )}
           <div className="flex gap-2">
@@ -924,6 +1104,7 @@ function DeferredCarryforwardCard({
     ? new Date(item.source_meeting_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
     : "Prior meeting";
   const sourceMeetingType = item.source_meeting_type ?? "Meeting";
+  const autoAttaches = isDeferredEligibleForAutoAttach(payload.suggested_due_date);
 
   return (
     <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 p-3 space-y-2">
@@ -934,6 +1115,20 @@ function DeferredCarryforwardCard({
           <span className="text-sm font-medium text-foreground leading-snug">{payload.title}</span>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             {sourceMeetingType} · {sourceDateLabel}
+          </p>
+          {/* UC-03: tell the advisor whether this item rides onto the next agenda */}
+          <p className="flex items-center gap-1 text-[10px] mt-0.5">
+            {autoAttaches ? (
+              <span className="flex items-center gap-1 text-amber-700">
+                <Clock className="w-3 h-3" />
+                Auto-attaches to next agenda
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Clock className="w-3 h-3" />
+                Due &gt;30 days out — won't auto-attach
+              </span>
+            )}
           </p>
         </div>
         <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 flex-shrink-0", CHANGE_TYPE_COLORS[payload.type])}>

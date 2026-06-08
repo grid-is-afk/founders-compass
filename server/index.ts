@@ -1,10 +1,11 @@
-import express from "express";
+import express, { type ErrorRequestHandler } from "express";
 import cors from "cors";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt } from "./systemPrompt.js";
+import { buildLicenseeSystemPrompt } from "./systemPrompt-licensee.js";
 import { tools, executeTool } from "./tools.js";
 import { query } from "./db.js";
 import dotenv from "dotenv";
@@ -29,6 +30,7 @@ import deliverableRoutes from "./routes/deliverables.js";
 import meetingRoutes from "./routes/meetings.js";
 import documentRoutes from "./routes/documents.js";
 import quarterlyPlanRoutes from "./routes/quarterly-plans.js";
+import quarterlyObjectiveRoutes from "./routes/quarterlyObjectives.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import activityRoutes from "./routes/activity.js";
 import exposureIndexRoutes from "./routes/exposureIndex.js";
@@ -52,10 +54,14 @@ import adminRoutes from "./routes/admin.js";
 import clientIpValueFrameworkRoutes from "./routes/clientIpValueFramework.js";
 import stakeholderRoutes from "./routes/stakeholders.js";
 import riskScanRoutes from "./routes/riskScan.js";
+import firmInsightsRoutes from "./routes/firmInsights.js";
+import communicationsRoutes from "./routes/communications.js";
 import kickoffPlanRoutes from "./routes/kickoffPlan.js";
 import methodologyRecommendationsRoutes from "./routes/methodologyRecommendations.js";
 import userRoutes from "./routes/users.js";
 import deferredChangesRoutes from "./routes/deferredChanges.js";
+import licenseeIntakeRoutes from "./routes/licenseeIntakes.js";
+import referralRoutes from "./routes/referrals.js";
 
 dotenv.config();
 
@@ -70,7 +76,7 @@ for (const v of requiredEnvVars) {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "http://localhost:5173" }));
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -108,6 +114,7 @@ app.use("/api/clients", authMiddleware, clientDiagnoseActionsRoutes);
 app.use("/api/clients", authMiddleware, clientSixCsReconcileRoutes);
 app.use("/api/clients", authMiddleware, clientAssessmentSummaryRoutes);
 app.use("/api/clients", authMiddleware, clientIpValueFrameworkRoutes);
+app.use("/api/clients", authMiddleware, licenseeIntakeRoutes);
 app.use("/api/clients", authMiddleware, clientRoutes);
 app.use("/api/assessments", authMiddleware, assessmentRoutes);
 app.use("/api/tasks", authMiddleware, taskRoutes);
@@ -121,10 +128,13 @@ app.use("/api/protection", authMiddleware, protectionRoutes);
 app.use("/api/grow", authMiddleware, growRoutes);
 app.use("/api/risk-alerts", authMiddleware, riskAlertRoutes);
 app.use("/api/risk-scan", authMiddleware, riskScanRoutes);
+app.use("/api/firm-insights", authMiddleware, firmInsightsRoutes);
+app.use("/api/communications", authMiddleware, communicationsRoutes);
 app.use("/api/deliverables", authMiddleware, deliverableRoutes);
 app.use("/api/meetings", authMiddleware, meetingRoutes);
 app.use("/api/documents", authMiddleware, documentRoutes);
 app.use("/api/quarterly-plans", authMiddleware, quarterlyPlanRoutes);
+app.use("/api/quarterly-objectives", authMiddleware, quarterlyObjectiveRoutes);
 app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
@@ -134,6 +144,8 @@ app.use("/api/clients", authMiddleware, kickoffPlanRoutes);
 app.use("/api/clients", authMiddleware, methodologyRecommendationsRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
 app.use("/api/deferred-changes", authMiddleware, deferredChangesRoutes);
+// Licensee portal: referral partner directory + per-client referral requests
+app.use("/api", authMiddleware, referralRoutes);
 
 // ---------------------------------------------------------------------------
 // GET /api/q1-phase-config — public config for the Gantt chart
@@ -167,25 +179,37 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     }
   }
 
+  // Licensee (Advisor) QB AI is read-only and always scoped to a single client.
+  const isLicensee = req.user!.role === "licensee";
+  if (isLicensee && !clientId) {
+    return res.status(400).json({ error: "Select a client to use the Quarterback AI." });
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
   try {
-    // Build a fresh system prompt with real DB data for this advisor
-    let systemPrompt = await buildSystemPrompt(req.user!.id);
+    // Build a fresh system prompt with real DB data. Licensees get a scoped,
+    // single-client prompt with NO firm/portfolio/methodology knowledge.
+    let systemPrompt = isLicensee
+      ? await buildLicenseeSystemPrompt(clientId as string)
+      : await buildSystemPrompt(req.user!.id);
 
     // When scoped to a specific client, inject deep client context + RAG results
     if (clientId) {
+      const lastUserContent =
+        (messages as Array<{ role: string; content: string }>)
+          .filter((m) => m.role === "user")
+          .at(-1)?.content ?? "";
+
+      // Licensee: client context is already baked into the licensee prompt, and
+      // RAG must exclude TFO methodology chunks. Advisor: full structured context.
       const [structuredCtx, ragChunks] = await Promise.all([
-        buildClientStructuredContext(clientId as string, req.user!.id),
-        retrieveChunks(
-          (messages as Array<{ role: string; content: string }>)
-            .filter((m) => m.role === "user")
-            .at(-1)?.content ?? "",
-          clientId as string,
-          15
-        ),
+        isLicensee
+          ? Promise.resolve("")
+          : buildClientStructuredContext(clientId as string, req.user!.id),
+        retrieveChunks(lastUserContent, clientId as string, 15, !isLicensee),
       ]);
 
       if (structuredCtx) systemPrompt += "\n\n" + structuredCtx;
@@ -286,7 +310,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
         model: "claude-sonnet-4-6",
         max_tokens: 4096,
         system: systemPrompt as string,
-        tools: tools as Anthropic.Tool[],
+        // Licensees are READ-ONLY: hand them zero tools so no write path exists.
+        tools: isLicensee ? [] : (tools as Anthropic.Tool[]),
         messages: currentMessages,
       });
 
@@ -354,7 +379,8 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
                 } else {
                   const liveReviewStatus = updatedRow.review_status as
                     | "pending_review"
-                    | "approved";
+                    | "approved"
+                    | "client_approved";
 
                   const clientResult = await query(
                     "SELECT name FROM clients WHERE id = $1",
@@ -487,7 +513,49 @@ app.get("{*path}", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
+// ============================================================
+// Centralized error handler — must be registered last. Body-parser rejects an
+// over-limit request body before it reaches the route, so the request itself
+// can't be rescued here; this just turns that PayloadTooLargeError (and any
+// other unhandled error) into a clean JSON response with a friendly message
+// instead of a raw stack trace / HTML.
+// ============================================================
+const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  if (
+    err &&
+    (err.type === "entity.too.large" ||
+      err.status === 413 ||
+      err.statusCode === 413)
+  ) {
+    return res.status(413).json({
+      error:
+        "This conversation has grown too large to send. Start a new chat to continue.",
+    });
+  }
+  console.error("Unhandled error:", err);
+  if (res.headersSent) return next(err);
+  return res.status(500).json({ error: "Internal server error" });
+};
+app.use(errorHandler);
+
 const PORT = parseInt(process.env.PORT || "3001", 10);
+
+// Apply the schema (idempotent — CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT
+// EXISTS / guarded DO blocks) on boot so every deployed environment self-migrates
+// on each release. Wrapped so a migration failure can never block the server from
+// starting — it logs and continues.
+async function applySchemaOnBoot() {
+  try {
+    const schemaSql = fs.readFileSync(path.join(__dirname, "schema.sql"), "utf8");
+    await query(schemaSql);
+    console.log("Schema applied (boot migration).");
+  } catch (err) {
+    console.error("Boot migration failed (starting server anyway):", err);
+  }
+}
+
+await applySchemaOnBoot();
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Founders Compass running on http://localhost:${PORT}`);
 });

@@ -24,6 +24,12 @@ export interface ExistingTaskSnapshot {
   assignee_name: string | null;
 }
 
+// UC-03: advisor-facing task priority. Date-driven default (see
+// derivePriorityFromDueDate), overridable by the advisor in the capture panel.
+// Kept to low/med/high per Katie 06.02; the tasks table also allows 'urgent'
+// but capture never sets it.
+export type TaskPriority = "low" | "medium" | "high";
+
 export interface ProposedChange {
   type: "new_task" | "task_update" | "decision" | "open_question";
   title: string;
@@ -37,6 +43,54 @@ export interface ProposedChange {
   existing_task_id?: string;
   existing_task_snapshot?: ExistingTaskSnapshot;
   confidence: "high" | "medium" | "low";
+  /** UC-03: date-driven priority (≤7 days out = high), advisor-overridable. */
+  priority?: TaskPriority;
+  /**
+   * UC-12: who is on the hook for this commitment.
+   * 'tfo' (default) → a TFO team member owns it (suggested_assignee).
+   * 'client' → a named client stakeholder owns it (owner_stakeholder_id).
+   */
+  owner_type?: "tfo" | "client";
+  /** UC-12: stakeholder UUID from the KNOWN STAKEHOLDERS list, when owner_type='client'. */
+  owner_stakeholder_id?: string | null;
+  /** UC-12: display name for the owning stakeholder (advisor convenience). */
+  owner_stakeholder_name?: string | null;
+}
+
+// UC-03: deterministic date → priority. An item needed within 7 days (or
+// already overdue) is HIGH; everything else — including items with no due
+// date — defaults to MEDIUM, and the advisor marks it up/down from there.
+// Pure and reused on both the capture and apply paths; never a Claude call.
+export function derivePriorityFromDueDate(
+  dueDate: string | null | undefined
+): TaskPriority {
+  if (!dueDate) return "medium";
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return "medium";
+  const now = new Date();
+  // Compare on calendar days so a date "today" reads as 0, not a fraction.
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startOfDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const daysUntilDue = Math.round((startOfDue - startOfToday) / msPerDay);
+  return daysUntilDue <= 7 ? "high" : "medium";
+}
+
+// UC-03: deferred items auto-attach to the next agenda UNLESS their due date
+// is more than 30 days out (Katie 06.02). No due date, or a date within 30
+// days / already past, means it's near enough to surface now.
+export function isDeferredEligibleForAutoAttach(
+  dueDate: string | null | undefined
+): boolean {
+  if (!dueDate) return true;
+  const due = new Date(dueDate);
+  if (Number.isNaN(due.getTime())) return true;
+  const now = new Date();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const startOfDue = Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate());
+  const daysUntilDue = Math.round((startOfDue - startOfToday) / msPerDay);
+  return daysUntilDue <= 30;
 }
 
 export interface ProposedSignal {
@@ -67,9 +121,11 @@ export async function generateAgenda(
     await Promise.all([
       query(`SELECT * FROM meetings WHERE id = $1`, [meetingId]),
       query(
-        `SELECT t.title, t.status, t.priority, t.due_date, t.phase, t.notes, u.name AS assignee_name
+        `SELECT t.title, t.status, t.priority, t.due_date, t.phase, t.notes,
+                t.owner_type, u.name AS assignee_name, st.name AS owner_stakeholder_name
          FROM tasks t
          LEFT JOIN users u ON u.id = t.assignee_id
+         LEFT JOIN stakeholders st ON st.id = t.owner_stakeholder_id
          WHERE t.client_id = $1
            AND t.status NOT IN ('done', 'skipped')
          ORDER BY
@@ -158,6 +214,64 @@ export async function generateAgenda(
     source_meeting_date: string | null;
     source_meeting_type: string | null;
   }>;
+
+  // UC-03: deferred items within 30 days (or undated/overdue) auto-attach to
+  // this agenda; items dated >30 days out stay in the carry-forward list only.
+  // Skip any malformed payload with neither a title nor detail — it would only
+  // produce a blank agenda line.
+  const eligibleDeferred = deferredItems.filter((d) => {
+    const p = d.change_payload;
+    if (!p || (!p.title?.trim() && !p.detail?.trim())) return false;
+    return isDeferredEligibleForAutoAttach(p.suggested_due_date);
+  });
+
+  // Build concrete agenda items from the eligible deferred items. These are
+  // merged deterministically below so the rule holds regardless of what Claude
+  // chooses to surface (the prompt is told NOT to re-list them). The parallel
+  // title list drives backstop de-duplication.
+  const deferredTitles = eligibleDeferred.map((d) =>
+    (d.change_payload.title ?? "").trim().toLowerCase()
+  );
+  const deferredAgendaItems: AgendaItem[] = eligibleDeferred.map((d) => {
+    const payload = d.change_payload;
+    const meetingType = d.source_meeting_type ?? "Meeting";
+    const meetingDate = d.source_meeting_date
+      ? new Date(d.source_meeting_date).toLocaleDateString()
+      : "prior meeting";
+    const dueLabel = payload.suggested_due_date
+      ? ` (due ${new Date(payload.suggested_due_date).toLocaleDateString()})`
+      : "";
+    const title = payload.title?.trim() || "(untitled item)";
+    const text = payload.detail ? `${title} — ${payload.detail}` : title;
+    return {
+      text,
+      source: `Deferred from ${meetingType} ${meetingDate}${dueLabel}`,
+    };
+  });
+
+  // Merge the auto-attached deferred items into the "Outstanding Commitments
+  // Review" section of a generated agenda. The section title is matched
+  // tolerantly (Claude occasionally renames it) so items never land in a
+  // dangling sixth section; the canonical title is used only when creating it.
+  const COMMITMENTS_SECTION = "Outstanding Commitments Review";
+  const attachDeferred = (sections: AgendaSection[]): AgendaSection[] => {
+    if (deferredAgendaItems.length === 0) return sections;
+    const section =
+      sections.find((s) => s.title === COMMITMENTS_SECTION) ??
+      sections.find((s) => /commitment/i.test(s.title));
+    if (section) {
+      // Backstop de-dup: if Claude listed an item despite instructions, skip
+      // ours when its title already appears in an existing item's text.
+      const existingText = section.items.map((i) => i.text.toLowerCase()).join("\n");
+      const fresh = deferredAgendaItems.filter((_, idx) => {
+        const title = deferredTitles[idx];
+        return !title || !existingText.includes(title);
+      });
+      section.items = [...section.items, ...fresh];
+      return sections;
+    }
+    return [...sections, { title: COMMITMENTS_SECTION, items: deferredAgendaItems }];
+  };
   const stakeholders = stakeholdersRes.rows as Array<{
     id: string;
     name: string;
@@ -178,6 +292,18 @@ export async function generateAgenda(
   const blockedTasks = tasks.filter((t) => t.status === "blocked");
   const inProgressTasks = tasks.filter((t) => t.status === "in_progress");
 
+  // UC-12: a commitment owned by the client surfaces under the stakeholder's
+  // name (tagged "client"); a TFO-owned one keeps the assignee name. Lets the
+  // agenda's Outstanding Commitments Review name who is on the hook on each side.
+  const ownerLabel = (t: {
+    owner_type?: string | null;
+    assignee_name?: string | null;
+    owner_stakeholder_name?: string | null;
+  }): string =>
+    t.owner_type === "client"
+      ? `${t.owner_stakeholder_name ?? "Client"} (client)`
+      : t.assignee_name ?? "Unassigned";
+
   const context = `
 You are preparing a pre-meeting agenda for a TFO (The Founders Office) advisory session.
 
@@ -195,15 +321,15 @@ ${(plan.phases as Array<{ phase: string; label: string; status: string; complete
     : "No active quarterly plan."
 }
 
-OPEN TASKS (${tasks.length} total):
+OPEN TASKS / COMMITMENTS (${tasks.length} total — owner shown is who is on the hook; "(client)" marks a client-side commitment):
 Overdue (${overdueTasks.length}):
-${overdueTasks.map((t) => `  • [OVERDUE] ${t.title} — ${t.assignee_name ?? "Unassigned"} — due ${new Date(t.due_date).toLocaleDateString()}`).join("\n") || "  None"}
+${overdueTasks.map((t) => `  • [OVERDUE] ${t.title} — ${ownerLabel(t)} — due ${new Date(t.due_date).toLocaleDateString()}`).join("\n") || "  None"}
 
 Blocked (${blockedTasks.length}):
-${blockedTasks.map((t) => `  • [BLOCKED] ${t.title} — ${t.notes ?? ""}`).join("\n") || "  None"}
+${blockedTasks.map((t) => `  • [BLOCKED] ${t.title} — ${ownerLabel(t)}${t.notes ? ` — ${t.notes}` : ""}`).join("\n") || "  None"}
 
 In Progress (${inProgressTasks.length}):
-${inProgressTasks.map((t) => `  • ${t.title} — ${t.assignee_name ?? "Unassigned"}`).join("\n") || "  None"}
+${inProgressTasks.map((t) => `  • ${t.title} — ${ownerLabel(t)}`).join("\n") || "  None"}
 
 RISK ALERTS:
 ${risks.map((r) => `  • [${r.severity.toUpperCase()}] ${r.title}: ${r.detail}`).join("\n") || "  None"}
@@ -221,10 +347,10 @@ ${
 RECENT ACTIVITY:
 ${activity.map((a) => `  • ${a.text}`).join("\n") || "  No recent activity."}
 
-DEFERRED ITEMS FROM PRIOR MEETINGS (${deferredItems.length}):
+DEFERRED ITEMS FROM PRIOR MEETINGS (${eligibleDeferred.length}) — these are AUTO-ATTACHED to the agenda for you; do NOT re-list them, they are added automatically:
 ${
-  deferredItems.length > 0
-    ? deferredItems
+  eligibleDeferred.length > 0
+    ? eligibleDeferred
         .map((d) => {
           const payload = d.change_payload;
           const meetingDate = d.source_meeting_date
@@ -262,7 +388,7 @@ ${
 INSTRUCTIONS:
 Generate a structured meeting agenda with exactly these 5 sections (in this order):
 1. Client Updates & Requests — items the client likely wants to raise; infer from recent activity, notes, and communications.
-2. Outstanding Commitments Review — overdue tasks, blocked tasks, open items from prior meeting notes that haven't been resolved, and any deferred items from prior meetings (listed above under DEFERRED ITEMS FROM PRIOR MEETINGS).
+2. Outstanding Commitments Review — overdue tasks, blocked tasks, and open items from prior meeting notes that haven't been resolved. Do NOT include the DEFERRED ITEMS listed above — they are auto-attached to this section for you.
 3. Workplan Status — progress summary by phase: what's on track, what's slipping, what just completed.
 4. Methodology-Aligned Topics — based on the current quarterly phase, identify TFO methodology activities that are due, missing, or should be advanced this meeting. Reference the Capital Alignment Method phases (Prove, Diagnose, Design TFO, Protect, Grow, Align) and flag what should be happening now.
 5. Forward-Looking Decisions — risk alerts, items where the advisor or client needs to make a decision or take a position before the next meeting.
@@ -319,18 +445,18 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
 
   try {
     const parsed = JSON.parse(rawText) as AgendaSection[];
-    return parsed;
+    return attachDeferred(parsed);
   } catch {
-    return [
+    return attachDeferred([
       {
         title: "Client Updates & Requests",
         items: [{ text: "Review client updates since last meeting", source: "Inferred from recent activity" }],
       },
       {
-        title: "Outstanding Commitments Review",
+        title: COMMITMENTS_SECTION,
         items: overdueTasks.slice(0, 3).map((t) => ({
           text: `Review status: ${t.title}`,
-          source: `From overdue task assigned to ${t.assignee_name ?? "unassigned"}`,
+          source: `From overdue commitment owned by ${ownerLabel(t)}`,
         })),
       },
       {
@@ -348,7 +474,7 @@ Return ONLY valid JSON in this exact format (no markdown, no explanation):
           source: `From risk alert [${r.severity}]: ${r.detail ?? ""}`,
         })),
       },
-    ];
+    ]);
   }
 }
 
@@ -443,7 +569,10 @@ CRITICAL — avoid duplicate tasks:
 Before classifying any item as new_task, scan the EXISTING OPEN TASKS list above. If your proposed action semantically matches an existing task — even if the wording differs (e.g., "Tom will draft the LOI" matches existing task "Finalize LOI for Acme acquisition") — use type "task_update" with that task's existing_task_id, NOT new_task. The match does not need to be word-for-word; match on intent and subject. When in doubt between new_task and task_update, prefer task_update. This is especially important when the advisor is re-capturing a meeting that has already been processed once.
 
 For new_task items:
-- suggested_assignee: exact name from team list, or null
+- owner_type: who is on the hook for this commitment. Use "client" when a named person from the KNOWN STAKEHOLDERS list is the one who committed to do it (e.g. "Sarah will send the cap table"). Use "tfo" when a TFO team member owns it, or when ownership is unclear. Default to "tfo".
+- owner_stakeholder_id: REQUIRED when owner_type is "client" — the exact stakeholder UUID from the KNOWN STAKEHOLDERS list. Never invent an id; if no stakeholder from the list matches, use owner_type "tfo" instead.
+- owner_stakeholder_name: the matching stakeholder's name when owner_type is "client", else null.
+- suggested_assignee: exact name from team list when owner_type is "tfo", or null. Leave null for client-owned commitments.
 - suggested_due_date: ISO date YYYY-MM-DD, or null
 - suggested_phase: must exactly match one of the phase values above (e.g. "discover"). Capitalize it to match the roadmap domain tabs: "Discover", "Protect", "Grow", "Prove & Align", or null
 - suggested_dependencies: brief note if this task depends on another (e.g. "Depends on: Finalize LOI"), or null
@@ -479,6 +608,9 @@ Return ONLY valid JSON (no markdown):
       "detail": "...",
       "source_excerpt": "...",
       "source_timestamp": "00:05:32 or null",
+      "owner_type": "tfo or client",
+      "owner_stakeholder_id": "uuid-from-known-stakeholders-list when owner_type is client, else null",
+      "owner_stakeholder_name": "Name when owner_type is client, else null",
       "suggested_assignee": "Name or null",
       "suggested_due_date": "YYYY-MM-DD or null",
       "suggested_phase": "discover or null",
@@ -575,8 +707,31 @@ Return ONLY valid JSON (no markdown):
       return !sentimentExcerpts.has(`${s.stakeholder_id}::${s.source_excerpt}`);
     });
 
+    // UC-12: stakeholder id → name lookup for normalizing owner fields
+    const stakeholderNameById = new Map(captureStakeholders.map((s) => [s.id, s.name]));
+
     // Gap 3: Enrich task_update changes with a snapshot of the existing task
     for (const change of result.proposed_changes) {
+      // UC-03: seed a date-driven default priority for task-creating items.
+      // The advisor can override this in the capture panel before applying.
+      if (change.type === "new_task" || change.type === "task_update") {
+        change.priority = derivePriorityFromDueDate(change.suggested_due_date);
+      }
+
+      // UC-12: harden the owner classification on new tasks. Claude occasionally
+      // marks a commitment "client" but omits or invents the stakeholder id —
+      // downgrade those to "tfo" so we never persist a dangling owner reference.
+      // Mirrors the defensive filter applied to proposed_signals above.
+      if (change.type === "new_task") {
+        if (change.owner_type === "client" && change.owner_stakeholder_id && stakeholderIdSet.has(change.owner_stakeholder_id)) {
+          change.owner_stakeholder_name = stakeholderNameById.get(change.owner_stakeholder_id) ?? null;
+          change.suggested_assignee = undefined; // client-owned: not a TFO assignee
+        } else {
+          change.owner_type = "tfo";
+          change.owner_stakeholder_id = null;
+          change.owner_stakeholder_name = null;
+        }
+      }
       if (change.type === "task_update" && change.existing_task_id) {
         const existing = existingTasks.find((t) => t.id === change.existing_task_id);
         if (existing) {

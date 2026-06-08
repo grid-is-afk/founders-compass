@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { FileText, Loader2, Pencil, Eye, X, Save, Download, Archive } from "lucide-react";
+import { FileText, Loader2, Pencil, Eye, X, Save, Download, Archive, Lock } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -44,6 +44,8 @@ interface DbDeliverable {
   generated_at?: string | null;
   approved_at?: string | null;
   approved_by_name?: string | null;
+  client_approved_at?: string | null;
+  due_date?: string | null;
 }
 
 const TITLE_DISPLAY_MAP: Record<string, string> = {
@@ -68,10 +70,15 @@ function resolveDeliverableTitle(rawTitle: string): string {
   return TITLE_DISPLAY_MAP[rawTitle] ?? rawTitle;
 }
 
-/** Options shown in the per-card review status dropdown. */
+/**
+ * Options shown in the per-card review status dropdown — the three-stage
+ * lifecycle: advisor drafts → advisor approves → founder (client) approves.
+ * Reaching "Client Approved" is what confirms a review prep's objectives.
+ */
 const REVIEW_STATUS_OPTIONS = [
   { value: "pending_review", label: "Pending Review" },
   { value: "approved", label: "Approved" },
+  { value: "client_approved", label: "Client Approved" },
 ] as const;
 
 type ReviewStatusValue = (typeof REVIEW_STATUS_OPTIONS)[number]["value"];
@@ -88,12 +95,19 @@ interface MappedDeliverable {
   generated_at: string | null;
   approved_at: string | null;
   approved_by_name: string | null;
+  client_approved_at: string | null;
+  due_date: string | null;
 }
 
 /** Tailwind classes for the pill-shaped dropdown trigger by review_status. */
 function reviewStatusTriggerClass(status: ReviewStatusValue | null): string {
-  if (status === "approved") {
+  if (status === "client_approved") {
+    // final / founder-agreed
     return "bg-green-50 text-green-700 border border-green-500/30 hover:bg-green-100";
+  }
+  if (status === "approved") {
+    // interim — advisor signed off, awaiting client
+    return "bg-blue-50 text-blue-700 border border-blue-500/30 hover:bg-blue-100";
   }
   // pending_review or null (treated as pending_review)
   return "bg-amber-50 text-amber-700 border border-amber-500/30 hover:bg-amber-100";
@@ -178,6 +192,9 @@ const DeliverablesTab = () => {
       generated_at: d.generated_at ?? d.created_at ?? null,
       approved_at: d.approved_at ?? null,
       approved_by_name: d.approved_by_name ?? null,
+      client_approved_at: d.client_approved_at ?? null,
+      // DATE column — normalize to YYYY-MM-DD for the native date input.
+      due_date: d.due_date ? d.due_date.slice(0, 10) : null,
     };
   }
 
@@ -209,20 +226,32 @@ const DeliverablesTab = () => {
     );
   };
 
-  const handleReviewStatusChange = (
-    del: MappedDeliverable,
-    value: string
-  ) => {
+  // Approving a "Qn Review Prep" locks that quarter's plan as the agreed
+  // baseline (server-side), so confirm with the advisor before applying it.
+  const REVIEW_PREP_RE = /Q\d+\s+Review Prep/i;
+  const [lockConfirmDel, setLockConfirmDel] = useState<MappedDeliverable | null>(null);
+
+  const handleReviewStatusChange = (del: MappedDeliverable, value: string) => {
+    if (value === "client_approved" && REVIEW_PREP_RE.test(del.title)) {
+      setLockConfirmDel(del); // intercept → confirm dialog; Select reverts on cancel
+      return;
+    }
+    applyReviewStatus(del, value);
+  };
+
+  const applyReviewStatus = (del: MappedDeliverable, value: string) => {
     updateDeliverable.mutate(
       { id: del.id, clientId: selectedClientId, review_status: value },
       {
         onSuccess: (data: UpdateDeliverableResult) => {
           const dataRoomRenamed = data?.dataRoomRenamed === true;
-          if (value === "approved") {
+          if (value === "client_approved") {
             toast.success(
-              dataRoomRenamed
-                ? "Approved — Data Room file renamed to final version"
-                : "Approved"
+              "Client approved — any review objectives are now confirmed"
+            );
+          } else if (value === "approved") {
+            toast.success(
+              dataRoomRenamed ? "Advisor approved — Data Room file renamed" : "Advisor approved"
             );
           } else {
             toast(
@@ -235,6 +264,19 @@ const DeliverablesTab = () => {
         onError: () => {
           toast.error("Failed to update review status");
         },
+      }
+    );
+  };
+
+  // Promised date (UC-11): when set and past with the deliverable not yet
+  // delivered, the risk scan raises a "missed deliverable promise" alert.
+  const handleDueDateChange = (del: MappedDeliverable, value: string) => {
+    updateDeliverable.mutate(
+      { id: del.id, clientId: selectedClientId, due_date: value || null },
+      {
+        onSuccess: () =>
+          toast(value ? "Promised date updated" : "Promised date cleared"),
+        onError: () => toast.error("Failed to update promised date"),
       }
     );
   };
@@ -316,15 +358,25 @@ const DeliverablesTab = () => {
           const hasContent = !!del.content;
           const isDownloading = downloadingIds.has(del.id);
 
+          // A promised date in the past with the deliverable not yet delivered
+          // is what the UC-11 risk scan flags as a "missed promise".
+          const isDelivered = del.status === "complete" || del.status === "ready";
+          const isOverdue =
+            !!del.due_date && del.due_date < new Date().toISOString().slice(0, 10) && !isDelivered;
+
           const effectiveReviewStatus: ReviewStatusValue =
-            del.review_status === "approved" ? "approved" : "pending_review";
+            del.review_status === "approved" || del.review_status === "client_approved"
+              ? del.review_status
+              : "pending_review";
 
           const timestampLabel = del.generated_at
             ? `Generated ${formatDistanceToNow(new Date(del.generated_at), { addSuffix: true })}`
             : "Not yet generated";
           const approvalLabel =
-            del.review_status === "approved" && del.approved_at
-              ? `Approved ${formatDistanceToNow(new Date(del.approved_at), { addSuffix: true })} by ${del.approved_by_name ?? "an advisor"}`
+            del.review_status === "client_approved" && del.client_approved_at
+              ? `Client approved ${formatDistanceToNow(new Date(del.client_approved_at), { addSuffix: true })}`
+              : del.review_status === "approved" && del.approved_at
+              ? `Advisor approved ${formatDistanceToNow(new Date(del.approved_at), { addSuffix: true })} by ${del.approved_by_name ?? "an advisor"}`
               : null;
 
           return (
@@ -344,6 +396,32 @@ const DeliverablesTab = () => {
                       {approvalLabel}
                     </p>
                   )}
+                  {/* Promised date — feeds the UC-11 missed-promise risk rule */}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <label
+                      htmlFor={`due-${del.id}`}
+                      className="text-[10px] text-muted-foreground"
+                    >
+                      Promised
+                    </label>
+                    <input
+                      id={`due-${del.id}`}
+                      type="date"
+                      value={del.due_date ?? ""}
+                      onChange={(e) => handleDueDateChange(del, e.target.value)}
+                      className={cn(
+                        "h-6 rounded border bg-background px-1.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-primary/50",
+                        isOverdue
+                          ? "border-red-500/40 text-red-700"
+                          : "border-border text-muted-foreground"
+                      )}
+                    />
+                    {isOverdue && (
+                      <span className="text-[10px] font-medium text-red-700">
+                        Overdue
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   {/* Status area: static badge when not ready, dropdown when ready */}
@@ -583,6 +661,51 @@ const DeliverablesTab = () => {
             >
               <Download className="w-3 h-3" />
               Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lock confirmation — shown before a review-prep is client-approved */}
+      <Dialog
+        open={!!lockConfirmDel}
+        onOpenChange={(open) => {
+          if (!open) setLockConfirmDel(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display text-base font-semibold flex items-center gap-2">
+              <Lock className="w-4 h-4 text-muted-foreground" />
+              Lock this quarter&apos;s plan?
+            </DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Marking <span className="font-medium text-foreground">{lockConfirmDel?.title}</span> as
+              Client Approved confirms the quarter&apos;s objectives and{" "}
+              <span className="font-medium text-foreground">locks the plan as the agreed baseline</span>.
+              Tasks or objectives added afterward will be flagged as scope creep. Continue?
+            </p>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLockConfirmDel(null)}
+              disabled={updateDeliverable.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => {
+                if (lockConfirmDel) applyReviewStatus(lockConfirmDel, "client_approved");
+                setLockConfirmDel(null);
+              }}
+              disabled={updateDeliverable.isPending}
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Approve &amp; Lock
             </Button>
           </DialogFooter>
         </DialogContent>
