@@ -183,13 +183,19 @@ export const tools = [
         clientName: { type: "string", description: "Client name" },
         meetingType: {
           type: "string",
+          // Keep in sync with MEETING_TYPES in
+          // src/pages/advisor/ClientMeetingsTab.tsx so the copilot offers the
+          // same options as the manual "Schedule Meeting" modal and both paths
+          // store an identical `type` label.
           enum: [
-            "quarterly_review",
-            "sprint_checkin",
-            "strategy_session",
-            "document_review",
+            "Quarterly Review",
+            "Weekly Check-in",
+            "Discovery Call",
+            "Strategy Session",
+            "Ad-hoc",
           ],
-          description: "Type of meeting",
+          description:
+            "Type of meeting. Must be one of these exact labels — the same options shown in the Meetings tab's Schedule Meeting dropdown.",
         },
         date: { type: "string", description: "Proposed date (e.g., 'Apr 10, 2026')" },
         notes: { type: "string", description: "Agenda or notes" },
