@@ -11,6 +11,7 @@ import { query } from "./db.js";
 import dotenv from "dotenv";
 
 import { authMiddleware } from "./middleware/auth.js";
+import { authLimiter } from "./middleware/rateLimit.js";
 import { saveReportToDataRoom } from "./lib/saveReport.js";
 import { buildDeliverableDocx } from "./lib/deliverableDocx.js";
 import { verifyClientAccess } from "./lib/verifyClient.js";
@@ -75,6 +76,9 @@ for (const v of requiredEnvVars) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+// Trust Railway's reverse proxy so rate limiting sees the real client IP
+// (X-Forwarded-For) rather than treating all traffic as a single proxy IP.
+app.set("trust proxy", 1);
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || "http://localhost:5173" }));
 app.use(express.json({ limit: "10mb" }));
 
@@ -94,6 +98,9 @@ const CATEGORY_BY_REPORT_TYPE: Record<string, string> = {
 // ============================================================
 // Public routes
 // ============================================================
+// Throttle the brute-forceable auth endpoints before the router handles them.
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/refresh", authLimiter);
 app.use("/api/auth", authRoutes);
 
 // ============================================================
