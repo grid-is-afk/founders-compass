@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcryptjs from "bcryptjs";
 import { query } from "../db.js";
 import { ingestDocument } from "../lib/ingestion.js";
+import { generatePassword } from "../lib/generatePassword.js";
 
 const router = Router();
 
@@ -30,20 +31,23 @@ router.get("/users", async (req, res) => {
   }
 });
 
-// POST /api/admin/users — create a new advisor or admin user
+// POST /api/admin/users — create a new advisor, admin, or licensee user.
+// The password is always system-generated (no admin-chosen passwords) and
+// returned once in the response so the admin can share it with the new user.
 router.post("/users", async (req, res) => {
   if (!requireAdmin(req, res)) return;
-  const { name, email, password, role } = req.body;
+  const { name, email, role } = req.body;
 
-  if (!name || !email || !password || !role) {
-    return res.status(400).json({ error: "name, email, password, and role are required" });
+  if (!name || !email || !role) {
+    return res.status(400).json({ error: "name, email, and role are required" });
   }
   if (!["advisor", "admin", "licensee"].includes(role)) {
     return res.status(400).json({ error: "role must be advisor, admin, or licensee" });
   }
 
   try {
-    const passwordHash = await bcryptjs.hash(password, 12);
+    const generatedPassword = generatePassword();
+    const passwordHash = await bcryptjs.hash(generatedPassword, 12);
     // Licensees are always scoped to their own clients — never see-all.
     const seeAllClients = role !== "licensee";
     const result = await query(
@@ -56,7 +60,8 @@ router.post("/users", async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(409).json({ error: "A user with this email already exists" });
     }
-    return res.status(201).json(result.rows[0]);
+    // Return the plaintext password ONCE so the UI can display it for sharing.
+    return res.status(201).json({ ...result.rows[0], password: generatedPassword });
   } catch (err) {
     console.error("POST /admin/users error:", err);
     return res.status(500).json({ error: "Internal server error" });

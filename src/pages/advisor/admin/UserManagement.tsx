@@ -27,7 +27,6 @@ interface TeamUser {
 interface NewUserForm {
   name: string;
   email: string;
-  password: string;
   role: UserRole;
 }
 
@@ -58,7 +57,7 @@ export default function UserManagement() {
   const queryClient = useQueryClient();
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState<NewUserForm>({ name: "", email: "", password: "", role: "advisor" });
+  const [form, setForm] = useState<NewUserForm>({ name: "", email: "", role: "advisor" });
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [credentials, setCredentials] = useState<CreatedCredentials | null>(null);
@@ -78,7 +77,7 @@ export default function UserManagement() {
   });
 
   function openAddModal() {
-    setForm({ name: "", email: "", password: "", role: "advisor" });
+    setForm({ name: "", email: "", role: "advisor" });
     setFormError(null);
     setCredentials(null);
     setCopied(false);
@@ -95,15 +94,21 @@ export default function UserManagement() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    if (!form.name.trim() || !form.email.trim() || !form.password) {
-      setFormError("All fields are required.");
+    if (!form.name.trim() || !form.email.trim()) {
+      setFormError("Name and email are required.");
       return;
     }
     setSubmitting(true);
     try {
-      await api.post("/admin/users", form);
+      // The server generates the password and returns it once in the response.
+      const created = await api.post("/admin/users", form);
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-      setCredentials({ ...form });
+      setCredentials({
+        name: created.name,
+        email: created.email,
+        password: created.password,
+        role: created.role,
+      });
     } catch (err: any) {
       setFormError(err.message ?? "Something went wrong.");
     } finally {
@@ -309,17 +314,6 @@ export default function UserManagement() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Temporary Password</label>
-                  <input
-                    type="text"
-                    value={form.password}
-                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                    placeholder="TempPass123!"
-                    className="w-full px-3 py-2 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring font-mono"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Role</label>
                   <select
                     value={form.role}
@@ -336,6 +330,10 @@ export default function UserManagement() {
                     </p>
                   )}
                 </div>
+
+                <p className="text-[11px] text-muted-foreground">
+                  A secure password is generated automatically and shown once after the account is created.
+                </p>
 
                 {formError && (
                   <p className="text-sm text-destructive">{formError}</p>

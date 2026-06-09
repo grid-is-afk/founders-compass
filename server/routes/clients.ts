@@ -2,6 +2,7 @@ import { Router } from "express";
 import bcryptjs from "bcryptjs";
 import { query } from "../db.js";
 import { requireClientOwnership } from "../lib/clientAuth.js";
+import { generatePassword } from "../lib/generatePassword.js";
 
 const router = Router();
 
@@ -74,16 +75,6 @@ async function canSeeAll(userId: string, role: string): Promise<boolean> {
   if (role === "licensee") return false;
   const r = await query("SELECT see_all_clients FROM users WHERE id = $1", [userId]);
   return r.rows[0]?.see_all_clients ?? true;
-}
-
-/** Generate a readable 10-char password — no ambiguous chars (0/O, 1/l/I) */
-function generatePassword(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-  let password = "";
-  for (let i = 0; i < 10; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
 }
 
 // GET /api/clients
