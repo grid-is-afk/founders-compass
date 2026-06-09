@@ -12,8 +12,6 @@ import dotenv from "dotenv";
 
 import { authMiddleware } from "./middleware/auth.js";
 import { authLimiter } from "./middleware/rateLimit.js";
-import { saveReportToDataRoom } from "./lib/saveReport.js";
-import { buildDeliverableDocx } from "./lib/deliverableDocx.js";
 import { verifyClientAccess } from "./lib/verifyClient.js";
 import { buildClientStructuredContext } from "./platformContext.js";
 import { retrieveChunks } from "./lib/retrieval.js";
@@ -85,15 +83,6 @@ app.use(express.json({ limit: "10mb" }));
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
-// Map chat-generated reportType → Data Room category. Mirrors the categories
-// each dedicated /generate-* route uses for the same reportType so a single
-// document type is filed identically regardless of generation path.
-const CATEGORY_BY_REPORT_TYPE: Record<string, string> = {
-  quarterly_review: "Quarterly Review",
-  onboarding_brief: "Reports",
-};
-
 
 // ============================================================
 // Public routes
@@ -302,14 +291,6 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
     let clientDisconnected = false;
     req.on("close", () => { clientDisconnected = true; });
 
-    // Track pending report saves: { clientId, title, folder?, reportType? } set when generate_report fires
-    let pendingReportSave: {
-      savedClientId: string;
-      title: string;
-      folder?: string;
-      reportType?: string;
-    } | null = null;
-
     // Tool-use loop: Claude may call tools multiple times before producing final text
     while (true) {
       if (clientDisconnected) break;
@@ -336,108 +317,10 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
         }
       }
 
-      // No tool calls — conversation is done; finalize report if pending
+      // No tool calls (or a non-tool stop) — the conversation turn is done.
+      // Report persistence is handled explicitly by the save_report tool, so
+      // there's nothing to finalize from the model's free text here.
       if (toolUseBlocks.length === 0 || response.stop_reason !== "tool_use") {
-        if (pendingReportSave) {
-          const fullText = textBlocks.map((b) => b.text).join("\n\n");
-          if (!fullText.trim()) {
-            console.warn(
-              "Chat report finalize skipped: Claude produced no text after generate_report tool call",
-              { title: pendingReportSave.title }
-            );
-          } else {
-            try {
-              const delResult = await query(
-                `SELECT id, title, review_status FROM deliverables
-                 WHERE client_id = $1 AND title = $2 AND archived_at IS NULL
-                 ORDER BY created_at DESC LIMIT 1`,
-                [pendingReportSave.savedClientId, pendingReportSave.title]
-              );
-              if (delResult.rows.length === 0) {
-                console.warn(
-                  "Chat report finalize skipped: no matching deliverable row to update",
-                  { title: pendingReportSave.title, clientId: pendingReportSave.savedClientId }
-                );
-              } else {
-                const row = delResult.rows[0] as {
-                  id: string;
-                  title: string;
-                  review_status: string | null;
-                };
-
-                const updateResult = await query(
-                  `UPDATE deliverables
-                   SET content = $1,
-                       review_status = COALESCE(review_status, 'pending_review'),
-                       generated_at = NOW(),
-                       updated_at = NOW()
-                   WHERE id = $2
-                   RETURNING review_status`,
-                  [fullText, row.id]
-                );
-                const updatedRow = updateResult.rows[0] as
-                  | { review_status: string | null }
-                  | undefined;
-                if (!updatedRow) {
-                  console.warn(
-                    "Chat report finalize skipped: UPDATE returned no row (deliverable may have been deleted/archived mid-flight)",
-                    { deliverableId: row.id }
-                  );
-                } else {
-                  const liveReviewStatus = updatedRow.review_status as
-                    | "pending_review"
-                    | "approved"
-                    | "client_approved";
-
-                  const clientResult = await query(
-                    "SELECT name FROM clients WHERE id = $1",
-                    [pendingReportSave.savedClientId]
-                  );
-                  const clientName =
-                    (clientResult.rows[0]?.name as string | undefined) ?? "Client";
-                  const generatedAt = new Date().toISOString().slice(0, 10);
-                  const docxBuffer = await buildDeliverableDocx({
-                    title: row.title,
-                    clientName,
-                    generatedAt,
-                    markdownContent: fullText,
-                  });
-
-                  const category =
-                    pendingReportSave.folder ??
-                    (pendingReportSave.reportType
-                      ? CATEGORY_BY_REPORT_TYPE[pendingReportSave.reportType]
-                      : undefined) ??
-                    "Reports";
-
-                  const dataRoomResult = await saveReportToDataRoom({
-                    clientId: pendingReportSave.savedClientId,
-                    baseTitle: `${row.title} — ${clientName}`,
-                    contentBuffer: docxBuffer,
-                    mimeType:
-                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    extension: "docx",
-                    deliverableId: row.id,
-                    reviewStatus: liveReviewStatus,
-                    category,
-                  });
-                  // saveReportToDataRoom returns { saved: false, error } on
-                  // Supabase failure rather than throwing — surface it so
-                  // the DB row + Data Room file don't silently diverge.
-                  if (!dataRoomResult.saved) {
-                    console.warn(
-                      "Chat report Data Room save failed:",
-                      dataRoomResult.error,
-                      { deliverableId: row.id, name: dataRoomResult.name }
-                    );
-                  }
-                }
-              }
-            } catch (err) {
-              console.error("Chat report finalize failed:", err);
-            }
-          }
-        }
         break;
       }
 
@@ -450,24 +333,6 @@ app.post("/api/chat", authMiddleware, async (req, res) => {
           req.user!.id,
           clientId as string | undefined
         );
-
-        // Track generate_report calls so we can save the follow-up content
-        if (toolBlock.name === "generate_report" && result.success && result.action) {
-          const resolvedClientId = (result.action.clientId as string | undefined) ?? (clientId as string | undefined);
-          const resolvedTitle = (result.action.reportTitle as string | undefined)
-            ?? (result.action.reportType as string | undefined)
-            ?? "Report";
-          const resolvedFolder = (result.action.subfolder as string | undefined) ?? undefined;
-          const resolvedReportType = (result.action.reportType as string | undefined) ?? undefined;
-          if (resolvedClientId) {
-            pendingReportSave = {
-              savedClientId: resolvedClientId,
-              title: resolvedTitle,
-              folder: resolvedFolder,
-              reportType: resolvedReportType,
-            };
-          }
-        }
 
         // Notify frontend so it can show an action badge / toast
         res.write(

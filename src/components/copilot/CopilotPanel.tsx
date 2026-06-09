@@ -1,4 +1,5 @@
-import { Sparkles, X } from "lucide-react";
+import { useState } from "react";
+import { Sparkles, X, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCopilotContext } from "./CopilotProvider";
 import CopilotMessages from "./CopilotMessages";
@@ -8,20 +9,29 @@ import { cn } from "@/lib/utils";
 
 export default function CopilotPanel() {
   const { isOpen, setIsOpen, messages, clearConversation, sendMessage } = useCopilotContext();
+  // Expanded = near-fullscreen centered view for a fuller working surface.
+  // Local to the panel: persists while mounted, resets on a fresh page load.
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // When expanded, cap the message/input column width so long reports stay
+  // readable instead of stretching edge-to-edge across a wide panel.
+  const columnClass = isExpanded ? "max-w-3xl mx-auto w-full" : "w-full";
 
   return (
     <div
       role="dialog"
       aria-label="Quarterback Copilot"
       className={cn(
-        "fixed bottom-6 right-6 z-50 flex flex-col",
-        "w-[440px] rounded-2xl border border-border bg-card shadow-2xl",
-        "transition-all duration-200 ease-out origin-bottom-right",
+        "fixed z-50 flex flex-col rounded-2xl border border-border bg-card shadow-2xl",
+        "transition-all duration-200 ease-out",
+        isExpanded
+          ? "top-6 bottom-6 left-1/2 -translate-x-1/2 w-[calc(100vw-2rem)] max-w-5xl origin-center"
+          : "bottom-6 right-6 w-[440px] origin-bottom-right",
         isOpen
           ? "opacity-100 scale-100 pointer-events-auto"
           : "opacity-0 scale-95 pointer-events-none"
       )}
-      style={{ height: "min(620px, calc(100vh - 96px))" }}
+      style={isExpanded ? undefined : { height: "min(620px, calc(100vh - 96px))" }}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border flex-shrink-0">
@@ -45,6 +55,18 @@ export default function CopilotPanel() {
               Clear
             </Button>
           )}
+          <button
+            onClick={() => setIsExpanded((v) => !v)}
+            className="h-7 px-2 flex items-center gap-1 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground text-xs"
+            aria-label={isExpanded ? "Collapse copilot" : "Expand copilot"}
+          >
+            {isExpanded ? (
+              <Minimize2 className="w-3.5 h-3.5" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
+            {isExpanded ? "Collapse" : "Expand"}
+          </button>
           <button
             onClick={() => setIsOpen(false)}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -71,13 +93,17 @@ export default function CopilotPanel() {
             <CopilotSuggestions onSelect={sendMessage} />
           </div>
         ) : (
-          <CopilotMessages />
+          <div className={columnClass}>
+            <CopilotMessages />
+          </div>
         )}
       </div>
 
       {/* Footer */}
       <div className="flex-shrink-0">
-        <CopilotInput />
+        <div className={columnClass}>
+          <CopilotInput />
+        </div>
       </div>
     </div>
   );
