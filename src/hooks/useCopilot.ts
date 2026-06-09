@@ -17,11 +17,21 @@ function historyKey(userId?: string, clientId?: string): string {
 const actionToastLabels: Record<string, string> = {
   task_created: "Task created",
   prospect_moved: "Prospect updated",
-  report_generated: "Report generated",
+  report_generated: "Drafting report…",
+  report_saved: "Report saved to Data Room",
+  agenda_generated: "Agenda created",
   instrument_updated: "Instrument updated",
   risk_flagged: "Risk flagged",
   meeting_scheduled: "Meeting scheduled",
 };
+
+// Actions that add or change a Data Room document / deliverable, so the
+// Deliverables and Documents tabs should refresh once the stream completes.
+const DATA_ROOM_ACTIONS = new Set([
+  "report_generated",
+  "report_saved",
+  "agenda_generated",
+]);
 
 function loadMessages(key: string): ChatMessage[] {
   try {
@@ -124,8 +134,8 @@ export function useCopilot(
       const abortController = new AbortController();
       abortRef.current = abortController;
 
-      // Track whether a report was generated this turn, so we can refresh the
-      // Deliverables tab after the server-side finalize block completes.
+      // Track whether a report/agenda document was created or saved this turn, so
+      // we can refresh the Deliverables + Data Room tabs once the stream finishes.
       let reportGeneratedClientId: string | null = null;
 
       try {
@@ -169,7 +179,7 @@ export function useCopilot(
           } else if (event.kind === "action") {
             const action = event.action as ChatAction;
 
-            if (action.type === "report_generated") {
+            if (DATA_ROOM_ACTIONS.has(action.type)) {
               reportGeneratedClientId =
                 (action.clientId as string | undefined) ?? clientId ?? null;
             }

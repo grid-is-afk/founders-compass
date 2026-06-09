@@ -45,6 +45,16 @@ const ACTION_BADGE_MAP: Record<string, BadgeConfig> = {
     label: "Report Generated",
     color: "bg-accent/15 text-accent-foreground border-accent/20",
   },
+  report_saved: {
+    icon: FileText,
+    label: "Report Saved",
+    color: "bg-emerald-500/15 text-emerald-700 border-emerald-500/20",
+  },
+  agenda_generated: {
+    icon: Calendar,
+    label: "Agenda Created",
+    color: "bg-accent/15 text-accent-foreground border-accent/20",
+  },
   instrument_updated: {
     icon: BarChart3,
     label: "Instrument Updated",

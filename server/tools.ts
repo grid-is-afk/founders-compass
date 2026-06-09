@@ -1,5 +1,13 @@
 import { query } from "./db.js";
 import { parseAgendaSections } from "./lib/agendaParser.js";
+import { buildDeliverableDocx } from "./lib/deliverableDocx.js";
+import { saveReportToDataRoom } from "./lib/saveReport.js";
+import {
+  CATEGORY_BY_REPORT_TYPE,
+  REPORT_TITLE_BY_TYPE,
+} from "./lib/reportCategories.js";
+import { generateAgenda } from "./lib/meetingIntelligence.js";
+import { snapshotAgendaToDataRoom } from "./lib/agendaSnapshot.js";
 
 export const tools = [
   {
@@ -89,6 +97,43 @@ export const tools = [
     },
   },
   {
+    name: "save_report",
+    description:
+      "Persist a report you have finished composing. Call this AFTER generate_report and AFTER you have written the complete report. Pass the full report markdown in `content` — exactly what should appear in the saved document. The document is built from `content`, NOT from your chat reply, so the report body must be in `content`.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        reportType: {
+          type: "string",
+          enum: [
+            "capital_readiness_memo",
+            "client_brief",
+            "risk_summary",
+            "board_update",
+            "assessment_summary",
+            "quarterly_review",
+            "meeting_recap",
+            "monthly_status_update",
+            "onboarding_brief",
+          ],
+          description: "Must match the reportType passed to generate_report.",
+        },
+        clientName: { type: "string", description: "Client the report is for" },
+        content: {
+          type: "string",
+          description:
+            "The complete report in professional markdown — the full body that should be saved to the document. Do NOT put a confirmation message here.",
+        },
+        subfolder: {
+          type: "string",
+          description:
+            "Optional. Data Room folder to save to. Must match the subfolder passed to generate_report. Defaults to 'Reports'. Available folders: Reports, Financials, Customer Capital, Legal & Structure, Governance, Meeting Notes, Agreements, Project Management, Liability, Other.",
+        },
+      },
+      required: ["reportType", "clientName", "content"],
+    },
+  },
+  {
     name: "update_instrument_status",
     description:
       "Update the status of a diagnostic instrument for a client. Use when the advisor says an instrument is complete, started, or needs attention.",
@@ -172,6 +217,31 @@ export const tools = [
           enum: ["upcoming", "last"],
           description:
             "If meetingId is unknown: 'upcoming' returns the next future meeting (default), 'last' returns the most recent past meeting.",
+        },
+      },
+      required: ["clientName"],
+    },
+  },
+  {
+    name: "generate_meeting_agenda",
+    description:
+      "Generate a NEW meeting agenda for a client and save it to the Data Room. Use ONLY when the advisor asks to CREATE, DRAFT, BUILD, or GENERATE an agenda (not to view an existing one — use get_meeting_agenda for that). Builds the same 5-section agenda as the Meetings tab (Client Updates & Requests, Outstanding Commitments Review, Workplan Status, Methodology-Aligned Topics, Forward-Looking Decisions) and files a .docx in the 'Meeting Agendas' folder as a draft. Do NOT compose agenda items yourself — this tool generates them.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        clientName: {
+          type: "string",
+          description: "Name of the client to build the agenda for",
+        },
+        meetingId: {
+          type: "string",
+          description: "Exact meeting UUID if known. Optional.",
+        },
+        meetingTiming: {
+          type: "string",
+          enum: ["upcoming", "last"],
+          description:
+            "If meetingId is unknown: 'upcoming' targets the next future meeting (default), 'last' targets the most recent past meeting.",
         },
       },
       required: ["clientName"],
@@ -324,18 +394,8 @@ export async function executeTool(
       const clientId = client?.id ?? null;
       const clientLabel = client?.name ?? (input.clientName as string | undefined) ?? "the client";
 
-      const titleMap: Record<string, string> = {
-        capital_readiness_memo: "Capital Readiness Memo",
-        client_brief: "Client Brief",
-        risk_summary: "Risk Summary",
-        board_update: "Board-Style Update",
-        assessment_summary: "Assessment Summary",
-        quarterly_review: "Quarterly Review",
-        meeting_recap: "Meeting Recap",
-        monthly_status_update: "Monthly Status Update",
-        onboarding_brief: "Onboarding Brief",
-      };
-      const reportTitle = titleMap[input.reportType as string] ?? String(input.reportType);
+      const reportTitle =
+        REPORT_TITLE_BY_TYPE[input.reportType as string] ?? String(input.reportType);
 
       // Build type-specific context from DB for richer generation
       let contextBlock = "";
@@ -391,7 +451,7 @@ export async function executeTool(
             );
             const riskResult = await query(
               `SELECT COUNT(*) AS active_risks FROM risk_alerts
-               WHERE client_id = $1 AND resolved_at IS NULL`,
+               WHERE client_id = $1 AND resolved = false`,
               [clientId]
             );
             const t = taskResult.rows[0];
@@ -400,7 +460,7 @@ export async function executeTool(
           } else if (reportType === "risk_summary") {
             const risksResult = await query(
               `SELECT title, severity, detail FROM risk_alerts
-               WHERE client_id = $1 AND resolved_at IS NULL
+               WHERE client_id = $1 AND resolved = false
                ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'warning' THEN 2 ELSE 3 END, created_at DESC`,
               [clientId]
             );
@@ -453,16 +513,139 @@ export async function executeTool(
         }
         return {
           success: true,
-          result: `Report "${reportTitle}" created for ${clientLabel}. Now write the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report. Structure it clearly with headers, bullet points where appropriate, and a concise executive summary at the top.`,
+          result: `Context gathered for "${reportTitle}" (${clientLabel}). Now compose the full "${reportTitle}" report in professional markdown for a financial advisor audience.${contextBlock}\n\nUse all available context to produce a thorough, actionable report — clear headers, bullet points where appropriate, and a concise executive summary at the top. When the report is complete, call save_report with the FULL report markdown in the "content" field (matching reportType and subfolder). Do NOT treat this as done until save_report has been called — your chat reply is not saved, only the content passed to save_report is.`,
           action: { type: "report_generated", ...input, clientName: clientLabel, clientId, reportTitle },
         };
       } catch (err) {
         console.error("generate_report DB error:", err);
         return {
           success: true,
-          result: `Now write the full "${reportTitle}" report in professional markdown for ${clientLabel}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top.`,
+          result: `Compose the full "${reportTitle}" report in professional markdown for ${clientLabel}.${contextBlock}\n\nStructure it clearly with headers and a concise executive summary at the top. When complete, call save_report with the full report markdown in "content" (matching reportType and subfolder). Your chat reply is not saved — only save_report's content is.`,
           action: { type: "report_generated", ...input, clientName: clientLabel, reportTitle },
         };
+      }
+    }
+
+    case "save_report": {
+      // Persist a finished report. The document body comes from the explicit
+      // `content` argument — never from the model's chat text — so a confirmation
+      // reply can no longer end up as the saved document.
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
+      if (!client) {
+        return {
+          success: false,
+          result: `Report not saved: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
+          action: { type: "report_save_failed", reason: "client_not_found" },
+        };
+      }
+
+      const content = typeof input.content === "string" ? input.content : "";
+      if (!content.trim()) {
+        return {
+          success: false,
+          result:
+            "No report content was provided to save. Compose the full report first, then call save_report with the complete markdown in the \"content\" field.",
+          action: { type: "report_save_failed", reason: "empty_content" },
+        };
+      }
+
+      const reportTitle =
+        REPORT_TITLE_BY_TYPE[input.reportType as string] ?? String(input.reportType);
+      const category =
+        (input.subfolder as string | undefined) ??
+        CATEGORY_BY_REPORT_TYPE[input.reportType as string] ??
+        "Reports";
+
+      try {
+        // Reconcile with the row generate_report created; self-sufficient if it
+        // wasn't (so the report always lands in the Deliverables list).
+        let delRow = (
+          await query(
+            `SELECT id FROM deliverables
+             WHERE client_id = $1 AND title = $2 AND archived_at IS NULL
+             ORDER BY created_at DESC LIMIT 1`,
+            [client.id, reportTitle]
+          )
+        ).rows[0] as { id: string } | undefined;
+
+        if (!delRow) {
+          delRow = (
+            await query(
+              `INSERT INTO deliverables (client_id, title, status, engine)
+               VALUES ($1, $2, 'ready', 'Copilot')
+               RETURNING id`,
+              [client.id, reportTitle]
+            )
+          ).rows[0] as { id: string };
+        }
+
+        // Build the document first — a docx failure then leaves the deliverable
+        // row's content untouched rather than written-but-with-no-file.
+        const generatedAt = new Date().toISOString().slice(0, 10);
+        const docxBuffer = await buildDeliverableDocx({
+          title: reportTitle,
+          clientName: client.name,
+          generatedAt,
+          markdownContent: content,
+        });
+
+        const updated = (
+          await query(
+            `UPDATE deliverables
+             SET content = $1,
+                 review_status = COALESCE(review_status, 'pending_review'),
+                 generated_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $2
+             RETURNING review_status`,
+            [content, delRow.id]
+          )
+        ).rows[0] as { review_status: string | null } | undefined;
+
+        const reviewStatus = (updated?.review_status ?? "pending_review") as
+          | "pending_review"
+          | "approved"
+          | "client_approved";
+
+        const dataRoomResult = await saveReportToDataRoom({
+          clientId: client.id,
+          baseTitle: `${reportTitle} — ${client.name}`,
+          contentBuffer: docxBuffer,
+          mimeType:
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          extension: "docx",
+          deliverableId: delRow.id,
+          reviewStatus,
+          category,
+        });
+
+        if (!dataRoomResult.saved) {
+          console.warn("save_report Data Room save failed:", dataRoomResult.error, {
+            deliverableId: delRow.id,
+            name: dataRoomResult.name,
+          });
+          return {
+            success: false,
+            result: `The report "${reportTitle}" was recorded but could not be filed in the Data Room (${dataRoomResult.error ?? "storage error"}). Let the advisor know it may need to be re-saved.`,
+            action: { type: "report_save_failed", reason: "data_room_error", deliverableId: delRow.id },
+          };
+        }
+
+        return {
+          success: true,
+          result: `Saved "${reportTitle}" for ${client.name} to the ${category} folder (${dataRoomResult.name}). Confirm to the advisor and suggest next steps.`,
+          action: {
+            type: "report_saved",
+            deliverableId: delRow.id,
+            clientId: client.id,
+            clientName: client.name,
+            reportTitle,
+            category,
+          },
+        };
+      } catch (err) {
+        console.error("save_report DB error:", err);
+        return { success: false, result: "Failed to save the report." };
       }
     }
 
@@ -545,7 +728,7 @@ export async function executeTool(
 
       try {
         const result = await query(
-          `INSERT INTO meetings (client_id, meeting_type, scheduled_date, notes, status)
+          `INSERT INTO meetings (client_id, type, date, notes, status)
            VALUES ($1, $2, $3, $4, 'scheduled') RETURNING id`,
           [clientId, input.meetingType, input.date, input.notes ?? null]
         );
@@ -668,6 +851,144 @@ export async function executeTool(
       } catch (err) {
         console.error("get_meeting_agenda DB error:", err);
         return { success: false, result: "Failed to look up meeting agenda." };
+      }
+    }
+
+    case "generate_meeting_agenda": {
+      // Generate a NEW agenda by reusing the same engine the Meetings tab uses,
+      // then export the branded .docx into the "Meeting Agendas" folder. This is
+      // distinct from get_meeting_agenda (which only retrieves an existing one).
+      const client = await resolveClient(activeClientId, input.clientName, advisorId);
+      if (!client) {
+        return {
+          success: false,
+          result: `Agenda not generated: could not resolve client "${input.clientName ?? "(none)"}". Please specify a valid client name.`,
+          action: { type: "agenda_generation_failed", reason: "client_not_found" },
+        };
+      }
+      const clientId = client.id;
+
+      try {
+        // Resolve the target meeting: explicit id → nearest upcoming → most
+        // recent past. No meeting at all means there's nothing to build for.
+        let meetingRow:
+          | { id: string; type: string | null; date: string | null }
+          | undefined;
+
+        if (input.meetingId) {
+          meetingRow = (
+            await query(
+              `SELECT id, type, date FROM meetings WHERE id = $1 AND client_id = $2`,
+              [input.meetingId, clientId]
+            )
+          ).rows[0];
+        } else if (input.meetingTiming === "last") {
+          meetingRow = (
+            await query(
+              `SELECT id, type, date FROM meetings
+               WHERE client_id = $1 AND date IS NOT NULL AND date < NOW()
+               ORDER BY date DESC LIMIT 1`,
+              [clientId]
+            )
+          ).rows[0];
+        } else {
+          // Default: nearest upcoming meeting; fall back to most recent if none.
+          meetingRow = (
+            await query(
+              `SELECT id, type, date FROM meetings
+               WHERE client_id = $1 AND date IS NOT NULL AND date >= NOW()
+               ORDER BY date ASC LIMIT 1`,
+              [clientId]
+            )
+          ).rows[0];
+          if (!meetingRow) {
+            meetingRow = (
+              await query(
+                `SELECT id, type, date FROM meetings
+                 WHERE client_id = $1
+                 ORDER BY date DESC NULLS LAST LIMIT 1`,
+                [clientId]
+              )
+            ).rows[0];
+          }
+        }
+
+        if (!meetingRow) {
+          return {
+            success: true,
+            result: `No meeting found for ${client.name} to build an agenda for. Schedule a meeting first, then generate the agenda.`,
+            action: { type: "agenda_generation_failed", reason: "meeting_not_found" },
+          };
+        }
+
+        // Reuse the canonical 5-section generator (same as the Meetings tab).
+        const sections = await generateAgenda(meetingRow.id, clientId, advisorId);
+        const agendaText = JSON.stringify(sections);
+
+        await query(
+          `UPDATE meetings SET agenda = $1, agenda_status = 'draft', updated_at = NOW()
+           WHERE id = $2`,
+          [agendaText, meetingRow.id]
+        );
+
+        const dateLabel = meetingRow.date
+          ? new Date(meetingRow.date).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })
+          : "an undated meeting";
+
+        // Export the branded .docx into the "Meeting Agendas" folder. Idempotent:
+        // re-locking the meeting in the UI upserts the same file. The agenda is
+        // already committed to the meeting above, so a Data Room failure here is
+        // a partial success — surface that rather than claiming nothing was done.
+        try {
+          await snapshotAgendaToDataRoom(
+            {
+              id: meetingRow.id,
+              client_id: clientId,
+              type: meetingRow.type,
+              date: meetingRow.date,
+              agenda: agendaText,
+              agenda_status: "draft",
+            },
+            advisorId
+          );
+        } catch (snapErr) {
+          console.warn("generate_meeting_agenda Data Room export failed:", snapErr, {
+            meetingId: meetingRow.id,
+            clientId,
+          });
+          return {
+            success: true,
+            result: `Drafted a ${sections.length}-section agenda for ${client.name}'s ${meetingRow.type ?? "meeting"} on ${dateLabel}. It's saved to the meeting (open the Meetings tab to review and lock it), but exporting the .docx to the Data Room failed — let the advisor know it can be downloaded from the Meetings tab in the meantime.`,
+            action: {
+              type: "agenda_generated",
+              meetingId: meetingRow.id,
+              clientId,
+              clientName: client.name,
+              dataRoomExportFailed: true,
+            },
+          };
+        }
+
+        return {
+          success: true,
+          result: `Drafted a ${sections.length}-section agenda for ${client.name}'s ${meetingRow.type ?? "meeting"} on ${dateLabel} and saved it to the Meeting Agendas folder in the Data Room. It's a draft — review and lock it in the Meetings tab when ready. Confirm to the advisor and offer to walk through it.`,
+          action: {
+            type: "agenda_generated",
+            meetingId: meetingRow.id,
+            clientId,
+            clientName: client.name,
+          },
+        };
+      } catch (err) {
+        console.error("generate_meeting_agenda error:", err);
+        return {
+          success: false,
+          result: "Failed to generate the meeting agenda. The meeting record may be missing required data.",
+        };
       }
     }
 
