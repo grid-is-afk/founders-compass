@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, ChevronRight } from "lucide-react";
+import { Activity, ChevronRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -53,16 +53,36 @@ function totalExposureScore(scores: Record<string, number>): number {
 interface ExposureIndexStripProps {
   prospect: Prospect;
   summary: ExposureIndexSummary | null | undefined;
+  /** HubSpot-synced result page (Founder Readiness = Exposure Index). When set
+   *  and there's no internal record, the strip links to it instead of "Run". */
+  syncedUrl?: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ExposureIndexStrip({ prospect, summary }: ExposureIndexStripProps) {
+export function ExposureIndexStrip({ prospect, summary, syncedUrl }: ExposureIndexStripProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
   if (!summary) {
+    // Synced result exists (from HubSpot) but no internal record — link out to
+    // the result page rather than offering to re-run the same assessment.
+    if (syncedUrl) {
+      return (
+        <a
+          href={syncedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md border border-border/60 bg-muted/20 text-xs font-medium text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <Activity className="w-3.5 h-3.5" />
+          View Exposure Index Result
+          <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+        </a>
+      );
+    }
     return (
       <>
         <Button

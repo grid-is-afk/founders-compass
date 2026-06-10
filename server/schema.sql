@@ -1033,3 +1033,11 @@ CREATE TABLE IF NOT EXISTS hubspot_sync_state (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 INSERT INTO hubspot_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Pre-client assessment result links carried over from the source prospect on
+-- enroll/link. The scores live in TFO's external assessment apps (Supabase), so
+-- these are links the client workspace surfaces (Assessment History → Pre-Client)
+-- and QB AI is made aware of. fre = Exposure Index, sixcs = Six C's.
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_fre_url       TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_discovery_url TEXT;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_sixcs_url     TEXT;

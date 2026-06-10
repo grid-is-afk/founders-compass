@@ -227,6 +227,18 @@ router.post("/:id/link-to-client", async (req, res) => {
       );
     }
 
+    // Carry the prospect's synced assessment result links onto the client before
+    // the prospect row is removed, so the client workspace + QB AI keep them.
+    await query(
+      `UPDATE clients c
+          SET assessment_fre_url       = p.assessment_fre_url,
+              assessment_discovery_url = p.assessment_discovery_url,
+              assessment_sixcs_url     = p.assessment_sixcs_url
+         FROM prospects p
+        WHERE c.id = $1 AND p.id = $2`,
+      [client_id, req.params.id]
+    );
+
     await query("DELETE FROM prospects WHERE id = $1", [req.params.id]);
     return res.json({ ok: true, documentsMigrated: promoted.rows.length });
   } catch (err) {

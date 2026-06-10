@@ -63,6 +63,11 @@ interface AssessmentSummary {
   prospect: {
     six_cs: SixCsRecord | null;
     exposure_index: ExposureIndexRecord | null;
+    // HubSpot-synced external result links (scores live in TFO's assessment apps).
+    // fre = Exposure Index, sixcs = Six C's, discovery = Founders Discovery Paths.
+    exposure_index_url: string | null;
+    six_cs_url: string | null;
+    discovery_url: string | null;
   };
   q1_discover: {
     exposure_index: ExposureIndexRecord | null;
@@ -92,12 +97,18 @@ router.get("/:clientId/assessment-summary", async (req, res) => {
 
     // Get client record to obtain source_prospect_id
     const clientResult = await query(
-      "SELECT id, source_prospect_id FROM clients WHERE id = $1 AND advisor_id = $2",
+      `SELECT id, source_prospect_id,
+              assessment_fre_url, assessment_discovery_url, assessment_sixcs_url
+       FROM clients WHERE id = $1 AND advisor_id = $2`,
       [clientId, advisorId]
     );
-    const sourceProspectId = (
-      clientResult.rows[0] as { source_prospect_id: string | null }
-    ).source_prospect_id;
+    const clientRow = clientResult.rows[0] as {
+      source_prospect_id: string | null;
+      assessment_fre_url: string | null;
+      assessment_discovery_url: string | null;
+      assessment_sixcs_url: string | null;
+    };
+    const sourceProspectId = clientRow.source_prospect_id;
 
     // Run all DB queries in parallel — two groups because prospect queries
     // depend on sourceProspectId which we already have.
@@ -386,6 +397,9 @@ router.get("/:clientId/assessment-summary", async (req, res) => {
       prospect: {
         six_cs: prospectSixCs,
         exposure_index: prospectEi,
+        exposure_index_url: clientRow.assessment_fre_url,
+        six_cs_url: clientRow.assessment_sixcs_url,
+        discovery_url: clientRow.assessment_discovery_url,
       },
       q1_discover: {
         exposure_index: clientEi,

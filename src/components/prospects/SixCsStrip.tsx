@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BarChart3, ChevronRight } from "lucide-react";
+import { BarChart3, ChevronRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -33,16 +33,34 @@ function overallRating(total: number): { label: string; color: string } {
 interface SixCsStripProps {
   prospect: Prospect;
   record: SixCsSummary | null | undefined;
+  /** HubSpot-synced Six C's result page. When set and there's no internal
+   *  record, the strip links to it instead of "Run". */
+  syncedUrl?: string | null;
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function SixCsStrip({ prospect, record }: SixCsStripProps) {
+export function SixCsStrip({ prospect, record, syncedUrl }: SixCsStripProps) {
   const [modalOpen, setModalOpen] = useState(false);
 
   if (!record) {
+    if (syncedUrl) {
+      return (
+        <a
+          href={syncedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md border border-border/60 bg-muted/20 text-xs font-medium text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          View Six C's Result
+          <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+        </a>
+      );
+    }
     return (
       <>
         <Button

@@ -270,6 +270,22 @@ router.post("/", async (req, res) => {
         // Non-fatal — enrollment still succeeds even if doc migration fails
         console.warn("Document promotion failed during enrollment:", docErr);
       }
+
+      // Carry the prospect's synced assessment result links onto the client so
+      // the workspace (Assessment History → Pre-Client) + QB AI can surface them.
+      try {
+        await query(
+          `UPDATE clients c
+              SET assessment_fre_url       = p.assessment_fre_url,
+                  assessment_discovery_url = p.assessment_discovery_url,
+                  assessment_sixcs_url     = p.assessment_sixcs_url
+             FROM prospects p
+            WHERE c.id = $1 AND p.id = $2`,
+          [newClientId, source_prospect_id]
+        );
+      } catch (urlErr) {
+        console.warn("Assessment URL carry-over failed during enrollment:", urlErr);
+      }
     }
 
     // Return the client record; include credentials only when a founder login was

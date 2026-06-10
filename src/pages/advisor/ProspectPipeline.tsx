@@ -1171,6 +1171,9 @@ const ProspectPipeline = () => {
                                 prospect={prospect as Prospect}
                                 exposureSummary={exposureMap?.[prospect.id] ?? null}
                                 sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                                freUrl={prospect.assessment_fre_url}
+                                sixcsUrl={prospect.assessment_sixcs_url}
+                                discoveryUrl={prospect.assessment_discovery_url}
                               />
                             )}
                             {/* Discovery column actions — Win or Pass */}
@@ -1284,6 +1287,9 @@ const ProspectPipeline = () => {
                               prospect={prospect as Prospect}
                               exposureSummary={exposureMap?.[prospect.id] ?? null}
                               sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                              freUrl={prospect.assessment_fre_url}
+                              sixcsUrl={prospect.assessment_sixcs_url}
+                              discoveryUrl={prospect.assessment_discovery_url}
                             />
                           )}
                           {col.id === "discovery" && (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Sparkles, BookOpen } from "lucide-react";
+import { Sparkles, BookOpen, Compass, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -18,6 +18,11 @@ interface ProspectAssessmentBlockProps {
   prospect: Prospect;
   exposureSummary: ExposureIndexSummary | null | undefined;
   sixCsRecord: SixCsSummary | null | undefined;
+  /** HubSpot-synced result-page links (Founder Readiness = Exposure Index,
+   *  Six C's Framework = Six C's, Founders Discovery Paths = no internal twin). */
+  freUrl?: string | null;
+  sixcsUrl?: string | null;
+  discoveryUrl?: string | null;
 }
 
 type AssessmentChoice = "exposure" | "sixcs";
@@ -26,6 +31,9 @@ export function ProspectAssessmentBlock({
   prospect,
   exposureSummary,
   sixCsRecord,
+  freUrl,
+  sixcsUrl,
+  discoveryUrl,
 }: ProspectAssessmentBlockProps) {
   const [choosing, setChoosing] = useState(false);
   const [qbOpen, setQbOpen] = useState(false);
@@ -76,7 +84,7 @@ export function ProspectAssessmentBlock({
 
   return (
     <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
-      <ExposureIndexStrip prospect={prospect} summary={exposureSummary} />
+      <ExposureIndexStrip prospect={prospect} summary={exposureSummary} syncedUrl={freUrl} />
 
       <Button
         variant="outline"
@@ -88,7 +96,22 @@ export function ProspectAssessmentBlock({
         Why.OS — Coming Soon
       </Button>
 
-      <SixCsStrip prospect={prospect} record={sixCsRecord} />
+      <SixCsStrip prospect={prospect} record={sixCsRecord} syncedUrl={sixcsUrl} />
+
+      {/* Founders Discovery Paths — synced from HubSpot, no internal twin */}
+      {discoveryUrl && (
+        <a
+          href={discoveryUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md border border-border/60 bg-muted/20 text-xs font-medium text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <Compass className="w-3.5 h-3.5" />
+          View Founders Discovery Paths
+          <ExternalLink className="w-3 h-3 ml-auto text-muted-foreground" />
+        </a>
+      )}
 
       {hasAny && !choosing && (
         <Button
