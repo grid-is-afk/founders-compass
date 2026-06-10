@@ -6,6 +6,7 @@ import {
   Trash2,
   FolderOpen,
   Loader2,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
   useDeleteDocument,
   type Document,
 } from "@/hooks/useDocuments";
+import { DocumentPreviewDialog, type PreviewableDoc } from "@/components/documents/DocumentPreviewDialog";
 import type { ProspectShape } from "./ProspectWorkspace";
 
 // ---------------------------------------------------------------------------
@@ -58,6 +60,7 @@ export default function ProspectDocumentsTab() {
   const [category, setCategory] = useState("Other");
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<PreviewableDoc | null>(null);
 
   const { data: documents = [], isLoading } = useProspectDocuments(prospect.id);
   const uploadDoc = useUploadProspectDocument();
@@ -238,6 +241,23 @@ export default function ProspectDocumentsTab() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() =>
+                  setPreviewDoc({
+                    name: doc.name,
+                    file_url: doc.file_url,
+                    category: doc.category,
+                    uploaded_at: doc.uploaded_at,
+                  })
+                }
+                className="gap-1.5 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                View
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => handleDelete(doc)}
                 disabled={deletingId === doc.id}
                 className="gap-1.5 text-muted-foreground hover:text-destructive flex-shrink-0"
@@ -253,6 +273,8 @@ export default function ProspectDocumentsTab() {
           ))}
         </div>
       )}
+
+      <DocumentPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(null)} />
     </div>
   );
 }

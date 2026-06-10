@@ -1,7 +1,22 @@
 import { Router } from "express";
 import { query } from "../db.js";
+import { ingestDocument } from "../lib/ingestion.js";
+import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
+
+// Subselect: ALL existing clients that share this prospect's contact email.
+// Email is intentionally NOT unique (a handler/licensee can own many clients
+// under one email), so this returns every match — the user picks which one to
+// link to. It only SUGGESTS possible duplicates to confirm; it never drives an
+// automatic action.
+const POSSIBLE_CLIENT_MATCH_SQL = `
+  (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'name', c.name)
+                     ORDER BY c.created_at ASC NULLS LAST), '[]'::json)
+     FROM clients c
+    WHERE p.contact IS NOT NULL
+      AND LOWER(c.contact_email) = LOWER(p.contact)
+      AND (c.archived IS NULL OR c.archived = false)) AS possible_client_matches`;
 
 const ALLOWED_COLUMNS = new Set([
   "name",
@@ -35,13 +50,13 @@ router.get("/", async (req, res) => {
   try {
     const result = isTeamMember
       ? await query(
-          `SELECT p.*, u.name AS advisor_name
+          `SELECT p.*, u.name AS advisor_name, ${POSSIBLE_CLIENT_MATCH_SQL}
            FROM prospects p
            LEFT JOIN users u ON u.id = p.advisor_id
            ORDER BY p.created_at DESC`
         )
       : await query(
-          `SELECT p.*, u.name AS advisor_name
+          `SELECT p.*, u.name AS advisor_name, ${POSSIBLE_CLIENT_MATCH_SQL}
            FROM prospects p
            LEFT JOIN users u ON u.id = p.advisor_id
            WHERE p.advisor_id = $1
@@ -173,6 +188,61 @@ router.patch("/:id", async (req, res) => {
     return res.json(result.rows[0]);
   } catch (err) {
     console.error("PATCH /prospects/:id error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/prospects/:id/link-to-client
+// Resolves a "possible duplicate": the prospect is actually an existing client.
+// Migrates the prospect's documents (e.g. the synced pitch deck) into that
+// client's data room, ingests them for QB AI, then removes the now-redundant
+// prospect. Only TFO team members may do this; requires access to the client.
+router.post("/:id/link-to-client", async (req, res) => {
+  if (req.user!.role === "client") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  const { client_id } = req.body as { client_id?: string };
+  if (!client_id) {
+    return res.status(400).json({ error: "client_id is required" });
+  }
+
+  try {
+    const prospectResult = await query("SELECT id FROM prospects WHERE id = $1", [req.params.id]);
+    if (prospectResult.rows.length === 0) {
+      return res.status(404).json({ error: "Prospect not found" });
+    }
+    if (!(await verifyClientAccess(client_id, req.user!.id, req.user!.role))) {
+      return res.status(404).json({ error: "Client not found" });
+    }
+
+    // Migrate the prospect's documents to the client, then ingest for QB AI.
+    const promoted = await query(
+      `UPDATE documents SET client_id = $1, prospect_id = NULL WHERE prospect_id = $2
+       RETURNING id`,
+      [client_id, req.params.id]
+    );
+    for (const row of promoted.rows as { id: string }[]) {
+      ingestDocument(row.id, client_id).catch((err) =>
+        console.error("QB ingestion failed for linked doc", row.id, err)
+      );
+    }
+
+    // Carry the prospect's synced assessment result links onto the client before
+    // the prospect row is removed, so the client workspace + QB AI keep them.
+    await query(
+      `UPDATE clients c
+          SET assessment_fre_url       = p.assessment_fre_url,
+              assessment_discovery_url = p.assessment_discovery_url,
+              assessment_sixcs_url     = p.assessment_sixcs_url
+         FROM prospects p
+        WHERE c.id = $1 AND p.id = $2`,
+      [client_id, req.params.id]
+    );
+
+    await query("DELETE FROM prospects WHERE id = $1", [req.params.id]);
+    return res.json({ ok: true, documentsMigrated: promoted.rows.length });
+  } catch (err) {
+    console.error("POST /prospects/:id/link-to-client error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

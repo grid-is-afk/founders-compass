@@ -2,8 +2,9 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { format } from "date-fns";
-import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink, Check, User } from "lucide-react";
-import { useProspects, useCreateProspect, useUpdateProspect } from "@/hooks/useProspects";
+import { ChevronRight, ChevronLeft, UserPlus, Building2, Calendar, TrendingUp, Users, CheckCircle2, XCircle, Phone, Flag, Sparkles, Activity, Loader2, ExternalLink, Check, User, RefreshCw } from "lucide-react";
+import { useProspects, useCreateProspect, useUpdateProspect, useLinkProspectToClient } from "@/hooks/useProspects";
+import { useHubspotSync } from "@/hooks/useHubspotSync";
 import { useClients, useCreateClient } from "@/hooks/useClients";
 import { ExposureIndexModal } from "@/components/prospects/ExposureIndexModal";
 import { useExposureIndexMap, useProspectExposureIndex } from "@/hooks/useProspectExposureIndex";
@@ -80,6 +81,13 @@ function toProspectShape(row: Record<string, unknown>): Prospect & {
     notes: row.notes != null ? String(row.notes) : undefined,
     nurture_call_date: row.nurture_call_date != null ? String(row.nurture_call_date) : null,
     advisor_name: row.advisor_name != null ? String(row.advisor_name) : undefined,
+    hubspot_stage: row.hubspot_stage != null ? String(row.hubspot_stage) : null,
+    hubspot_synced_at: row.hubspot_synced_at != null ? String(row.hubspot_synced_at) : null,
+    synced_from_hubspot: Boolean(row.synced_from_hubspot),
+    assessment_fre_url: row.assessment_fre_url != null ? String(row.assessment_fre_url) : null,
+    assessment_discovery_url: row.assessment_discovery_url != null ? String(row.assessment_discovery_url) : null,
+    assessment_sixcs_url: row.assessment_sixcs_url != null ? String(row.assessment_sixcs_url) : null,
+    possible_client_matches: (row.possible_client_matches as { id: string; name: string }[] | null) ?? [],
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",
@@ -729,6 +737,83 @@ function EnrollClientDialog({ prospect, onClose, onConfirm, isPending }: EnrollC
 }
 
 // ---------------------------------------------------------------------------
+// Already-a-client confirmation dialog
+// Shown when a prospect shares an email with an existing client. Email is not
+// unique (one handler/licensee can own many clients), so the user decides:
+// link to the existing client, or create a new handler-managed client anyway.
+// ---------------------------------------------------------------------------
+
+interface AlreadyClientDialogProps {
+  prospect: ProspectShape | null;
+  busy: boolean;
+  onClose: () => void;
+  onLink: (prospect: ProspectShape, clientId: string) => void;
+  onCreateNew: (prospect: ProspectShape) => void;
+}
+
+function AlreadyClientDialog({ prospect, busy, onClose, onLink, onCreateNew }: AlreadyClientDialogProps) {
+  const matches = prospect?.possible_client_matches ?? [];
+  const multiple = matches.length > 1;
+  return (
+    <Dialog open={!!prospect} onOpenChange={(v) => !v && !busy && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="font-display">This may already be a client</DialogTitle>
+          <DialogDescription>
+            <span className="font-medium text-foreground">{prospect?.contact}</span> matches{" "}
+            {multiple ? `${matches.length} existing clients` : "an existing client"}. Since one
+            handler can manage several clients under one email, choose how to proceed.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-2 py-1">
+          <p className="text-xs font-medium text-muted-foreground px-0.5">
+            {multiple ? "Link to one of these clients" : "Link to existing client"}
+          </p>
+          {matches.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              disabled={busy}
+              onClick={() => prospect && onLink(prospect, c.id)}
+              className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
+            >
+              <p className="text-sm font-semibold text-foreground">{c.name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Move this prospect's documents (e.g. pitch deck) into {c.name}'s Data Room and remove the prospect.
+              </p>
+            </button>
+          ))}
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => prospect && onCreateNew(prospect)}
+            className="w-full text-left rounded-lg border border-dashed border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
+          >
+            <p className="text-sm font-semibold text-foreground">Create a new client anyway</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              A different client under the same email. Created as handler-managed (no separate founder login).
+            </p>
+          </button>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          {busy && (
+            <span className="flex items-center text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" /> Working...
+            </span>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main page component
 // ---------------------------------------------------------------------------
 
@@ -740,12 +825,16 @@ const ProspectPipeline = () => {
   const { data: rawClients = [] } = useClients();
   const updateProspect = useUpdateProspect();
   const createClient = useCreateClient();
+  const hubspotSync = useHubspotSync();
+  const linkToClient = useLinkProspectToClient();
   const { data: exposureMap } = useExposureIndexMap("fit_assessment");
   const { data: sixCsMap } = useSixCsMap("fit_assessment");
   const [selectedProspect, setSelectedProspect] = useState<ProspectShape | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [enrollTarget, setEnrollTarget] = useState<ProspectShape | null>(null);
   const [enrollingId, setEnrollingId] = useState<string | null>(null);
+  const [dupTarget, setDupTarget] = useState<ProspectShape | null>(null);
+  const [dupBusy, setDupBusy] = useState(false);
   const [nurtureDialogProspect, setNurtureDialogProspect] = useState<ProspectShape | null>(null);
   const [nurtureDate, setNurtureDate] = useState("");
   const [nurtureTime, setNurtureTime] = useState("");
@@ -849,8 +938,72 @@ const ProspectPipeline = () => {
     }
   };
 
+  const handleSyncHubspot = async () => {
+    try {
+      const r = await hubspotSync.mutateAsync();
+      if (r.ok) {
+        toast.success("HubSpot sync complete", {
+          description: `${r.dealsScanned} deals · ${r.prospectsCreated} created · ${r.prospectsUpdated} updated · ${r.skipped} skipped`,
+        });
+      } else {
+        toast.error("HubSpot sync failed", { description: r.error ?? "Please try again." });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "HubSpot sync failed");
+    }
+  };
+
   const handleEnrollAsClient = (prospect: ProspectShape) => {
-    setEnrollTarget(prospect);
+    // If this prospect shares an email with one or more existing clients, confirm
+    // first: link to a chosen client, or create a new (handler-managed) one anyway.
+    if ((prospect.possible_client_matches?.length ?? 0) > 0) {
+      setDupTarget(prospect);
+    } else {
+      setEnrollTarget(prospect);
+    }
+  };
+
+  const handleLinkToClient = async (prospect: ProspectShape, clientId: string) => {
+    const match = prospect.possible_client_matches?.find((c) => c.id === clientId);
+    if (!match) return;
+    setDupBusy(true);
+    try {
+      await linkToClient.mutateAsync({ id: prospect.id, client_id: clientId });
+      toast.success(`Linked to ${match.name}`, {
+        description: "Documents moved into their Data Room. Prospect removed.",
+      });
+      setDupTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not link to client");
+    } finally {
+      setDupBusy(false);
+    }
+  };
+
+  const handleCreateNewAnyway = async (prospect: ProspectShape) => {
+    setDupBusy(true);
+    try {
+      const newClient = await createClient.mutateAsync({
+        name: prospect.name,
+        contact_name: prospect.contact,
+        contact_email: prospect.contact,
+        revenue: prospect.revenue,
+        source_prospect_id: prospect.id,
+        entity_type: "corp",
+        onboarded_at: new Date().toISOString(),
+        q1_phase: "kickoff",
+        skip_founder_login: true,
+      });
+      toast.success("New client created", {
+        description: `${prospect.name} added as a handler-managed client (no separate login).`,
+      });
+      setDupTarget(null);
+      navigate(`/advisor/clients/${(newClient as { id: string }).id}/dashboard`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not create client");
+    } finally {
+      setDupBusy(false);
+    }
   };
 
   const handleEnrollConfirm = async (email: string, entityType: "corp" | "llc") => {
@@ -914,10 +1067,25 @@ const ProspectPipeline = () => {
                 : "Intake → Fit Assessment → Discovery → Win or Pass"}
             </p>
           </div>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <UserPlus className="w-4 h-4 mr-2" />
-            Add Prospect
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSyncHubspot}
+              disabled={hubspotSync.isPending}
+            >
+              {hubspotSync.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              {hubspotSync.isPending ? "Syncing..." : "Sync from HubSpot"}
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add Prospect
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -969,7 +1137,7 @@ const ProspectPipeline = () => {
                       </div>
 
                       {/* Column body */}
-                      <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[400px] overflow-y-auto">
+                      <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-300px)] overflow-y-auto">
                         {colProspects.length === 0 && (
                           <div className="flex items-center justify-center h-16">
                             <span className="text-xs text-muted-foreground/50">
@@ -1003,6 +1171,9 @@ const ProspectPipeline = () => {
                                 prospect={prospect as Prospect}
                                 exposureSummary={exposureMap?.[prospect.id] ?? null}
                                 sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                                freUrl={prospect.assessment_fre_url}
+                                sixcsUrl={prospect.assessment_sixcs_url}
+                                discoveryUrl={prospect.assessment_discovery_url}
                               />
                             )}
                             {/* Discovery column actions — Win or Pass */}
@@ -1085,7 +1256,7 @@ const ProspectPipeline = () => {
                         {colProspects.length}
                       </Badge>
                     </div>
-                    <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[400px] overflow-y-auto">
+                    <div className="bg-muted/30 border border-dashed border-border rounded-lg p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-300px)] overflow-y-auto">
                       {colProspects.length === 0 && (
                         <div className="flex items-center justify-center h-16">
                           <span className="text-xs text-muted-foreground/50">No prospects</span>
@@ -1116,6 +1287,9 @@ const ProspectPipeline = () => {
                               prospect={prospect as Prospect}
                               exposureSummary={exposureMap?.[prospect.id] ?? null}
                               sixCsRecord={sixCsMap?.[prospect.id] ?? null}
+                              freUrl={prospect.assessment_fre_url}
+                              sixcsUrl={prospect.assessment_sixcs_url}
+                              discoveryUrl={prospect.assessment_discovery_url}
                             />
                           )}
                           {col.id === "discovery" && (
@@ -1194,7 +1368,7 @@ const ProspectPipeline = () => {
                     </Badge>
                   </div>
 
-                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px]">
+                  <div className="bg-muted/20 border border-dashed border-border/60 rounded-lg p-2 space-y-2 min-h-[80px] max-h-[calc(100vh-260px)] overflow-y-auto">
                     {colProspects.length === 0 && (
                       <div className="flex items-center justify-center h-12">
                         <span className="text-xs text-muted-foreground/40">Empty</span>
@@ -1319,6 +1493,15 @@ const ProspectPipeline = () => {
         onClose={() => setEnrollTarget(null)}
         onConfirm={handleEnrollConfirm}
         isPending={createClient.isPending}
+      />
+
+      {/* Already-a-client confirmation — link vs create-new-anyway */}
+      <AlreadyClientDialog
+        prospect={dupTarget}
+        busy={dupBusy}
+        onClose={() => setDupTarget(null)}
+        onLink={handleLinkToClient}
+        onCreateNew={handleCreateNewAnyway}
       />
 
       {/* Nurture Call Scheduling Dialog */}

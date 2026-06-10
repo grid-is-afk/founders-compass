@@ -49,6 +49,7 @@ export default function ProspectAssessmentsTab() {
     fitScore: prospect.fitScore,
     fitDecision: prospect.fitDecision,
     notes: prospect.notes,
+    date: prospect.date,
   };
 
   return (
@@ -64,11 +65,15 @@ export default function ProspectAssessmentsTab() {
         </div>
       </div>
 
-      {/* Assessment block */}
+      {/* Assessment block — each assessment shows its synced HubSpot result (when
+          present) in its own strip; no separate synced block needed. */}
       <ProspectAssessmentBlock
         prospect={prospectForBlock}
         exposureSummary={exposureSummary}
         sixCsRecord={sixCsSummary}
+        freUrl={prospect.assessment_fre_url}
+        sixcsUrl={prospect.assessment_sixcs_url}
+        discoveryUrl={prospect.assessment_discovery_url}
       />
     </div>
   );

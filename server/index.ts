@@ -61,6 +61,9 @@ import userRoutes from "./routes/users.js";
 import deferredChangesRoutes from "./routes/deferredChanges.js";
 import licenseeIntakeRoutes from "./routes/licenseeIntakes.js";
 import referralRoutes from "./routes/referrals.js";
+import hubspotRoutes from "./routes/hubspot.js";
+import { syncProspectsFromHubSpot } from "./lib/hubspot/sync.js";
+import { isHubSpotConfigured } from "./lib/hubspot/client.js";
 
 dotenv.config();
 
@@ -134,6 +137,7 @@ app.use("/api/quarterly-objectives", authMiddleware, quarterlyObjectiveRoutes);
 app.use("/api/dashboard", authMiddleware, dashboardRoutes);
 app.use("/api/activity", authMiddleware, activityRoutes);
 app.use("/api/notifications", authMiddleware, notificationRoutes);
+app.use("/api/admin/hubspot", authMiddleware, hubspotRoutes);
 app.use("/api/admin", authMiddleware, adminRoutes);
 app.use("/api/stakeholders", authMiddleware, stakeholderRoutes);
 app.use("/api/clients", authMiddleware, kickoffPlanRoutes);
@@ -431,3 +435,35 @@ await applySchemaOnBoot();
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Founders Compass running on http://localhost:${PORT}`);
 });
+
+// ============================================================
+// HubSpot pipeline sync scheduler (one-way: HubSpot → platform)
+//
+// Polls HubSpot on a fixed interval so deal-stage changes mirror into the
+// prospect pipeline without TFO double-entering. A single Railway instance makes
+// a plain setInterval safe; the sync itself holds an in-process lock so an
+// overlapping manual trigger can't run concurrently. Disabled when no token is
+// set, or by HUBSPOT_SYNC_INTERVAL_MIN=0.
+// ============================================================
+const hubspotIntervalMin = parseInt(process.env.HUBSPOT_SYNC_INTERVAL_MIN || "15", 10);
+if (isHubSpotConfigured() && hubspotIntervalMin > 0) {
+  const runSync = () => {
+    syncProspectsFromHubSpot()
+      .then((r) => {
+        if (r.ok) {
+          console.log(
+            `HubSpot sync: ${r.dealsScanned} deals → ${r.prospectsCreated} created, ${r.prospectsUpdated} updated, ${r.pitchDecksImported} pitch decks, ${r.skipped} skipped`
+          );
+        } else {
+          console.warn("HubSpot sync did not complete:", r.error);
+        }
+      })
+      .catch((err) => console.error("HubSpot sync scheduler error:", err));
+  };
+  // Kick off shortly after boot, then on the interval.
+  setTimeout(runSync, 30_000);
+  setInterval(runSync, hubspotIntervalMin * 60_000);
+  console.log(`HubSpot sync scheduled every ${hubspotIntervalMin} min.`);
+} else {
+  console.log("HubSpot sync scheduler disabled (no token or interval=0).");
+}

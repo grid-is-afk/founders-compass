@@ -9,7 +9,8 @@ export async function buildClientStructuredContext(
   // Authorization: confirm this client belongs to this advisor
   const clientResult = await query(
     `SELECT id, name, stage, revenue, entity_type, contact_name, contact_email,
-            current_quarter, current_year, onboarded_at
+            current_quarter, current_year, onboarded_at,
+            assessment_fre_url, assessment_discovery_url, assessment_sixcs_url
      FROM clients WHERE id = $1 AND advisor_id = $2`,
     [clientId, advisorId]
   );
@@ -25,6 +26,26 @@ export async function buildClientStructuredContext(
   if (client.contact_name || client.contact_email) ctx += "\n";
   if (client.current_quarter && client.current_year)
     ctx += `- Current Quarter: Q${client.current_quarter} ${client.current_year}\n`;
+
+  // Pre-client assessments completed externally (synced from HubSpot). The scores
+  // live in TFO's assessment apps, not the platform DB, so they are not yet
+  // ingested — surface AWARENESS + the links so the copilot can point the user to
+  // them. ("Founder Readiness" is the Exposure Index; "Six C's Framework" the Six C's.)
+  if (
+    client.assessment_fre_url ||
+    client.assessment_sixcs_url ||
+    client.assessment_discovery_url
+  ) {
+    ctx += "\n### Pre-Client Assessments (completed before engagement)\n";
+    ctx +=
+      "The founder completed these self-assessments during the prospect stage. Full scored results live at the links below (external TFO assessment apps; scores not yet ingested into this platform):\n";
+    if (client.assessment_fre_url)
+      ctx += `- Founder Readiness / Exposure Index: ${client.assessment_fre_url}\n`;
+    if (client.assessment_sixcs_url)
+      ctx += `- Six C's Framework: ${client.assessment_sixcs_url}\n`;
+    if (client.assessment_discovery_url)
+      ctx += `- Founders Discovery Paths: ${client.assessment_discovery_url}\n`;
+  }
 
   // Assessment scores
   const [sixKeysRes, capitalRes, ipdRes, sixCsRes, eiRes, multiplesRes] =

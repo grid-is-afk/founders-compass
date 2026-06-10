@@ -21,6 +21,12 @@ export interface ProspectShape {
   notes?: string;
   date: string;
   advisor_name?: string;
+  synced_from_hubspot?: boolean;
+  hubspot_stage?: string | null;
+  hubspot_synced_at?: string | null;
+  assessment_fre_url?: string | null;
+  assessment_discovery_url?: string | null;
+  assessment_sixcs_url?: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -62,6 +68,12 @@ function toProspectShape(row: Record<string, unknown>): ProspectShape {
     fitDecision: (row.fit_decision as "fit" | "no_fit" | null) ?? undefined,
     notes: row.notes != null ? String(row.notes) : undefined,
     advisor_name: row.advisor_name != null ? String(row.advisor_name) : undefined,
+    synced_from_hubspot: Boolean(row.synced_from_hubspot),
+    hubspot_stage: row.hubspot_stage != null ? String(row.hubspot_stage) : null,
+    hubspot_synced_at: row.hubspot_synced_at != null ? String(row.hubspot_synced_at) : null,
+    assessment_fre_url: row.assessment_fre_url != null ? String(row.assessment_fre_url) : null,
+    assessment_discovery_url: row.assessment_discovery_url != null ? String(row.assessment_discovery_url) : null,
+    assessment_sixcs_url: row.assessment_sixcs_url != null ? String(row.assessment_sixcs_url) : null,
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",

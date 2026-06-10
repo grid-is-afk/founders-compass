@@ -1,6 +1,23 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useClientAssessmentSummary } from "@/hooks/useClientAssessmentSummary";
+
+// A "View result" link for pre-client assessments synced from HubSpot — the
+// scores live in TFO's external assessment apps, so we deep-link rather than
+// render scores inline.
+function ViewResultLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="flex items-center gap-1 text-[11px] text-primary hover:underline"
+    >
+      View result <ExternalLink className="w-3 h-3" />
+    </a>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -209,6 +226,11 @@ export function AssessmentHistoryWidget({
                   </span>
                 }
               />
+            ) : summary.prospect.six_cs_url ? (
+              <AssessmentRow
+                label="Six C's"
+                valueNode={<ViewResultLink url={summary.prospect.six_cs_url} />}
+              />
             ) : (
               <AssessmentRow label="Six C's" notRun />
             )}
@@ -240,8 +262,21 @@ export function AssessmentHistoryWidget({
                   />
                 );
               })()
+            ) : summary.prospect.exposure_index_url ? (
+              <AssessmentRow
+                label="Risk Exposure Index"
+                valueNode={<ViewResultLink url={summary.prospect.exposure_index_url} />}
+              />
             ) : (
               <AssessmentRow label="Risk Exposure Index" notRun />
+            )}
+
+            {/* Founders Discovery Paths — synced from HubSpot (no internal twin) */}
+            {summary.prospect.discovery_url && (
+              <AssessmentRow
+                label="Founders Discovery Paths"
+                valueNode={<ViewResultLink url={summary.prospect.discovery_url} />}
+              />
             )}
           </div>
 

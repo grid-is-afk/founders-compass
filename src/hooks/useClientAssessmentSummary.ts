@@ -55,6 +55,10 @@ export interface AssessmentSummary {
   prospect: {
     six_cs: SixCsSummary | null;
     exposure_index: ExposureIndexSummary | null;
+    // HubSpot-synced external result links (scores live in TFO's assessment apps).
+    exposure_index_url: string | null;
+    six_cs_url: string | null;
+    discovery_url: string | null;
   };
   q1_discover: {
     exposure_index: ExposureIndexSummary | null;
