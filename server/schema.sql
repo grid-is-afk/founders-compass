@@ -993,3 +993,43 @@ CREATE TABLE IF NOT EXISTS referral_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_referral_requests_client ON referral_requests(client_id);
 CREATE INDEX IF NOT EXISTS idx_referral_requests_licensee ON referral_requests(licensee_id);
+
+-- ============================================================
+-- HubSpot pipeline sync (one-way: HubSpot → platform)
+-- HubSpot is the source of truth for the prospect pipeline. A polling job mirrors
+-- each HubSpot deal's stage onto a prospect row, matched by the contact's email.
+-- These columns are additive + idempotent — applied by the boot self-migration.
+--   • hubspot_deal_id      — the HubSpot deal this prospect mirrors (UNIQUE → the
+--                            upsert key that makes re-sync idempotent).
+--   • hubspot_stage        — the raw HubSpot stage label, shown as a card sub-label.
+--   • hubspot_synced_at    — last time this row was touched by a sync (powers the
+--                            "Synced X min ago" freshness line).
+--   • synced_from_hubspot  — true when the prospect originated from a HubSpot sync
+--                            (vs. created manually in the platform).
+--   • assessment_*_url     — links to the 3 external self-assessment result pages
+--                            stored on the HubSpot contact (scores live in TFO's
+--                            separate assessment apps, not in HubSpot).
+--   • hubspot_pitch_deck_url — the source pitch-deck URL last seen on the contact;
+--                            used to avoid re-downloading the PDF every sync.
+-- ============================================================
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS hubspot_deal_id        TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS hubspot_stage          TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS hubspot_synced_at      TIMESTAMPTZ;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS synced_from_hubspot    BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS assessment_fre_url       TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS assessment_discovery_url TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS assessment_sixcs_url     TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS hubspot_pitch_deck_url   TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_prospects_hubspot_deal
+  ON prospects(hubspot_deal_id) WHERE hubspot_deal_id IS NOT NULL;
+
+-- Single-row table tracking the incremental sync watermark + last run status.
+CREATE TABLE IF NOT EXISTS hubspot_sync_state (
+  id            INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  last_sync_at  TIMESTAMPTZ,
+  last_status   TEXT,
+  last_error    TEXT,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO hubspot_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

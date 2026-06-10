@@ -80,6 +80,12 @@ function toProspectShape(row: Record<string, unknown>): Prospect & {
     notes: row.notes != null ? String(row.notes) : undefined,
     nurture_call_date: row.nurture_call_date != null ? String(row.nurture_call_date) : null,
     advisor_name: row.advisor_name != null ? String(row.advisor_name) : undefined,
+    hubspot_stage: row.hubspot_stage != null ? String(row.hubspot_stage) : null,
+    hubspot_synced_at: row.hubspot_synced_at != null ? String(row.hubspot_synced_at) : null,
+    synced_from_hubspot: Boolean(row.synced_from_hubspot),
+    assessment_fre_url: row.assessment_fre_url != null ? String(row.assessment_fre_url) : null,
+    assessment_discovery_url: row.assessment_discovery_url != null ? String(row.assessment_discovery_url) : null,
+    assessment_sixcs_url: row.assessment_sixcs_url != null ? String(row.assessment_sixcs_url) : null,
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",

@@ -90,6 +90,13 @@ export interface Prospect {
   notes?: string;
   nurture_call_date?: string | null;
   advisor_name?: string;
+  // HubSpot one-way sync — present only on prospects mirrored from HubSpot.
+  hubspot_stage?: string | null;
+  hubspot_synced_at?: string | null;
+  synced_from_hubspot?: boolean;
+  assessment_fre_url?: string | null;
+  assessment_discovery_url?: string | null;
+  assessment_sixcs_url?: string | null;
 }
 
 export interface GrowEngagement {

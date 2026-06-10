@@ -3,6 +3,7 @@ import bcryptjs from "bcryptjs";
 import { query } from "../db.js";
 import { requireClientOwnership } from "../lib/clientAuth.js";
 import { generatePassword } from "../lib/generatePassword.js";
+import { ingestDocument } from "../lib/ingestion.js";
 
 const router = Router();
 
@@ -240,10 +241,20 @@ router.post("/", async (req, res) => {
     // Promote prospect documents to the new client's data room
     if (source_prospect_id) {
       try {
-        await query(
-          `UPDATE documents SET client_id = $1, prospect_id = NULL WHERE prospect_id = $2`,
+        const promoted = await query(
+          `UPDATE documents SET client_id = $1, prospect_id = NULL WHERE prospect_id = $2
+           RETURNING id`,
           [newClientId, source_prospect_id]
         );
+        // Prospect docs were never ingested (RAG is client-scoped), and the
+        // promotion above only relabels them — it doesn't create chunks. Trigger
+        // ingestion now so the carried-over docs (e.g. the synced pitch deck)
+        // become searchable by QB AI for the new client. Fire-and-forget.
+        for (const row of promoted.rows as { id: string }[]) {
+          ingestDocument(row.id, newClientId).catch((err) =>
+            console.error("QB ingestion failed for promoted doc", row.id, err)
+          );
+        }
       } catch (docErr) {
         // Non-fatal — enrollment still succeeds even if doc migration fails
         console.warn("Document promotion failed during enrollment:", docErr);

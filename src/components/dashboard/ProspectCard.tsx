@@ -1,7 +1,8 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Calendar, UserCircle } from "lucide-react";
+import { Building2, Calendar, UserCircle, RefreshCw } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import type { Prospect } from "@/lib/types/journey";
 
 interface ProspectCardProps {
@@ -37,6 +38,24 @@ const ProspectCard = ({ prospect }: ProspectCardProps) => {
           {prospect.source}
         </Badge>
       </div>
+
+      {/* HubSpot sync indicator — raw HubSpot stage + freshness */}
+      {prospect.synced_from_hubspot && (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <Badge
+            variant="outline"
+            className="text-[10px] font-medium px-1.5 py-0 gap-1 bg-orange-500/10 text-orange-700 border-orange-500/20"
+          >
+            <RefreshCw className="w-2.5 h-2.5" />
+            HubSpot
+          </Badge>
+          {prospect.hubspot_stage && (
+            <span className="truncate" title={prospect.hubspot_stage}>
+              {prospect.hubspot_stage}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Company + Revenue */}
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -88,6 +107,13 @@ const ProspectCard = ({ prospect }: ProspectCardProps) => {
       {/* Notes */}
       {prospect.notes && (
         <p className="text-[11px] text-muted-foreground italic leading-snug">{prospect.notes}</p>
+      )}
+
+      {/* Sync freshness */}
+      {prospect.synced_from_hubspot && prospect.hubspot_synced_at && (
+        <p className="text-[10px] text-muted-foreground/80">
+          Synced {formatDistanceToNow(new Date(prospect.hubspot_synced_at), { addSuffix: true })}
+        </p>
       )}
     </div>
   );
