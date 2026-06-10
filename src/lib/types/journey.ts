@@ -97,6 +97,9 @@ export interface Prospect {
   assessment_fre_url?: string | null;
   assessment_discovery_url?: string | null;
   assessment_sixcs_url?: string | null;
+  // An existing client sharing this prospect's email — a POSSIBLE duplicate to
+  // confirm (email is not unique; one handler can own many clients).
+  possible_client_match?: { id: string; name: string } | null;
 }
 
 export interface GrowEngagement {

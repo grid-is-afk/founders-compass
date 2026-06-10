@@ -44,3 +44,16 @@ export function useDeleteProspect() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["prospects"] }),
   });
 }
+
+/** Links a synced prospect to an existing client (migrates docs, removes the prospect). */
+export function useLinkProspectToClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, client_id }: { id: string; client_id: string }) =>
+      api.post(`/prospects/${id}/link-to-client`, { client_id }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["prospects"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+    },
+  });
+}

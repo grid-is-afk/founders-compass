@@ -135,6 +135,7 @@ router.post("/", async (req, res) => {
     onboarded_at,
     source_prospect_id,
     sendInvite = true,
+    skip_founder_login = false,
   } = req.body;
 
   if (!name) {
@@ -168,34 +169,44 @@ router.post("/", async (req, res) => {
     }
   }
 
-  if (!contact_email) {
+  if (!contact_email && !skip_founder_login) {
     return res.status(400).json({ error: "Contact email is required to create a client login" });
   }
 
   try {
-    // Generate credentials for the client portal login
-    const generatedPassword = generatePassword();
-    const passwordHash = await bcryptjs.hash(generatedPassword, 12);
+    // Option A (skip_founder_login): a handler-managed client with NO founder login,
+    // so its email may repeat — one handler/licensee can own many clients under one
+    // email. Otherwise create a fresh founder login, refusing to clobber an existing
+    // user's password (and surfacing the existing client so the UI can offer
+    // link-or-create-new).
+    let clientUserId: string | null = null;
+    let generatedCredentials: { email: string; password: string } | null = null;
 
-    // Check if user already exists — never silently overwrite an existing password
-    const existingUser = await query(
-      "SELECT id FROM users WHERE email = $1",
-      [contact_email.toLowerCase()]
-    );
-    if (existingUser.rows.length > 0) {
-      return res.status(409).json({
-        error: "A user with this email already exists. Use a different email for this client.",
-      });
+    if (!skip_founder_login) {
+      const email = contact_email.toLowerCase();
+      const existingUser = await query("SELECT id FROM users WHERE email = $1", [email]);
+      if (existingUser.rows.length > 0) {
+        const existingClient = await query(
+          `SELECT id FROM clients WHERE LOWER(contact_email) = $1
+           ORDER BY created_at ASC NULLS LAST LIMIT 1`,
+          [email]
+        );
+        return res.status(409).json({
+          error: "A user with this email already exists.",
+          existingClientId: existingClient.rows[0]?.id ?? null,
+        });
+      }
+      const generatedPassword = generatePassword();
+      const passwordHash = await bcryptjs.hash(generatedPassword, 12);
+      const userResult = await query(
+        `INSERT INTO users (email, password_hash, name, role)
+         VALUES ($1, $2, $3, 'client')
+         RETURNING id`,
+        [email, passwordHash, contact_name?.trim() || name]
+      );
+      clientUserId = userResult.rows[0].id;
+      generatedCredentials = { email, password: generatedPassword };
     }
-
-    // Create a fresh user account for the new client
-    const userResult = await query(
-      `INSERT INTO users (email, password_hash, name, role)
-       VALUES ($1, $2, $3, 'client')
-       RETURNING id`,
-      [contact_email.toLowerCase(), passwordHash, contact_name?.trim() || name]
-    );
-    const clientUserId = userResult.rows[0].id;
 
     // Create the client record linked to both advisor and the new user account
     const clientResult = await query(
@@ -210,7 +221,7 @@ router.post("/", async (req, res) => {
         clientUserId,
         name,
         contact_name ?? null,
-        contact_email.toLowerCase(),
+        contact_email ? contact_email.toLowerCase() : null,
         revenue ?? null,
         stage ?? "Q1 — Discover",
         current_quarter ?? 1,
@@ -222,7 +233,7 @@ router.post("/", async (req, res) => {
         q1_phase ?? "kickoff",
         onboarded_at ?? new Date().toISOString(),
         source_prospect_id ?? null,
-        sendInvite !== false,
+        skip_founder_login ? false : sendInvite !== false,
       ]
     );
 
@@ -261,15 +272,13 @@ router.post("/", async (req, res) => {
       }
     }
 
-    // Return the client record; include credentials only when invite was requested
+    // Return the client record; include credentials only when a founder login was
+    // created and an invite was requested.
     return res.status(201).json({
       ...clientResult.rows[0],
-      ...(sendInvite !== false && {
-        generatedCredentials: {
-          email: contact_email.toLowerCase(),
-          password: generatedPassword,
-        },
-      }),
+      ...(generatedCredentials && sendInvite !== false
+        ? { generatedCredentials }
+        : {}),
     });
   } catch (err) {
     console.error("POST /clients error:", err);

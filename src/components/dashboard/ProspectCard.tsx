@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Building2, Calendar, UserCircle, RefreshCw } from "lucide-react";
+import { Building2, Calendar, UserCircle, RefreshCw, AlertCircle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Prospect } from "@/lib/types/journey";
 
@@ -101,6 +101,16 @@ const ProspectCard = ({ prospect }: ProspectCardProps) => {
         <div className="flex items-center gap-1 text-[10px] text-muted-foreground border-t border-border/60 pt-2">
           <UserCircle className="w-3 h-3 flex-shrink-0" />
           <span>{prospect.advisor_name}</span>
+        </div>
+      )}
+
+      {/* Possible duplicate — shares an email with an existing client */}
+      {prospect.possible_client_match && (
+        <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-700">
+          <AlertCircle className="w-3 h-3 mt-px flex-shrink-0" />
+          <span>
+            May already be a client (<span className="font-medium">{prospect.possible_client_match.name}</span>) — review on enroll.
+          </span>
         </div>
       )}
 
