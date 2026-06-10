@@ -104,12 +104,17 @@ const ProspectCard = ({ prospect }: ProspectCardProps) => {
         </div>
       )}
 
-      {/* Possible duplicate — shares an email with an existing client */}
-      {prospect.possible_client_match && (
+      {/* Possible duplicate — shares an email with one or more existing clients */}
+      {(prospect.possible_client_matches?.length ?? 0) > 0 && (
         <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[10px] text-amber-700">
           <AlertCircle className="w-3 h-3 mt-px flex-shrink-0" />
           <span>
-            May already be a client (<span className="font-medium">{prospect.possible_client_match.name}</span>) — review on enroll.
+            May already be a client (
+            <span className="font-medium">{prospect.possible_client_matches![0].name}</span>
+            {prospect.possible_client_matches!.length > 1
+              ? ` +${prospect.possible_client_matches!.length - 1} more`
+              : ""}
+            ) — review on enroll.
           </span>
         </div>
       )}

@@ -5,18 +5,18 @@ import { verifyClientAccess } from "../lib/verifyClient.js";
 
 const router = Router();
 
-// Subselect: the existing client (if any) that shares this prospect's contact
-// email. Email is intentionally NOT unique (a handler/licensee can own many
-// clients under one email), so this only SUGGESTS a possible duplicate the user
-// confirms — it never drives an automatic action.
+// Subselect: ALL existing clients that share this prospect's contact email.
+// Email is intentionally NOT unique (a handler/licensee can own many clients
+// under one email), so this returns every match — the user picks which one to
+// link to. It only SUGGESTS possible duplicates to confirm; it never drives an
+// automatic action.
 const POSSIBLE_CLIENT_MATCH_SQL = `
-  (SELECT json_build_object('id', c.id, 'name', c.name)
+  (SELECT COALESCE(json_agg(json_build_object('id', c.id, 'name', c.name)
+                     ORDER BY c.created_at ASC NULLS LAST), '[]'::json)
      FROM clients c
     WHERE p.contact IS NOT NULL
       AND LOWER(c.contact_email) = LOWER(p.contact)
-      AND (c.archived IS NULL OR c.archived = false)
-    ORDER BY c.created_at ASC NULLS LAST
-    LIMIT 1) AS possible_client_match`;
+      AND (c.archived IS NULL OR c.archived = false)) AS possible_client_matches`;
 
 const ALLOWED_COLUMNS = new Set([
   "name",

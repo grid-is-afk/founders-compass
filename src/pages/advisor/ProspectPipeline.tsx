@@ -87,7 +87,7 @@ function toProspectShape(row: Record<string, unknown>): Prospect & {
     assessment_fre_url: row.assessment_fre_url != null ? String(row.assessment_fre_url) : null,
     assessment_discovery_url: row.assessment_discovery_url != null ? String(row.assessment_discovery_url) : null,
     assessment_sixcs_url: row.assessment_sixcs_url != null ? String(row.assessment_sixcs_url) : null,
-    possible_client_match: (row.possible_client_match as { id: string; name: string } | null) ?? null,
+    possible_client_matches: (row.possible_client_matches as { id: string; name: string }[] | null) ?? [],
     date: row.date
       ? new Date(String(row.date)).toLocaleDateString("en-US", {
           month: "short",
@@ -747,42 +747,49 @@ interface AlreadyClientDialogProps {
   prospect: ProspectShape | null;
   busy: boolean;
   onClose: () => void;
-  onLink: (prospect: ProspectShape) => void;
+  onLink: (prospect: ProspectShape, clientId: string) => void;
   onCreateNew: (prospect: ProspectShape) => void;
 }
 
 function AlreadyClientDialog({ prospect, busy, onClose, onLink, onCreateNew }: AlreadyClientDialogProps) {
-  const match = prospect?.possible_client_match;
+  const matches = prospect?.possible_client_matches ?? [];
+  const multiple = matches.length > 1;
   return (
     <Dialog open={!!prospect} onOpenChange={(v) => !v && !busy && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">This may already be a client</DialogTitle>
           <DialogDescription>
-            <span className="font-medium text-foreground">{prospect?.contact}</span> matches an existing
-            client{match ? <> — <span className="font-medium text-foreground">{match.name}</span></> : ""}.
-            Since one handler can manage several clients under one email, choose how to proceed.
+            <span className="font-medium text-foreground">{prospect?.contact}</span> matches{" "}
+            {multiple ? `${matches.length} existing clients` : "an existing client"}. Since one
+            handler can manage several clients under one email, choose how to proceed.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2 py-1">
-          <button
-            type="button"
-            disabled={busy || !match}
-            onClick={() => prospect && onLink(prospect)}
-            className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
-          >
-            <p className="text-sm font-semibold text-foreground">Link to existing client</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Move this prospect's documents (e.g. pitch deck) into {match?.name ?? "the client"}'s Data Room and remove the prospect.
-            </p>
-          </button>
+          <p className="text-xs font-medium text-muted-foreground px-0.5">
+            {multiple ? "Link to one of these clients" : "Link to existing client"}
+          </p>
+          {matches.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              disabled={busy}
+              onClick={() => prospect && onLink(prospect, c.id)}
+              className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
+            >
+              <p className="text-sm font-semibold text-foreground">{c.name}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Move this prospect's documents (e.g. pitch deck) into {c.name}'s Data Room and remove the prospect.
+              </p>
+            </button>
+          ))}
 
           <button
             type="button"
             disabled={busy}
             onClick={() => prospect && onCreateNew(prospect)}
-            className="w-full text-left rounded-lg border border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
+            className="w-full text-left rounded-lg border border-dashed border-border p-3 hover:border-primary/40 hover:bg-accent/40 transition-colors disabled:opacity-50"
           >
             <p className="text-sm font-semibold text-foreground">Create a new client anyway</p>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -947,21 +954,21 @@ const ProspectPipeline = () => {
   };
 
   const handleEnrollAsClient = (prospect: ProspectShape) => {
-    // If this prospect shares an email with an existing client, confirm first:
-    // link to that client, or create a new (handler-managed) client anyway.
-    if (prospect.possible_client_match) {
+    // If this prospect shares an email with one or more existing clients, confirm
+    // first: link to a chosen client, or create a new (handler-managed) one anyway.
+    if ((prospect.possible_client_matches?.length ?? 0) > 0) {
       setDupTarget(prospect);
     } else {
       setEnrollTarget(prospect);
     }
   };
 
-  const handleLinkToClient = async (prospect: ProspectShape) => {
-    const match = prospect.possible_client_match;
+  const handleLinkToClient = async (prospect: ProspectShape, clientId: string) => {
+    const match = prospect.possible_client_matches?.find((c) => c.id === clientId);
     if (!match) return;
     setDupBusy(true);
     try {
-      await linkToClient.mutateAsync({ id: prospect.id, client_id: match.id });
+      await linkToClient.mutateAsync({ id: prospect.id, client_id: clientId });
       toast.success(`Linked to ${match.name}`, {
         description: "Documents moved into their Data Room. Prospect removed.",
       });
