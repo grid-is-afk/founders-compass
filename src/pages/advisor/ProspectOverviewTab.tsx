@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useUpdateProspect } from "@/hooks/useProspects";
 import { useCreateClient } from "@/hooks/useClients";
+import PrimaryEmailField from "@/components/integrations/PrimaryEmailField";
 import type { ProspectShape } from "./ProspectWorkspace";
 
 // ---------------------------------------------------------------------------
@@ -180,6 +181,13 @@ export default function ProspectOverviewTab() {
           <span className="text-muted-foreground">Added {prospect.date}</span>
         </div>
       </div>
+
+      {/* Primary email — routes this prospect's Otter call transcripts to their Data Room */}
+      <PrimaryEmailField
+        kind="prospect"
+        id={prospect.id}
+        value={(prospect as { primary_email?: string | null }).primary_email}
+      />
 
       {/* Source + fit badges */}
       <div className="flex items-center gap-2 flex-wrap">

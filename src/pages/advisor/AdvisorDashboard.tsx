@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import ClientRow from "@/components/dashboard/ClientRow";
 import AdvisorTasksPanel from "@/components/dashboard/AdvisorTasksPanel";
 import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
+import TranscriptInboxPanel from "@/components/integrations/TranscriptInboxPanel";
 import { TrendingUp, Activity, UserPlus, Zap } from "lucide-react";
 import { useClients } from "@/hooks/useClients";
 import { useActivity } from "@/hooks/useActivity";
@@ -64,6 +65,9 @@ const AdvisorDashboard = () => {
           Quarterback AI
         </button>
       </div>
+
+      {/* Unassigned Otter transcripts — surfaced only when some are waiting */}
+      <TranscriptInboxPanel hideWhenEmpty />
 
       {/* Portfolio Intelligence — top of dashboard */}
       <div>

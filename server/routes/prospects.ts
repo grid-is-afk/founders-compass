@@ -21,6 +21,7 @@ const POSSIBLE_CLIENT_MATCH_SQL = `
 const ALLOWED_COLUMNS = new Set([
   "name",
   "contact",
+  "primary_email",
   "company",
   "revenue",
   "source",
@@ -233,7 +234,8 @@ router.post("/:id/link-to-client", async (req, res) => {
       `UPDATE clients c
           SET assessment_fre_url       = p.assessment_fre_url,
               assessment_discovery_url = p.assessment_discovery_url,
-              assessment_sixcs_url     = p.assessment_sixcs_url
+              assessment_sixcs_url     = p.assessment_sixcs_url,
+              primary_email            = COALESCE(c.primary_email, p.primary_email)
          FROM prospects p
         WHERE c.id = $1 AND p.id = $2`,
       [client_id, req.params.id]

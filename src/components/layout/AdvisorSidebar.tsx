@@ -12,12 +12,14 @@ import {
   Archive,
   ShieldCheck,
   MessagesSquare,
+  Inbox,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useClientContext } from "@/hooks/useClientContext";
 import { useClientDocuments } from "@/hooks/useDocuments";
+import { useOtterInboxCount } from "@/hooks/useOtterInbox";
 import { useAuth } from "@/lib/auth";
 
 const navGroups = [
@@ -46,6 +48,7 @@ const navGroups = [
     label: "Tools",
     items: [
       { to: "/advisor/copilot", icon: Sparkles, label: "Quarterback AI" },
+      { to: "/advisor/transcript-inbox", icon: Inbox, label: "Transcript Inbox" },
       { to: "/advisor/communications-digest", icon: MessagesSquare, label: "Communications Digest" },
       { to: "/advisor/investor-share", icon: Share2, label: "Investor Share" },
       { to: "/advisor/capital-strategy-roadmap", icon: Map, label: "Capital Strategy Architecture (Roadmap)" },
@@ -90,6 +93,10 @@ const AdvisorSidebar = () => {
       d.uploaded_by_role === "client" &&
       new Date(d.uploaded_at).getTime() > seenTs
   ).length;
+
+  // Pending Otter transcripts awaiting manual assignment (sidebar badge).
+  const { data: transcriptInbox } = useOtterInboxCount();
+  const transcriptCount = transcriptInbox?.count ?? 0;
 
   const isAdminUser = user?.role === "admin";
 
@@ -141,7 +148,13 @@ const AdvisorSidebar = () => {
                   return location.pathname === item.to;
                 })();
                 const isDataRoom = item.to === "/advisor/data-room";
-                const showBadge = isDataRoom && unseenCount > 0;
+                const isTranscriptInbox = item.to === "/advisor/transcript-inbox";
+                const badgeCount = isDataRoom
+                  ? unseenCount
+                  : isTranscriptInbox
+                  ? transcriptCount
+                  : 0;
+                const showBadge = badgeCount > 0;
                 return (
                   <NavLink
                     key={`${item.to}-${item.label}`}
@@ -167,7 +180,7 @@ const AdvisorSidebar = () => {
                         {item.label}
                         {showBadge && (
                           <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
-                            {unseenCount}
+                            {badgeCount}
                           </span>
                         )}
                       </span>
