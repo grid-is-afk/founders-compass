@@ -62,6 +62,7 @@ import deferredChangesRoutes from "./routes/deferredChanges.js";
 import licenseeIntakeRoutes from "./routes/licenseeIntakes.js";
 import referralRoutes from "./routes/referrals.js";
 import hubspotRoutes from "./routes/hubspot.js";
+import { otterWebhookRouter, otterInboxRouter } from "./routes/otter.js";
 import { syncProspectsFromHubSpot } from "./lib/hubspot/sync.js";
 import { isHubSpotConfigured } from "./lib/hubspot/client.js";
 
@@ -94,6 +95,11 @@ const anthropic = new Anthropic({
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/refresh", authLimiter);
 app.use("/api/auth", authRoutes);
+
+// Otter → Zapier inbound webhook: no JWT (Zapier can't carry one); gated by a
+// shared secret inside the handler. Mounted here in the public section, before
+// the JWT-protected routers below.
+app.use("/api/integrations/otter", otterWebhookRouter);
 
 // ============================================================
 // Protected API routes — all require a valid JWT
@@ -144,6 +150,9 @@ app.use("/api/clients", authMiddleware, kickoffPlanRoutes);
 app.use("/api/clients", authMiddleware, methodologyRecommendationsRoutes);
 app.use("/api/users", authMiddleware, userRoutes);
 app.use("/api/deferred-changes", authMiddleware, deferredChangesRoutes);
+// Otter transcript inbox (advisors/admins only) — the JWT-protected counterpart
+// to the public webhook mounted above.
+app.use("/api/integrations/otter", authMiddleware, otterInboxRouter);
 // Licensee portal: referral partner directory + per-client referral requests
 app.use("/api", authMiddleware, referralRoutes);
 

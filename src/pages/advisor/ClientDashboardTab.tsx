@@ -9,6 +9,7 @@ import { AssessmentHistoryWidget } from "@/components/clients/AssessmentHistoryW
 import { QuarterbackActionsPanel } from "@/components/clients/dashboard/QuarterbackActionsPanel";
 import IntelligencePanel from "@/components/dashboard/IntelligencePanel";
 import ObjectivesPanel from "@/components/quarterly/ObjectivesPanel";
+import PrimaryEmailField from "@/components/integrations/PrimaryEmailField";
 import { useClientContext } from "@/hooks/useClientContext";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +26,7 @@ interface ClientRecord {
   current_quarter?: number;
   current_year?: number;
   source_prospect_id?: string | null;
+  primary_email?: string | null;
 }
 
 interface WorkspaceContext {
@@ -73,6 +75,8 @@ export default function ClientDashboardTab() {
           RIGHT SIDEBAR — 1/3 width
       ================================================================ */}
       <div className="space-y-6">
+        <PrimaryEmailField kind="client" id={client.id} value={client.primary_email} />
+
         <QuarterbackActionsPanel clientId={client.id} />
 
         <AssessmentHistoryWidget clientId={client.id} />

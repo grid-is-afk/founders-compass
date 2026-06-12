@@ -11,6 +11,7 @@ const ALLOWED_COLUMNS = new Set([
   "name",
   "contact_name",
   "contact_email",
+  "primary_email",
   "revenue",
   "stage",
   "current_quarter",
@@ -278,7 +279,8 @@ router.post("/", async (req, res) => {
           `UPDATE clients c
               SET assessment_fre_url       = p.assessment_fre_url,
                   assessment_discovery_url = p.assessment_discovery_url,
-                  assessment_sixcs_url     = p.assessment_sixcs_url
+                  assessment_sixcs_url     = p.assessment_sixcs_url,
+                  primary_email            = COALESCE(c.primary_email, p.primary_email)
              FROM prospects p
             WHERE c.id = $1 AND p.id = $2`,
           [newClientId, source_prospect_id]

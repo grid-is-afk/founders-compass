@@ -1041,3 +1041,42 @@ INSERT INTO hubspot_sync_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_fre_url       TEXT;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_discovery_url TEXT;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS assessment_sixcs_url     TEXT;
+
+-- ============================================================================
+-- Otter.ai transcript ingestion
+--
+-- Inbound meeting transcripts (from the shared Otter "clientsuccess" account, via
+-- a Zapier webhook) auto-file into the matching client's or prospect's Data Room,
+-- routed by a dedicated `primary_email` — the founder's OWN email (the actual call
+-- participant). This is intentionally SEPARATE from `contact_email`/`contact`,
+-- which may be a licensee/handler address shared across several clients, so it is
+-- not safe to match on. Anything unmatched lands in `otter_inbox` for manual assign.
+-- ============================================================================
+ALTER TABLE clients   ADD COLUMN IF NOT EXISTS primary_email TEXT;
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS primary_email TEXT;
+CREATE INDEX IF NOT EXISTS idx_clients_primary_email   ON clients   (LOWER(primary_email));
+CREATE INDEX IF NOT EXISTS idx_prospects_primary_email ON prospects (LOWER(primary_email));
+
+-- Idempotency ledger (one row per Otter conversation) + holding area for
+-- transcripts that couldn't be auto-matched (status = 'pending').
+CREATE TABLE IF NOT EXISTS otter_inbox (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  otter_conversation_id TEXT NOT NULL,
+  advisor_id            UUID REFERENCES users(id) ON DELETE SET NULL,
+  title                 TEXT,
+  participants          JSONB NOT NULL DEFAULT '[]',
+  occurred_at           TIMESTAMPTZ,
+  transcript_text       TEXT,              -- held only while pending; NULL once filed
+  matched_target        TEXT NOT NULL DEFAULT 'none'
+                          CHECK (matched_target IN ('client', 'prospect', 'none')),
+  matched_id            UUID,
+  document_id           UUID REFERENCES documents(id) ON DELETE SET NULL,
+  status                TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'filed')),
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  filed_at              TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_otter_inbox_conversation
+  ON otter_inbox(otter_conversation_id);
+CREATE INDEX IF NOT EXISTS idx_otter_inbox_status
+  ON otter_inbox(status, created_at DESC);
